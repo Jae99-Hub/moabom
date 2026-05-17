@@ -120,10 +120,10 @@ function ItemRow({ item }: { item: Item }) {
       <div className="list-row-year">{item.year ?? '—'}</div>
 
       <div className="list-row-genre">
-        {item.genre
+        {item.genre?.trim()
           ? item.genre.split(',').map(g => g.trim()).filter(Boolean).slice(0, 2).map((g, i) => (
               <span key={i} className="list-row-genre-tag">
-                {g.split('>').map(s => s.trim()).pop()}
+                {g.replace(/\s*>\s*/g, ' › ')}
               </span>
             ))
           : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}
