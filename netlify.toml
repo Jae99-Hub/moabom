@@ -2,6 +2,11 @@
   command = "npm run build:web"
   publish = "dist/web"
 
+[build.environment]
+  # Electron 네이티브 모듈 빌드 스킵 (웹 빌드에서는 불필요)
+  NPM_FLAGS = "--ignore-scripts"
+  NODE_VERSION = "22"
+
 [[headers]]
   for = "/*"
   [headers.values]
