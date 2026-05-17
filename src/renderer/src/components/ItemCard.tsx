@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Item, ItemType, ItemStatus } from '../types'
 import { useStore } from '../store/useStore'
 import { CardContextMenu } from './CardContextMenu'
@@ -25,12 +25,41 @@ export default function ItemCard({ item }: { item: Item }) {
   const isChecked = checkedItems.includes(item.id)
   const progress = getProgress(item)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchMoved = useRef(false)
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (selectionMode) return
     e.preventDefault()
     e.stopPropagation()
     setMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  // 모바일 롱프레스 (500ms)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (selectionMode) return
+    touchMoved.current = false
+    const touch = e.touches[0]
+    longPressTimer.current = setTimeout(() => {
+      if (!touchMoved.current) {
+        setMenu({ x: touch.clientX, y: touch.clientY })
+      }
+    }, 500)
+  }
+
+  const handleTouchMove = () => {
+    touchMoved.current = true
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
   }
 
   const handleClick = () => {
@@ -46,6 +75,9 @@ export default function ItemCard({ item }: { item: Item }) {
       className={`media-card${isSelected && !selectionMode ? ' selected' : ''}${selectionMode && isChecked ? ' checked' : ''}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       {selectionMode && (
         <div className="card-checkbox">

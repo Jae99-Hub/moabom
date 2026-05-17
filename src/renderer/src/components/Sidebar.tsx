@@ -95,7 +95,7 @@ function GenreNodes({
 }
 
 export default function Sidebar() {
-  const { itemList, filters, setFilter } = useStore()
+  const { itemList, filters, setFilter, isSidebarOpen, closeSidebar } = useStore()
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['book', 'movie', 'drama']))
 
   const forests = {
@@ -119,15 +119,26 @@ export default function Sidebar() {
   const selectGenre = (type: ItemType, path: string) => {
     setFilter('type', type)
     setFilter('genre', path)
+    closeSidebar() // 모바일: 선택 후 사이드바 닫기
+  }
+
+  const handleSelectType = (type: ItemType | 'all') => {
+    selectType(type)
+    closeSidebar() // 모바일: 선택 후 사이드바 닫기
   }
 
   return (
-    <div className="sidebar">
+    <>
+      {/* 모바일: 사이드바 오버레이 */}
+      {isSidebarOpen && (
+        <div className="sidebar-overlay" onClick={closeSidebar} />
+      )}
+    <div className={`sidebar${isSidebarOpen ? ' sidebar-open' : ''}`}>
       <div className="sidebar-section-title">라이브러리</div>
 
       <button
         className={`sidebar-item${filters.type === 'all' ? ' active' : ''}`}
-        onClick={() => selectType('all')}
+        onClick={() => handleSelectType('all')}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
@@ -148,7 +159,7 @@ export default function Sidebar() {
             <div className="sidebar-type-row">
               <button
                 className={`sidebar-item sidebar-type-item${isTypeActive ? ' active' : ''}`}
-                onClick={() => selectType(t.value)}
+                onClick={() => handleSelectType(t.value)}
                 style={{ flex: 1 }}
               >
                 <span className="sidebar-type-dot" style={{ background: t.color }} />
@@ -185,5 +196,6 @@ export default function Sidebar() {
         )
       })}
     </div>
+    </>
   )
 }

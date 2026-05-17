@@ -16,6 +16,7 @@ interface AppState {
   viewMode: 'grid' | 'list'
   selectionMode: boolean
   checkedItems: number[]
+  isSidebarOpen: boolean
 
   fetchAll: () => Promise<void>
   addItem: (data: ItemFormData) => Promise<Item>
@@ -39,6 +40,8 @@ interface AppState {
   toggleCheckedItem: (id: number) => void
   selectAllChecked: (ids: number[]) => void
   deleteCheckedItems: () => Promise<void>
+  toggleSidebar: () => void
+  closeSidebar: () => void
 }
 
 function applyFilters(list: Item[], filters: FilterState): Item[] {
@@ -115,6 +118,7 @@ export const useStore = create<AppState>((set, get) => ({
   viewMode: (localStorage.getItem('viewMode') as 'grid' | 'list') || 'grid',
   selectionMode: false,
   checkedItems: [],
+  isSidebarOpen: false,
 
   fetchAll: async () => {
     const list = await window.api.items.getAll()
@@ -180,6 +184,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   enterSelectionMode: () => set({ selectionMode: true, selectedId: null, checkedItems: [] }),
   exitSelectionMode: () => set({ selectionMode: false, checkedItems: [] }),
+  toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
+  closeSidebar: () => set({ isSidebarOpen: false }),
   toggleCheckedItem: (id) => set((s) => ({
     checkedItems: s.checkedItems.includes(id)
       ? s.checkedItems.filter((x) => x !== id)

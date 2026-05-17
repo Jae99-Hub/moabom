@@ -2,7 +2,7 @@ import React from 'react'
 import { useStore } from '../store/useStore'
 
 export default function Header() {
-  const { filters, setFilter, theme, toggleTheme, openAddModal, openSettings, searchQuotes, clearQuoteSearch } = useStore()
+  const { filters, setFilter, theme, toggleTheme, openAddModal, openSettings, searchQuotes, clearQuoteSearch, toggleSidebar } = useStore()
 
   const isQuoteMode = filters.searchMode === 'quote'
 
@@ -23,12 +23,19 @@ export default function Header() {
 
   return (
     <header className="header">
+      {/* 모바일 전용 햄버거 */}
+      <button className="hamburger-btn" onClick={toggleSidebar} aria-label="메뉴">
+        <span className="hamburger-line" />
+        <span className="hamburger-line" />
+        <span className="hamburger-line" />
+      </button>
+
       <div className="header-logo">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
-        BookVault
+        <span className="header-logo-text">모아봄</span>
       </div>
 
       <div className="header-search">
