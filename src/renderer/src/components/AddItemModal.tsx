@@ -211,6 +211,10 @@ export default function AddItemModal() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
+    // 모바일 키보드 닫기
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
     setIsSearching(true)
     setBookResults([])
     setTmdbResults([])

@@ -48,6 +48,9 @@ export default function Header() {
           placeholder={isQuoteMode ? '명언·문장 검색...' : '제목, 저자, ISBN 검색...'}
           value={filters.search}
           onChange={(e) => handleSearchChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
         />
         <button
           className={`search-mode-toggle${isQuoteMode ? ' quote-mode' : ''}`}
