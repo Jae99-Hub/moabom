@@ -504,7 +504,7 @@ body {
   white-space: nowrap;
 }
 
-.list-row-right { flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+.list-row-right { width: 160px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .list-row-rating { font-size: 11px; color: #f59e0b; white-space: nowrap; }
 .list-row-status {
   font-size: 10px;
