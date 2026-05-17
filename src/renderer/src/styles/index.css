@@ -2020,6 +2020,154 @@ body {
 }
 
 /* ═══════════════════════════════════════════
+   AUTH SCREEN
+   ═══════════════════════════════════════════ */
+
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 40px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.3);
+}
+
+.auth-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-accent);
+  margin-bottom: 4px;
+}
+
+.auth-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.auth-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+.auth-google-btn {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 4px;
+}
+.auth-google-btn:hover { background: var(--bg-hover); border-color: var(--border-focus); }
+.auth-google-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.auth-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--danger);
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.auth-notice {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── SettingsModal 유저 정보 ── */
+.settings-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.settings-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--text-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.settings-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  truncate: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.settings-user-email {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-signout-btn {
+  font-size: 12px;
+  padding: 0 10px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--danger);
+  border-color: rgba(239,68,68,0.3);
+}
+.settings-signout-btn:hover { background: rgba(239,68,68,0.08); }
+
+/* ═══════════════════════════════════════════
    MOBILE RESPONSIVE
    ═══════════════════════════════════════════ */
 

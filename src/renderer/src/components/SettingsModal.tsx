@@ -1,16 +1,33 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 
+// 웹 환경인지 체크 (VITE_ 환경변수 존재 여부로 판단)
+const isWebEnv = typeof import.meta.env.VITE_SUPABASE_URL === 'string' && !!import.meta.env.VITE_SUPABASE_URL
+
 export default function SettingsModal() {
   const { isSettingsOpen, closeSettings } = useStore()
   const [tmdbKey, setTmdbKey] = useState('')
   const [googleKey, setGoogleKey] = useState('')
   const [saved, setSaved] = useState(false)
+  const [userEmail, setUserEmail] = useState('')
+  const [userName, setUserName] = useState('')
 
   useEffect(() => {
     if (!isSettingsOpen) return
     window.api.settings.get('tmdb_api_key').then(setTmdbKey)
     window.api.settings.get('google_books_api_key').then(setGoogleKey)
+
+    // 웹 환경에서만 유저 정보 로드
+    if (isWebEnv) {
+      import('../api/supabaseClient').then(({ supabase }) => {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user) {
+            setUserEmail(user.email ?? '')
+            setUserName((user.user_metadata as Record<string, string>)?.full_name ?? '')
+          }
+        })
+      }).catch(() => {})
+    }
   }, [isSettingsOpen])
 
   const handleSave = async () => {
@@ -33,8 +50,17 @@ export default function SettingsModal() {
     const result = await window.api.db.restore() as { success: boolean; path?: string }
     if (result.success) {
       alert('복원 완료. 앱을 재시작(또는 새로고침)해 주세요.')
-      if (!result.path) window.location.reload() // 웹 환경: 자동 새로고침
+      if (!result.path) window.location.reload()
+    } else {
+      alert('복원에 실패했습니다. 파일 형식을 확인해주세요.')
     }
+  }
+
+  const handleSignOut = async () => {
+    if (!window.confirm('로그아웃할까요?')) return
+    const { supabase } = await import('../api/supabaseClient')
+    await supabase.auth.signOut()
+    window.location.reload()
   }
 
   if (!isSettingsOpen) return null
@@ -52,6 +78,28 @@ export default function SettingsModal() {
         </div>
 
         <div className="settings-modal-body">
+          {/* 로그인 유저 정보 (웹 전용) */}
+          {isWebEnv && (userEmail || userName) && (
+            <>
+              <div className="settings-user-row">
+                <div className="settings-user-avatar">
+                  {(userName || userEmail).slice(0, 1).toUpperCase()}
+                </div>
+                <div className="settings-user-info">
+                  {userName && <div className="settings-user-name">{userName}</div>}
+                  <div className="settings-user-email">{userEmail}</div>
+                </div>
+                <button
+                  className="btn-secondary settings-signout-btn"
+                  onClick={handleSignOut}
+                >
+                  로그아웃
+                </button>
+              </div>
+              <div className="settings-divider" />
+            </>
+          )}
+
           <div className="settings-group">
             <div className="settings-group-label">TMDB API Key</div>
             <div className="settings-group-desc">영화·드라마 자동 검색에 사용 (기본 키 내장)</div>

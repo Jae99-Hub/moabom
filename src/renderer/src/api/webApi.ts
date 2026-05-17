@@ -1,182 +1,32 @@
 /**
  * 웹(브라우저) 환경에서 window.api를 구현합니다.
- * Electron IPC 대신 sql.js(WebAssembly) + IndexedDB를 사용합니다.
- * sql.js는 번들링 없이 CDN에서 동적으로 로드합니다.
+ * Supabase를 데이터베이스/인증/스토리지 백엔드로 사용합니다.
  */
 
-// sql.js CDN 동적 로드 (Vite 번들링 문제 방지)
-const SQL_JS_CDN = 'https://sql.js.org/dist/'
+import { supabase } from './supabaseClient'
 
-type SqlParam = string | number | null | Uint8Array
-type SqlParams = Record<string, SqlParam>
-
-type SqlJsStatic = {
-  Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase
-}
-type SqlDatabase = {
-  run(sql: string, params?: SqlParams): SqlDatabase
-  prepare(sql: string): SqlStatement
-  export(): Uint8Array
-}
-type SqlStatement = {
-  bind(params?: SqlParams): boolean
-  step(): boolean
-  getAsObject(params?: Record<string, unknown>): Record<string, unknown>
-  free(): boolean
+// ── 현재 유저 ID 조회 ─────────────────────────────────────────────
+async function getUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('로그인이 필요합니다')
+  return user.id
 }
 
-// unknown 값을 sql.js 허용 타입으로 안전하게 변환
-function p(v: unknown): SqlParam {
-  if (v === undefined) return null
-  if (v === null || typeof v === 'string' || typeof v === 'number') return v as SqlParam
-  return String(v)
-}
-
-// window.initSqlJs는 sql-wasm.js 스크립트가 로드되면 설정됨
-declare global {
-  interface Window {
-    initSqlJs?: (config: { locateFile: (file: string) => string }) => Promise<SqlJsStatic>
-  }
-}
-
-async function loadSqlJs(): Promise<SqlJsStatic> {
-  if (!window.initSqlJs) {
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement('script')
-      script.src = `${SQL_JS_CDN}sql-wasm.js`
-      script.onload = () => resolve()
-      script.onerror = () => reject(new Error('sql.js 로드 실패'))
-      document.head.appendChild(script)
-    })
-  }
-  return window.initSqlJs!({ locateFile: (file) => `${SQL_JS_CDN}${file}` })
-}
-
-// ── IndexedDB 영속화 ─────────────────────────────────────────────
-const IDB_NAME = 'bookvault-web'
-const IDB_STORE = 'sqliteDb'
-
-function openIDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1)
-    req.onupgradeneeded = (e) => {
-      (e.target as IDBOpenDBRequest).result.createObjectStore(IDB_STORE)
-    }
-    req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function loadDbBytes(): Promise<Uint8Array | null> {
-  try {
-    const idb = await openIDB()
-    return new Promise((resolve) => {
-      const tx = idb.transaction(IDB_STORE, 'readonly')
-      const req = tx.objectStore(IDB_STORE).get('db')
-      req.onsuccess = () => resolve(req.result ?? null)
-      req.onerror = () => resolve(null)
-    })
-  } catch {
-    return null
-  }
-}
-
-async function saveDbBytes(data: Uint8Array): Promise<void> {
-  try {
-    const idb = await openIDB()
-    return new Promise((resolve) => {
-      const tx = idb.transaction(IDB_STORE, 'readwrite')
-      tx.objectStore(IDB_STORE).put(data, 'db')
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => resolve()
-    })
-  } catch { /* ignore */ }
-}
-
-// ── sql.js DB 초기화 ─────────────────────────────────────────────
-let db: SqlDatabase | null = null
-
-async function getDb(): Promise<SqlDatabase> {
-  if (db) return db
-
-  const SQL = await loadSqlJs()
-
-  const saved = await loadDbBytes()
-  db = saved ? new SQL.Database(saved) : new SQL.Database()
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      original_title TEXT,
-      item_type TEXT NOT NULL DEFAULT 'book',
-      cover_path TEXT,
-      backdrop_path TEXT,
-      author TEXT,
-      publisher TEXT,
-      isbn TEXT,
-      page_count INTEGER,
-      current_page INTEGER DEFAULT 0,
-      director TEXT,
-      platform TEXT,
-      tmdb_id INTEGER,
-      google_books_id TEXT,
-      genre TEXT,
-      year INTEGER,
-      overview TEXT,
-      rating REAL,
-      status TEXT NOT NULL DEFAULT 'want',
-      review TEXT,
-      read_date TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS quotes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id INTEGER NOT NULL,
-      text TEXT NOT NULL,
-      page_number INTEGER,
-      note TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `)
-  await persist()
-  return db
-}
-
-async function persist(): Promise<void> {
-  if (!db) return
-  await saveDbBytes(db.export())
-}
-
-function queryAll(database: SqlDatabase, sql: string, params: SqlParams = {}): Record<string, unknown>[] {
-  const stmt = database.prepare(sql)
-  stmt.bind(params)
-  const rows: Record<string, unknown>[] = []
-  while (stmt.step()) rows.push(stmt.getAsObject())
-  stmt.free()
-  return rows
-}
-
-function queryOne(database: SqlDatabase, sql: string, params: SqlParams = {}): Record<string, unknown> | undefined {
-  return queryAll(database, sql, params)[0]
-}
-
-// ── API 키 (기본값 / 설정에 저장된 키가 있으면 우선 사용) ───────────
+// ── API 키 (설정에 저장된 키 우선, 없으면 기본값) ─────────────────
 const DEFAULT_GOOGLE_BOOKS_KEY = 'AIzaSyB2CqQVMkx89-S3xAAfG85Qk-LycoKNA0o'
 const DEFAULT_TMDB_KEY = '2231c307ea12a6d255fca6d45014212b'
 
 async function getApiKey(settingKey: string, defaultKey: string): Promise<string> {
   try {
-    const db = await getDb()
-    const row = queryOne(db, 'SELECT value FROM settings WHERE key = :key', { ':key': settingKey })
-    const stored = (row?.value as string) ?? ''
-    return stored.trim() || defaultKey
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return defaultKey
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('user_id', user.id)
+      .eq('key', settingKey)
+      .maybeSingle()
+    return (data?.value as string)?.trim() || defaultKey
   } catch {
     return defaultKey
   }
@@ -284,8 +134,8 @@ async function searchTmdb(query: string): Promise<unknown[]> {
   }))
 }
 
-// ── 이미지 선택 (파일 input) ───────────────────────────────────────
-function pickImageFile(): Promise<string | null> {
+// ── 이미지 선택 + 리사이즈 ────────────────────────────────────────
+function pickImageRaw(): Promise<string | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -298,13 +148,12 @@ function pickImageFile(): Promise<string | null> {
       const reader = new FileReader()
       reader.onload = () => {
         const dataUrl = reader.result as string
-        // 이미지 크기 제한: 최대 1200px, JPEG 0.85 품질로 재인코딩
+        // 최대 1200px 리사이즈
         const img = new Image()
         img.onload = () => {
           const MAX = 1200
           const scale = img.width > MAX || img.height > MAX
-            ? Math.min(MAX / img.width, MAX / img.height)
-            : 1
+            ? Math.min(MAX / img.width, MAX / img.height) : 1
           const canvas = document.createElement('canvas')
           canvas.width = Math.round(img.width * scale)
           canvas.height = Math.round(img.height * scale)
@@ -312,161 +161,207 @@ function pickImageFile(): Promise<string | null> {
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
           resolve(canvas.toDataURL('image/jpeg', 0.85))
         }
-        img.onerror = () => resolve(dataUrl) // 실패 시 원본 반환
+        img.onerror = () => resolve(dataUrl)
         img.src = dataUrl
       }
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(file)
     }
-    // 파일 선택 안 하고 닫을 경우
     window.addEventListener('focus', () => {
-      setTimeout(() => { if (!resolved) resolve(null) }, 500)
+      setTimeout(() => { if (!resolved) resolve(null) }, 600)
     }, { once: true })
     input.click()
   })
 }
 
+// ── Supabase Storage 업로드 ────────────────────────────────────────
+async function uploadCover(dataUrl: string, userId: string): Promise<string> {
+  try {
+    const res = await fetch(dataUrl)
+    const blob = await res.blob()
+    const ext = blob.type.includes('png') ? 'png' : 'jpg'
+    const path = `${userId}/${Date.now()}.${ext}`
+    const { data, error } = await supabase.storage
+      .from('covers')
+      .upload(path, blob, { contentType: blob.type, upsert: false })
+    if (error) return dataUrl // 업로드 실패 시 base64 fallback
+    const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(data.path)
+    return publicUrl
+  } catch {
+    return dataUrl // fallback
+  }
+}
+
 // ── window.api 구현 ───────────────────────────────────────────────
 export async function setupWebApi(): Promise<void> {
-  // DB 미리 초기화 (테이블 생성)
-  await getDb()
-
   const api = {
     items: {
       getAll: async () => {
-        const db = await getDb()
-        return queryAll(db, 'SELECT * FROM items ORDER BY created_at DESC')
+        const userId = await getUserId()
+        const { data, error } = await supabase
+          .from('items')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+        if (error) throw error
+        return data ?? []
       },
+
       getById: async (id: number) => {
-        const db = await getDb()
-        return queryOne(db, 'SELECT * FROM items WHERE id = :id', { ':id': id }) ?? null
+        const { data, error } = await supabase
+          .from('items')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle()
+        if (error) throw error
+        return data
       },
+
       insert: async (data: Record<string, unknown>) => {
-        const db = await getDb()
-        db.run(
-          `INSERT INTO items (title, original_title, item_type, cover_path, backdrop_path, author, publisher,
-            isbn, page_count, current_page, director, platform, tmdb_id, google_books_id, genre, year,
-            overview, rating, status, review, read_date)
-           VALUES (:title, :original_title, :item_type, :cover_path, :backdrop_path, :author, :publisher,
-            :isbn, :page_count, :current_page, :director, :platform, :tmdb_id, :google_books_id, :genre, :year,
-            :overview, :rating, :status, :review, :read_date)`,
-          {
-            ':title': p(data.title ?? ''),
-            ':original_title': p(data.original_title),
-            ':item_type': p(data.item_type ?? 'book'),
-            ':cover_path': p(data.cover_path),
-            ':backdrop_path': p(data.backdrop_path),
-            ':author': p(data.author),
-            ':publisher': p(data.publisher),
-            ':isbn': p(data.isbn),
-            ':page_count': p(data.page_count),
-            ':current_page': p(data.current_page ?? 0),
-            ':director': p(data.director),
-            ':platform': p(data.platform),
-            ':tmdb_id': p(data.tmdb_id),
-            ':google_books_id': p(data.google_books_id),
-            ':genre': p(data.genre),
-            ':year': p(data.year),
-            ':overview': p(data.overview),
-            ':rating': p(data.rating),
-            ':status': p(data.status ?? 'want'),
-            ':review': p(data.review),
-            ':read_date': p(data.read_date)
-          }
-        )
-        const row = queryOne(db, 'SELECT last_insert_rowid() as id')
-        const newId = row?.id as number
-        await persist()
-        return queryOne(db, 'SELECT * FROM items WHERE id = :id', { ':id': newId })
+        const userId = await getUserId()
+        const { data: row, error } = await supabase
+          .from('items')
+          .insert({
+            user_id: userId,
+            title: data.title ?? '',
+            original_title: data.original_title ?? null,
+            item_type: data.item_type ?? 'book',
+            cover_path: data.cover_path ?? null,
+            backdrop_path: data.backdrop_path ?? null,
+            author: data.author ?? null,
+            publisher: data.publisher ?? null,
+            isbn: data.isbn ?? null,
+            page_count: data.page_count ?? null,
+            current_page: data.current_page ?? 0,
+            director: data.director ?? null,
+            platform: data.platform ?? null,
+            tmdb_id: data.tmdb_id ?? null,
+            google_books_id: data.google_books_id ?? null,
+            genre: data.genre ?? null,
+            year: data.year ?? null,
+            overview: data.overview ?? null,
+            rating: data.rating ?? null,
+            status: data.status ?? 'want',
+            review: data.review ?? null,
+            read_date: data.read_date ?? null,
+          })
+          .select()
+          .single()
+        if (error) throw error
+        return row
       },
+
       update: async (id: number, data: Record<string, unknown>) => {
-        const db = await getDb()
         const allowed = [
           'title', 'original_title', 'item_type', 'cover_path', 'backdrop_path',
           'author', 'publisher', 'isbn', 'page_count', 'current_page',
           'director', 'platform', 'tmdb_id', 'google_books_id', 'genre',
           'year', 'overview', 'rating', 'status', 'review', 'read_date'
         ]
-        const entries = Object.entries(data).filter(([k]) => allowed.includes(k))
-        if (!entries.length) return
-        const sets = entries.map(([k]) => `${k} = :${k}`).join(', ')
-        const params: SqlParams = { ':id': id }
-        entries.forEach(([k, v]) => { params[`:${k}`] = p(v) })
-        db.run(
-          `UPDATE items SET ${sets}, updated_at = datetime('now') WHERE id = :id`,
-          params
-        )
-        await persist()
+        const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        for (const key of allowed) {
+          if (key in data) payload[key] = data[key] ?? null
+        }
+        const { error } = await supabase.from('items').update(payload).eq('id', id)
+        if (error) throw error
       },
+
       delete: async (id: number) => {
-        const db = await getDb()
-        db.run('DELETE FROM quotes WHERE item_id = :id', { ':id': id })
-        db.run('DELETE FROM items WHERE id = :id', { ':id': id })
-        await persist()
+        const { error } = await supabase.from('items').delete().eq('id', id)
+        if (error) throw error
       }
     },
 
     quotes: {
       getByItemId: async (itemId: number) => {
-        const db = await getDb()
-        return queryAll(db, 'SELECT * FROM quotes WHERE item_id = :id ORDER BY page_number ASC, created_at ASC', { ':id': itemId })
+        const { data, error } = await supabase
+          .from('quotes')
+          .select('*')
+          .eq('item_id', itemId)
+          .order('page_number', { ascending: true, nullsFirst: false })
+        if (error) throw error
+        return data ?? []
       },
+
       search: async (query: string) => {
-        const db = await getDb()
-        return queryAll(
-          db,
-          `SELECT q.*, i.title as item_title, i.item_type, i.cover_path
-           FROM quotes q JOIN items i ON q.item_id = i.id
-           WHERE q.text LIKE :q OR q.note LIKE :q ORDER BY q.created_at DESC`,
-          { ':q': `%${query}%` }
-        )
-      },
-      insert: async (data: Record<string, unknown>) => {
-        const db = await getDb()
-        db.run(
-          'INSERT INTO quotes (item_id, text, page_number, note) VALUES (:item_id, :text, :page_number, :note)',
-          {
-            ':item_id': p(data.item_id),
-            ':text': p(data.text),
-            ':page_number': p(data.page_number),
-            ':note': p(data.note)
+        const userId = await getUserId()
+        // 유저의 아이템 목록 먼저 조회
+        const { data: userItems } = await supabase
+          .from('items')
+          .select('id, title, item_type, cover_path')
+          .eq('user_id', userId)
+        if (!userItems || userItems.length === 0) return []
+        const itemIds = userItems.map((i: Record<string, unknown>) => i.id)
+        const itemMap = new Map(userItems.map((i: Record<string, unknown>) => [i.id, i]))
+
+        const { data: quotes, error } = await supabase
+          .from('quotes')
+          .select('*')
+          .in('item_id', itemIds)
+          .or(`text.ilike.%${query}%,note.ilike.%${query}%`)
+          .order('created_at', { ascending: false })
+        if (error) throw error
+
+        return (quotes ?? []).map((q: Record<string, unknown>) => {
+          const item = itemMap.get(q.item_id) as Record<string, unknown> | undefined
+          return {
+            ...q,
+            item_title: item?.title ?? '',
+            item_type: item?.item_type ?? '',
+            cover_path: item?.cover_path ?? null,
           }
-        )
-        const row = queryOne(db, 'SELECT last_insert_rowid() as id')
-        await persist()
-        return queryOne(db, 'SELECT * FROM quotes WHERE id = :id', { ':id': row?.id as number })
+        })
       },
+
+      insert: async (data: Record<string, unknown>) => {
+        const userId = await getUserId()
+        const { data: row, error } = await supabase
+          .from('quotes')
+          .insert({
+            user_id: userId,
+            item_id: data.item_id,
+            text: data.text,
+            page_number: data.page_number ?? null,
+            note: data.note ?? null,
+          })
+          .select()
+          .single()
+        if (error) throw error
+        return row
+      },
+
       update: async (id: number, data: Record<string, unknown>) => {
-        const db = await getDb()
-        const parts: string[] = []
-        const params: SqlParams = { ':id': id }
-        if (data.text !== undefined) { parts.push('text = :text'); params[':text'] = p(data.text) }
-        if (data.page_number !== undefined) { parts.push('page_number = :page_number'); params[':page_number'] = p(data.page_number) }
-        if (data.note !== undefined) { parts.push('note = :note'); params[':note'] = p(data.note) }
-        if (parts.length) {
-          db.run(`UPDATE quotes SET ${parts.join(', ')} WHERE id = :id`, params)
-          await persist()
-        }
+        const payload: Record<string, unknown> = {}
+        if (data.text !== undefined) payload.text = data.text
+        if (data.page_number !== undefined) payload.page_number = data.page_number
+        if (data.note !== undefined) payload.note = data.note
+        if (Object.keys(payload).length === 0) return
+        const { error } = await supabase.from('quotes').update(payload).eq('id', id)
+        if (error) throw error
       },
+
       delete: async (id: number) => {
-        const db = await getDb()
-        db.run('DELETE FROM quotes WHERE id = :id', { ':id': id })
-        await persist()
+        const { error } = await supabase.from('quotes').delete().eq('id', id)
+        if (error) throw error
       }
     },
 
     settings: {
       get: async (key: string) => {
-        const db = await getDb()
-        const row = queryOne(db, 'SELECT value FROM settings WHERE key = :key', { ':key': key })
-        return (row?.value as string) ?? ''
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return ''
+        const { data } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('user_id', user.id)
+          .eq('key', key)
+          .maybeSingle()
+        return (data?.value as string) ?? ''
       },
       set: async (key: string, value: string) => {
-        const db = await getDb()
-        db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (:key, :value)', {
-          ':key': key, ':value': value
-        })
-        await persist()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        await supabase.from('settings').upsert({ user_id: user.id, key, value })
       }
     },
 
@@ -479,26 +374,45 @@ export async function setupWebApi(): Promise<void> {
     },
 
     image: {
-      pick: async (): Promise<string | null> => pickImageFile(),
-      saveCropped: async (base64Data: string, _fileName: string): Promise<string> => base64Data,
+      pick: async (): Promise<string | null> => {
+        const dataUrl = await pickImageRaw()
+        if (!dataUrl) return null
+        try {
+          const userId = await getUserId()
+          return await uploadCover(dataUrl, userId)
+        } catch {
+          return dataUrl // 비로그인 fallback
+        }
+      },
+      saveCropped: async (base64Data: string, _fileName: string): Promise<string> => {
+        try {
+          const userId = await getUserId()
+          return await uploadCover(base64Data, userId)
+        } catch {
+          return base64Data // fallback
+        }
+      },
       copyLocal: async (srcPath: string): Promise<string> => srcPath
     },
 
     db: {
       backup: async () => {
-        const db = await getDb()
-        const rows = queryAll(db, 'SELECT * FROM items')
-        const quotes = queryAll(db, 'SELECT * FROM quotes')
-        const json = JSON.stringify({ items: rows, quotes }, null, 2)
+        const userId = await getUserId()
+        const [{ data: items }, { data: quotes }] = await Promise.all([
+          supabase.from('items').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
+          supabase.from('quotes').select('*').eq('user_id', userId).order('created_at', { ascending: true })
+        ])
+        const json = JSON.stringify({ items: items ?? [], quotes: quotes ?? [] }, null, 2)
         const blob = new Blob([json], { type: 'application/json' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `bookvault-backup-${new Date().toISOString().slice(0, 10)}.json`
+        a.download = `moabom-backup-${new Date().toISOString().slice(0, 10)}.json`
         a.click()
         URL.revokeObjectURL(url)
         return { success: true }
       },
+
       restore: async () => {
         return new Promise<{ success: boolean }>((resolve) => {
           const input = document.createElement('input')
@@ -509,56 +423,67 @@ export async function setupWebApi(): Promise<void> {
             if (!file) { resolve({ success: false }); return }
             try {
               const text = await file.text()
-              const { items, quotes } = JSON.parse(text) as { items: Record<string, unknown>[]; quotes: Record<string, unknown>[] }
-              const restoreDb = await getDb()
-              // 복원 실패 시 롤백할 수 있도록 현재 DB 스냅샷 저장
-              const snapshot = restoreDb.export()
-              try {
-                restoreDb.run('DELETE FROM quotes')
-                restoreDb.run('DELETE FROM items')
-                for (const item of items) {
-                  restoreDb.run(
-                    `INSERT INTO items (id, title, original_title, item_type, cover_path, backdrop_path, author, publisher,
-                      isbn, page_count, current_page, director, platform, tmdb_id, google_books_id, genre, year,
-                      overview, rating, status, review, read_date, created_at, updated_at)
-                     VALUES (:id, :title, :original_title, :item_type, :cover_path, :backdrop_path, :author, :publisher,
-                      :isbn, :page_count, :current_page, :director, :platform, :tmdb_id, :google_books_id, :genre, :year,
-                      :overview, :rating, :status, :review, :read_date,
-                      COALESCE(:created_at, datetime('now')), COALESCE(:updated_at, datetime('now')))`,
-                    {
-                      ':id': p(item.id), ':title': p(item.title ?? ''), ':original_title': p(item.original_title),
-                      ':item_type': p(item.item_type ?? 'book'), ':cover_path': p(item.cover_path),
-                      ':backdrop_path': p(item.backdrop_path), ':author': p(item.author),
-                      ':publisher': p(item.publisher), ':isbn': p(item.isbn),
-                      ':page_count': p(item.page_count), ':current_page': p(item.current_page ?? 0),
-                      ':director': p(item.director), ':platform': p(item.platform),
-                      ':tmdb_id': p(item.tmdb_id), ':google_books_id': p(item.google_books_id),
-                      ':genre': p(item.genre), ':year': p(item.year), ':overview': p(item.overview),
-                      ':rating': p(item.rating), ':status': p(item.status ?? 'want'),
-                      ':review': p(item.review), ':read_date': p(item.read_date),
-                      ':created_at': p(item.created_at), ':updated_at': p(item.updated_at)
-                    }
-                  )
-                }
-                for (const q of quotes) {
-                  restoreDb.run(
-                    "INSERT INTO quotes (id, item_id, text, page_number, note, created_at) VALUES (:id, :item_id, :text, :page_number, :note, COALESCE(:created_at, datetime('now')))",
-                    { ':id': p(q.id), ':item_id': p(q.item_id), ':text': p(q.text), ':page_number': p(q.page_number), ':note': p(q.note), ':created_at': p(q.created_at) }
-                  )
-                }
-                await persist()
-                db = null
-                resolve({ success: true })
-              } catch (innerErr) {
-                // 복원 실패 시 스냅샷으로 롤백
-                const SQL = await loadSqlJs()
-                db = new SQL.Database(snapshot)
-                await persist()
-                console.error('복원 실패, 롤백 완료:', innerErr)
-                resolve({ success: false })
+              const { items, quotes } = JSON.parse(text) as {
+                items: Record<string, unknown>[]
+                quotes: Record<string, unknown>[]
               }
-            } catch (outerErr) {
-              console.error('파일 파싱 실패:', outerErr)
+              const userId = await getUserId()
+
+              // 기존 데이터 삭제
+              await supabase.from('quotes').delete().eq('user_id', userId)
+              await supabase.from('items').delete().eq('user_id', userId)
+
+              // 아이템 삽입 + ID 매핑 (old id → new id)
+              const idMap = new Map<number, number>()
+              for (const item of items) {
+                const oldId = item.id as number
+                const { data: newItem } = await supabase
+                  .from('items')
+                  .insert({
+                    user_id: userId,
+                    title: item.title ?? '',
+                    original_title: item.original_title ?? null,
+                    item_type: item.item_type ?? 'book',
+                    cover_path: item.cover_path ?? null,
+                    backdrop_path: item.backdrop_path ?? null,
+                    author: item.author ?? null,
+                    publisher: item.publisher ?? null,
+                    isbn: item.isbn ?? null,
+                    page_count: item.page_count ?? null,
+                    current_page: item.current_page ?? 0,
+                    director: item.director ?? null,
+                    platform: item.platform ?? null,
+                    tmdb_id: item.tmdb_id ?? null,
+                    google_books_id: item.google_books_id ?? null,
+                    genre: item.genre ?? null,
+                    year: item.year ?? null,
+                    overview: item.overview ?? null,
+                    rating: item.rating ?? null,
+                    status: item.status ?? 'want',
+                    review: item.review ?? null,
+                    read_date: item.read_date ?? null,
+                  })
+                  .select('id')
+                  .single()
+                if (newItem) idMap.set(oldId, (newItem as Record<string, unknown>).id as number)
+              }
+
+              // 명언 삽입 (새 item_id로 매핑)
+              for (const q of quotes) {
+                const newItemId = idMap.get(q.item_id as number)
+                if (!newItemId) continue
+                await supabase.from('quotes').insert({
+                  user_id: userId,
+                  item_id: newItemId,
+                  text: q.text,
+                  page_number: q.page_number ?? null,
+                  note: q.note ?? null,
+                })
+              }
+
+              resolve({ success: true })
+            } catch (err) {
+              console.error('복원 실패:', err)
               resolve({ success: false })
             }
           }
@@ -568,6 +493,5 @@ export async function setupWebApi(): Promise<void> {
     }
   }
 
-  // window.api로 노출
   ;(window as unknown as Record<string, unknown>).api = api
 }

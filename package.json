@@ -13,6 +13,7 @@
     "build:web": "vite build --config vite.web.config.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "axios": "^1.6.7",
     "sql.js": "^1.11.0"
   },

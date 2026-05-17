@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/index.css'
 import { setupWebApi } from './api/webApi'
+import { supabase } from './api/supabaseClient'
+import AuthScreen from './components/AuthScreen'
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
@@ -41,12 +43,29 @@ async function bootstrap() {
   root.render(<LoadingScreen />)
 
   try {
+    // window.api 설정 (Supabase 기반)
     await setupWebApi()
-    root.render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>
-    )
+
+    // 현재 로그인 세션 확인
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session) {
+      // 이미 로그인 → 앱 바로 렌더
+      root.render(<React.StrictMode><App /></React.StrictMode>)
+    } else {
+      // 비로그인 → 로그인 화면
+      root.render(<AuthScreen />)
+    }
+
+    // 로그인/로그아웃 상태 변화 감지
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        root.render(<React.StrictMode><App /></React.StrictMode>)
+      } else if (event === 'SIGNED_OUT') {
+        root.render(<AuthScreen />)
+      }
+    })
+
   } catch (e) {
     console.error('웹 API 초기화 실패:', e)
     const msg = e instanceof Error ? e.message : String(e)
