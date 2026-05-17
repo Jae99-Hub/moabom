@@ -1,3 +1,4 @@
+import React from 'react'
 import { create } from 'zustand'
 import { Item, ItemFormData, FilterState, Quote, QuoteSearchResult, ItemType, ItemStatus } from '../types'
 
@@ -195,23 +196,34 @@ export const useStore = create<AppState>((set, get) => ({
   selectAllChecked: (ids) => set({ checkedItems: ids }),
   deleteCheckedItems: async () => {
     const { checkedItems } = get()
-    try {
-      for (const id of checkedItems) {
+    const failed: number[] = []
+    for (const id of checkedItems) {
+      try {
         await window.api.items.delete(id)
+      } catch {
+        failed.push(id)
       }
-    } finally {
-      await get().fetchAll()
-      set({ checkedItems: [], selectionMode: false, selectedId: null })
+    }
+    await get().fetchAll()
+    set({ checkedItems: failed, selectionMode: failed.length > 0, selectedId: null })
+    if (failed.length > 0) {
+      alert(`${failed.length}개 항목 삭제에 실패했습니다. 다시 시도해주세요.`)
     }
   }
 }))
 
 export function useFilteredItems(): Item[] {
   const { itemList, filters, quoteSearchResults } = useStore()
-  const quoteItemIds = quoteSearchResults.length > 0
-    ? new Set(quoteSearchResults.map((q) => q.item_id))
-    : undefined
-  return applyFilters(itemList, filters, quoteItemIds)
+  const quoteItemIds = React.useMemo(
+    () => quoteSearchResults.length > 0
+      ? new Set(quoteSearchResults.map((q) => q.item_id))
+      : undefined,
+    [quoteSearchResults]
+  )
+  return React.useMemo(
+    () => applyFilters(itemList, filters, quoteItemIds),
+    [itemList, filters, quoteItemIds]
+  )
 }
 
 export function useAllGenres(): string[] {

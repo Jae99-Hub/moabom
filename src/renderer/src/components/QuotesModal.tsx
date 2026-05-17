@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
 import { Quote } from '../types'
 
@@ -15,24 +15,33 @@ export default function QuotesModal() {
   const [newPage, setNewPage] = useState('')
   const [newNote, setNewNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [mutError, setMutError] = useState<string | null>(null)
+
+  // 레이스 컨디션 방지: 마지막 reload 요청만 반영
+  const reloadSeqRef = useRef(0)
 
   useEffect(() => {
     if (isQuotesModalOpen && selectedId) {
-      window.api.quotes.getByItemId(selectedId).then(setQuotes)
+      window.api.quotes.getByItemId(selectedId).then(setQuotes).catch(() => {})
     }
   }, [isQuotesModalOpen, selectedId])
 
   const reload = async () => {
-    if (selectedId) {
+    if (!selectedId) return
+    const seq = ++reloadSeqRef.current
+    try {
       const q = await window.api.quotes.getByItemId(selectedId)
-      setQuotes(q)
-      bumpQuotesVersion()
-    }
+      if (seq === reloadSeqRef.current) {
+        setQuotes(q)
+        bumpQuotesVersion()
+      }
+    } catch { /* 조용히 무시 */ }
   }
 
   const handleAdd = async () => {
     if (!newText.trim() || !selectedId) return
     setIsSaving(true)
+    setMutError(null)
     try {
       await window.api.quotes.insert({
         item_id: selectedId,
@@ -44,6 +53,8 @@ export default function QuotesModal() {
       setNewPage('')
       setNewNote('')
       await reload()
+    } catch {
+      setMutError('추가에 실패했습니다. 다시 시도해주세요.')
     } finally {
       setIsSaving(false)
     }
@@ -54,22 +65,36 @@ export default function QuotesModal() {
     setEditText(q.text)
     setEditPage(q.page_number ? String(q.page_number) : '')
     setEditNote(q.note ?? '')
+    setMutError(null)
   }
 
   const handleSaveEdit = async (id: number) => {
-    await window.api.quotes.update(id, {
-      text: editText.trim(),
-      page_number: editPage ? parseInt(editPage) : null,
-      note: editNote.trim() || null
-    })
-    setEditingId(null)
-    await reload()
+    setIsSaving(true)
+    setMutError(null)
+    try {
+      await window.api.quotes.update(id, {
+        text: editText.trim(),
+        page_number: editPage ? parseInt(editPage) : null,
+        note: editNote.trim() || null
+      })
+      setEditingId(null)
+      await reload()
+    } catch {
+      setMutError('저장에 실패했습니다. 다시 시도해주세요.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('이 명언을 삭제할까요?')) return
-    await window.api.quotes.delete(id)
-    await reload()
+    setMutError(null)
+    try {
+      await window.api.quotes.delete(id)
+      await reload()
+    } catch {
+      setMutError('삭제에 실패했습니다. 다시 시도해주세요.')
+    }
   }
 
   if (!isQuotesModalOpen) return null
@@ -89,6 +114,11 @@ export default function QuotesModal() {
         </div>
 
         <div className="modal-body">
+          {mutError && (
+            <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontSize: 12, color: 'var(--danger)', marginBottom: 12 }}>
+              {mutError}
+            </div>
+          )}
           {/* 새 명언 추가 */}
           <div className="add-quote-form">
             <div className="form-group">
@@ -169,7 +199,7 @@ export default function QuotesModal() {
                       </div>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                         <button className="btn-text" onClick={() => setEditingId(null)}>취소</button>
-                        <button className="btn-primary" style={{ height: 30, fontSize: 12, padding: '0 12px' }} onClick={() => handleSaveEdit(q.id)}>저장</button>
+                        <button className="btn-primary" style={{ height: 30, fontSize: 12, padding: '0 12px' }} onClick={() => handleSaveEdit(q.id)} disabled={isSaving}>{isSaving ? '저장 중...' : '저장'}</button>
                       </div>
                     </>
                   ) : (

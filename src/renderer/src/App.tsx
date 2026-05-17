@@ -9,32 +9,40 @@ import AddItemModal from './components/AddItemModal'
 import QuotesModal from './components/QuotesModal'
 import SettingsModal from './components/SettingsModal'
 import SelectionBar from './components/SelectionBar'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 export default function App() {
   const { fetchAll, theme } = useStore()
 
+  // 테마는 변경될 때마다 즉시 반영
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  // 앱 마운트 시 데이터 로드
+  useEffect(() => {
     fetchAll()
   }, [])
 
   return (
-    <div className="app">
-      <Header />
-      <div className="app-body">
-        <Sidebar />
-        <div className="content-wrapper">
-          <div className="main-content">
-            <FilterBar />
-            <ItemGrid />
-            <SelectionBar />
+    <ErrorBoundary>
+      <div className="app">
+        <Header />
+        <div className="app-body">
+          <Sidebar />
+          <div className="content-wrapper">
+            <div className="main-content">
+              <FilterBar />
+              <ItemGrid />
+              <SelectionBar />
+            </div>
           </div>
         </div>
+        <DetailModal />
+        <AddItemModal />
+        <QuotesModal />
+        <SettingsModal />
       </div>
-      <DetailModal />
-      <AddItemModal />
-      <QuotesModal />
-      <SettingsModal />
-    </div>
+    </ErrorBoundary>
   )
 }

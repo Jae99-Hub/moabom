@@ -49,8 +49,9 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('image:pick', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    const result = await dialog.showOpenDialog(win!, {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
       title: '이미지 선택',
       filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
       properties: ['openFile']
@@ -79,8 +80,9 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('db:backup', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    const result = await dialog.showSaveDialog(win!, {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+    if (!win) return { success: false }
+    const result = await dialog.showSaveDialog(win, {
       title: '데이터 백업',
       defaultPath: `BookVault-backup-${new Date().toISOString().slice(0, 10)}.db`,
       filters: [{ name: 'Database', extensions: ['db'] }]
@@ -92,8 +94,9 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('db:restore', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    const result = await dialog.showOpenDialog(win!, {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+    if (!win) return { success: false }
+    const result = await dialog.showOpenDialog(win, {
       title: '데이터 복원',
       filters: [{ name: 'Database', extensions: ['db'] }],
       properties: ['openFile']
@@ -101,7 +104,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     if (result.canceled || !result.filePaths[0]) return { success: false }
     const dbPath = join(app.getPath('userData'), 'bookvault.db')
     copyFileSync(result.filePaths[0], dbPath)
-    await reloadDatabase()
+    await reloadDatabase() // 기존 DB 닫고 새 파일로 재오픈
     return { success: true }
   })
 }

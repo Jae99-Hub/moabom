@@ -7,8 +7,9 @@ export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number
   const { deleteItem, openAddModal, selectItem } = useStore()
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x, y })
+  const [visible, setVisible] = useState(false)
 
-  // 화면 가장자리 벗어남 방지
+  // 화면 가장자리 벗어남 방지 + 위치 확정 후 보이기 (깜빡임 방지)
   useEffect(() => {
     if (!ref.current) return
     const { width, height } = ref.current.getBoundingClientRect()
@@ -16,6 +17,7 @@ export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number
       x: x + width > window.innerWidth ? x - width : x,
       y: y + height > window.innerHeight ? y - height : y,
     })
+    setVisible(true)
   }, [x, y])
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number
     <div
       ref={ref}
       className="card-menu"
-      style={{ position: 'fixed', top: pos.y, left: pos.x }}
+      style={{ position: 'fixed', top: pos.y, left: pos.x, visibility: visible ? 'visible' : 'hidden' }}
       onClick={(e) => e.stopPropagation()}
     >
       <button className="card-menu-item" onClick={handleEdit}>

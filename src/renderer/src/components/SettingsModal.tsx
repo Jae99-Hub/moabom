@@ -31,10 +31,14 @@ export default function SettingsModal() {
   }, [isSettingsOpen])
 
   const handleSave = async () => {
-    await window.api.settings.set('tmdb_api_key', tmdbKey.trim())
-    await window.api.settings.set('google_books_api_key', googleKey.trim())
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    try {
+      await window.api.settings.set('tmdb_api_key', tmdbKey.trim())
+      await window.api.settings.set('google_books_api_key', googleKey.trim())
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      alert('설정 저장에 실패했습니다. 다시 시도해주세요.')
+    }
   }
 
   const handleBackup = async () => {
@@ -58,13 +62,15 @@ export default function SettingsModal() {
 
   const handleSignOut = async () => {
     if (!window.confirm('로그아웃할까요?')) return
-    const { supabase } = await import('../api/supabaseClient')
+    const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
+    if (!isSupabaseConfigured || !supabase) return
     await supabase.auth.signOut()
     window.location.reload()
   }
 
   const handleSignIn = async () => {
-    const { supabase } = await import('../api/supabaseClient')
+    const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
+    if (!isSupabaseConfigured || !supabase) return
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } }

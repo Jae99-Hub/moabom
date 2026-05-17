@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useStore } from '../store/useStore'
 import { Item, ItemType } from '../types'
 
@@ -98,11 +98,11 @@ export default function Sidebar() {
   const { itemList, filters, setFilter, isSidebarOpen, closeSidebar, openSettings } = useStore()
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['book', 'movie', 'drama']))
 
-  const forests = {
+  const forests = useMemo(() => ({
     book:  buildForest(itemList, 'book'),
     movie: buildForest(itemList, 'movie'),
     drama: buildForest(itemList, 'drama')
-  }
+  }), [itemList])
 
   const toggle = (key: string) =>
     setExpanded((prev) => {

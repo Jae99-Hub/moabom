@@ -268,7 +268,7 @@ export default function DetailModal() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, filtered, isAddModalOpen])
+  }, [selectedId, filtered, isAddModalOpen, selectItem])
 
   if (!selected) return null
 

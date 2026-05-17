@@ -63,6 +63,13 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
 
   const onMouseUp = () => setDragging(false)
 
+  // 컨테이너 밖에서 마우스를 놓아도 드래그 해제
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setDragging(false)
+    document.addEventListener('mouseup', handleGlobalMouseUp)
+    return () => document.removeEventListener('mouseup', handleGlobalMouseUp)
+  }, [])
+
   const handleCrop = () => {
     if (!crop || !imgRef.current || crop.w < 10 || crop.h < 10) return
     const canvas = document.createElement('canvas')

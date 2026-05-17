@@ -292,9 +292,7 @@ export async function setupWebApi(): Promise<void> {
           return newItem
         }
         const userId = await getUserId()
-        const { data: row, error } = await supabase
-          .from('items')
-          .insert({
+        const insertPayload: Record<string, unknown> = {
             user_id: userId,
             title: data.title ?? '',
             original_title: data.original_title ?? null,
@@ -317,7 +315,12 @@ export async function setupWebApi(): Promise<void> {
             status: data.status ?? 'want',
             review: data.review ?? null,
             read_date: data.read_date ?? null,
-          })
+          }
+        // 마이그레이션 등 created_at이 명시된 경우 보존
+        if (data.created_at) insertPayload.created_at = data.created_at
+        const { data: row, error } = await supabase
+          .from('items')
+          .insert(insertPayload)
           .select()
           .single()
         if (error) throw error
@@ -594,11 +597,19 @@ export async function setupWebApi(): Promise<void> {
               }
 
               if (!(await isAuthenticated())) {
-                // 비로그인: localStorage에 덮어쓰기
+                // 비로그인: localStorage에 덮어쓰기 (유효성 검사 후)
+                if (!Array.isArray(items) || !Array.isArray(quotes)) {
+                  throw new Error('올바르지 않은 백업 파일 형식입니다.')
+                }
                 anonSave(ANON.items, items)
                 anonSave(ANON.quotes, quotes)
                 resolve({ success: true })
                 return
+              }
+
+              // 유효성 검사: 삭제 전 먼저 구조 확인 (데이터 손실 방지)
+              if (!Array.isArray(items) || !Array.isArray(quotes)) {
+                throw new Error('올바르지 않은 백업 파일 형식입니다. items/quotes 배열이 없습니다.')
               }
 
               const userId = await getUserId()
