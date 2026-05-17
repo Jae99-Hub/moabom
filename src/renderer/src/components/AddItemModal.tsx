@@ -381,7 +381,7 @@ export default function AddItemModal() {
               )}
             </div>
 
-            <div style={{ padding: '0 16px 8px' }}>
+            <div className="add-modal-url-wrap">
               <input
                 className="form-input"
                 style={{ fontSize: 11, height: 30 }}
