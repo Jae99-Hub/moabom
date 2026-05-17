@@ -2162,7 +2162,15 @@ body {
     flex: 1;
   }
   .add-modal-type-btns { flex-direction: row; gap: 6px; }
-  .add-modal-type-btn { padding: 7px 8px; font-size: 12px; flex: 1; justify-content: center; }
+  .add-modal-type-btn {
+    padding: 8px 4px;
+    font-size: 12px;
+    flex: 1;
+    justify-content: center;
+    white-space: nowrap;
+    gap: 4px;
+  }
+  .add-modal-type-btn .sidebar-type-dot { display: none; }
   .add-modal-summary { display: none; }
   .add-modal-body { padding: 12px 16px; }
   .add-modal-header { padding: 14px 16px 0; }
