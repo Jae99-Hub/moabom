@@ -38,10 +38,20 @@ const api = {
   }
 }
 
+// ── Google OAuth 브릿지 (Electron 전용) ───────────────────────────
+const authBridge = {
+  openExternal: (url: string) => ipcRenderer.invoke('auth:openExternal', url),
+  onCallback: (callback: (url: string) => void) => {
+    ipcRenderer.removeAllListeners('auth:callback')
+    ipcRenderer.on('auth:callback', (_event, url: string) => callback(url))
+  }
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
+    contextBridge.exposeInMainWorld('authBridge', authBridge)
   } catch (error) {
     console.error(error)
   }
@@ -50,4 +60,6 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   // @ts-ignore
   window.api = api
+  // @ts-ignore
+  window.authBridge = authBridge
 }

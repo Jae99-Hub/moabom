@@ -3,15 +3,38 @@ import { supabase } from '../api/supabaseClient'
 
 interface Props {
   onContinueAnonymous?: () => void
+  isElectron?: boolean
 }
 
-export default function AuthScreen({ onContinueAnonymous }: Props) {
+export default function AuthScreen({ onContinueAnonymous, isElectron }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const signInWithGoogle = async () => {
     setLoading(true)
     setError('')
+
+    if (isElectron) {
+      // Electron: skipBrowserRedirect로 URL만 받아서 시스템 브라우저로 열기
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: 'moabom://auth-callback',
+          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' }
+        }
+      })
+      if (error) { setError(error.message); setLoading(false); return }
+      if (data.url) {
+        const bridge = (window as unknown as { authBridge?: { openExternal: (url: string) => Promise<void> } }).authBridge
+        await bridge?.openExternal(data.url)
+      }
+      // 로그인 완료는 main process → auth:callback IPC로 처리됨
+      setLoading(false)
+      return
+    }
+
+    // 웹: 기존 방식
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {

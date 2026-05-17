@@ -2,6 +2,12 @@
   appId: "com.bookvault.app",
   productName: "BookVault",
   copyright: "Copyright © 2024",
+  protocols: [
+    {
+      name: "모아봄",
+      schemes: ["moabom"]
+    }
+  ],
   directories: {
     buildResources: "build"
   },

@@ -4,8 +4,42 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './database'
 import { registerIpcHandlers } from './ipc'
 
+// ── Custom protocol (moabom://) for Google OAuth callback ─────────
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('moabom', process.execPath, [process.argv[1]])
+  }
+} else {
+  app.setAsDefaultProtocolClient('moabom')
+}
+
+let mainWindow: BrowserWindow | null = null
+
+function handleAuthUrl(url: string) {
+  if (mainWindow && url.startsWith('moabom://')) {
+    mainWindow.webContents.send('auth:callback', url)
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+}
+
+// ── Single instance lock (Windows: 프로토콜 리다이렉트 처리) ──────
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    const url = commandLine.find((arg) => arg.startsWith('moabom://'))
+    if (url) handleAuthUrl(url)
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
+
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1400,
     height: 860,
     minWidth: 1000,
@@ -20,7 +54,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow!.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -40,6 +74,17 @@ app.whenReady().then(async () => {
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  // Mac: 프로토콜 URL 처리
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    handleAuthUrl(url)
+  })
+
+  // IPC: 시스템 브라우저로 OAuth URL 열기
+  ipcMain.handle('auth:openExternal', async (_event, url: string) => {
+    await shell.openExternal(url)
   })
 
   await initDatabase()
