@@ -126,7 +126,7 @@ function ItemRow({ item }: { item: Item }) {
                 {g.split('>').map(s => s.trim()).pop()}
               </span>
             ))
-          : null}
+          : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}
       </div>
 
       <div className="list-row-right">
