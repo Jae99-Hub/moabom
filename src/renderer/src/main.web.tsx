@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/index.css'
 import { setupWebApi } from './api/webApi'
-import { supabase } from './api/supabaseClient'
+import { supabase, isSupabaseConfigured } from './api/supabaseClient'
 import AuthScreen from './components/AuthScreen'
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
@@ -39,8 +39,31 @@ function ErrorScreen({ message }: { message: string }) {
   )
 }
 
+function SetupScreen() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', gap: 12, background: 'var(--bg-primary, #0f0f0f)', color: 'var(--text-primary, #e8e8e8)',
+      padding: '0 24px', textAlign: 'center'
+    }}>
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.5 }}>
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+      <p style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>모아봄</p>
+      <p style={{ fontSize: 13, color: '#f87171', margin: 0 }}>Supabase 환경변수가 설정되지 않았습니다.</p>
+      <p style={{ fontSize: 12, opacity: 0.5, margin: 0 }}>Netlify 환경변수에 VITE_SUPABASE_URL과 VITE_SUPABASE_ANON_KEY를 설정해주세요.</p>
+    </div>
+  )
+}
+
 async function bootstrap() {
   root.render(<LoadingScreen />)
+
+  // Supabase 환경변수 없으면 안내 화면
+  if (!isSupabaseConfigured) {
+    root.render(<SetupScreen />)
+    return
+  }
 
   try {
     // window.api 설정 (Supabase 기반)
