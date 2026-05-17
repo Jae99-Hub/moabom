@@ -63,6 +63,14 @@ export default function SettingsModal() {
     window.location.reload()
   }
 
+  const handleSignIn = async () => {
+    const { supabase } = await import('../api/supabaseClient')
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } }
+    })
+  }
+
   if (!isSettingsOpen) return null
 
   return (
@@ -78,6 +86,22 @@ export default function SettingsModal() {
         </div>
 
         <div className="settings-modal-body">
+          {/* 비로그인 상태 (웹 전용) */}
+          {isWebEnv && !userEmail && !userName && (
+            <>
+              <div className="settings-anon-row">
+                <div className="settings-anon-info">
+                  <div className="settings-group-label">비로그인 상태</div>
+                  <div className="settings-group-desc">데이터가 이 브라우저에만 저장됩니다</div>
+                </div>
+                <button className="btn-secondary settings-signout-btn" onClick={handleSignIn}>
+                  Google 로그인
+                </button>
+              </div>
+              <div className="settings-divider" />
+            </>
+          )}
+
           {/* 로그인 유저 정보 (웹 전용) */}
           {isWebEnv && (userEmail || userName) && (
             <>

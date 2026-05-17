@@ -1,11 +1,40 @@
 /**
  * 웹(브라우저) 환경에서 window.api를 구현합니다.
- * Supabase를 데이터베이스/인증/스토리지 백엔드로 사용합니다.
+ * - 로그인 시: Supabase (PostgreSQL + Storage)
+ * - 비로그인 시: localStorage
  */
 
-import { supabase } from './supabaseClient'
+import { supabase, isSupabaseConfigured } from './supabaseClient'
 
-// ── 현재 유저 ID 조회 ─────────────────────────────────────────────
+// ── Anonymous localStorage 헬퍼 ──────────────────────────────────
+const ANON = {
+  items:   'moabom_items',
+  quotes:  'moabom_quotes',
+  settings:'moabom_settings',
+  nextId:  'moabom_next_id',
+}
+
+function anonLoad<T>(key: string, def: T): T {
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? def } catch { return def }
+}
+function anonSave(key: string, val: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(val)) } catch {}
+}
+function anonNextId(): number {
+  const id = anonLoad<number>(ANON.nextId, 0) + 1
+  anonSave(ANON.nextId, id)
+  return id
+}
+
+async function isAuthenticated(): Promise<boolean> {
+  if (!isSupabaseConfigured) return false
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    return !!user
+  } catch { return false }
+}
+
+// ── 현재 유저 ID 조회 ────────────────────────────────────────────
 async function getUserId(): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('로그인이 필요합니다')
@@ -18,6 +47,10 @@ const DEFAULT_TMDB_KEY = '2231c307ea12a6d255fca6d45014212b'
 
 async function getApiKey(settingKey: string, defaultKey: string): Promise<string> {
   try {
+    if (!(await isAuthenticated())) {
+      const settings = anonLoad<Record<string, string>>(ANON.settings, {})
+      return settings[settingKey]?.trim() || defaultKey
+    }
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return defaultKey
     const { data } = await supabase
@@ -148,7 +181,6 @@ function pickImageRaw(): Promise<string | null> {
       const reader = new FileReader()
       reader.onload = () => {
         const dataUrl = reader.result as string
-        // 최대 1200px 리사이즈
         const img = new Image()
         img.onload = () => {
           const MAX = 1200
@@ -184,11 +216,11 @@ async function uploadCover(dataUrl: string, userId: string): Promise<string> {
     const { data, error } = await supabase.storage
       .from('covers')
       .upload(path, blob, { contentType: blob.type, upsert: false })
-    if (error) return dataUrl // 업로드 실패 시 base64 fallback
+    if (error) return dataUrl
     const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(data.path)
     return publicUrl
   } catch {
-    return dataUrl // fallback
+    return dataUrl
   }
 }
 
@@ -197,6 +229,10 @@ export async function setupWebApi(): Promise<void> {
   const api = {
     items: {
       getAll: async () => {
+        if (!(await isAuthenticated())) {
+          return anonLoad<Record<string, unknown>[]>(ANON.items, [])
+            .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+        }
         const userId = await getUserId()
         const { data, error } = await supabase
           .from('items')
@@ -208,6 +244,10 @@ export async function setupWebApi(): Promise<void> {
       },
 
       getById: async (id: number) => {
+        if (!(await isAuthenticated())) {
+          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
+          return items.find((i) => i.id === id) ?? null
+        }
         const { data, error } = await supabase
           .from('items')
           .select('*')
@@ -218,6 +258,39 @@ export async function setupWebApi(): Promise<void> {
       },
 
       insert: async (data: Record<string, unknown>) => {
+        if (!(await isAuthenticated())) {
+          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
+          const now = new Date().toISOString()
+          const newItem: Record<string, unknown> = {
+            id: anonNextId(),
+            title: data.title ?? '',
+            original_title: data.original_title ?? null,
+            item_type: data.item_type ?? 'book',
+            cover_path: data.cover_path ?? null,
+            backdrop_path: data.backdrop_path ?? null,
+            author: data.author ?? null,
+            publisher: data.publisher ?? null,
+            isbn: data.isbn ?? null,
+            page_count: data.page_count ?? null,
+            current_page: data.current_page ?? 0,
+            director: data.director ?? null,
+            platform: data.platform ?? null,
+            tmdb_id: data.tmdb_id ?? null,
+            google_books_id: data.google_books_id ?? null,
+            genre: data.genre ?? null,
+            year: data.year ?? null,
+            overview: data.overview ?? null,
+            rating: data.rating ?? null,
+            status: data.status ?? 'want',
+            review: data.review ?? null,
+            read_date: data.read_date ?? null,
+            created_at: now,
+            updated_at: now,
+          }
+          items.unshift(newItem)
+          anonSave(ANON.items, items)
+          return newItem
+        }
         const userId = await getUserId()
         const { data: row, error } = await supabase
           .from('items')
@@ -252,6 +325,23 @@ export async function setupWebApi(): Promise<void> {
       },
 
       update: async (id: number, data: Record<string, unknown>) => {
+        if (!(await isAuthenticated())) {
+          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
+          const idx = items.findIndex((i) => i.id === id)
+          if (idx === -1) return
+          const allowed = [
+            'title', 'original_title', 'item_type', 'cover_path', 'backdrop_path',
+            'author', 'publisher', 'isbn', 'page_count', 'current_page',
+            'director', 'platform', 'tmdb_id', 'google_books_id', 'genre',
+            'year', 'overview', 'rating', 'status', 'review', 'read_date'
+          ]
+          for (const key of allowed) {
+            if (key in data) items[idx][key] = data[key] ?? null
+          }
+          items[idx].updated_at = new Date().toISOString()
+          anonSave(ANON.items, items)
+          return
+        }
         const allowed = [
           'title', 'original_title', 'item_type', 'cover_path', 'backdrop_path',
           'author', 'publisher', 'isbn', 'page_count', 'current_page',
@@ -267,6 +357,14 @@ export async function setupWebApi(): Promise<void> {
       },
 
       delete: async (id: number) => {
+        if (!(await isAuthenticated())) {
+          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
+          anonSave(ANON.items, items.filter((i) => i.id !== id))
+          // 관련 quotes도 삭제
+          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+          anonSave(ANON.quotes, quotes.filter((q) => q.item_id !== id))
+          return
+        }
         const { error } = await supabase.from('items').delete().eq('id', id)
         if (error) throw error
       }
@@ -274,6 +372,12 @@ export async function setupWebApi(): Promise<void> {
 
     quotes: {
       getByItemId: async (itemId: number) => {
+        if (!(await isAuthenticated())) {
+          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+          return quotes
+            .filter((q) => q.item_id === itemId)
+            .sort((a, b) => (Number(a.page_number ?? 0) - Number(b.page_number ?? 0)))
+        }
         const { data, error } = await supabase
           .from('quotes')
           .select('*')
@@ -284,8 +388,19 @@ export async function setupWebApi(): Promise<void> {
       },
 
       search: async (query: string) => {
+        if (!(await isAuthenticated())) {
+          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
+          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+          const itemMap = new Map(items.map((i) => [i.id, i]))
+          const q = query.toLowerCase()
+          return quotes
+            .filter((qt) => String(qt.text ?? '').toLowerCase().includes(q) || String(qt.note ?? '').toLowerCase().includes(q))
+            .map((qt) => {
+              const item = itemMap.get(qt.item_id) as Record<string, unknown> | undefined
+              return { ...qt, item_title: item?.title ?? '', item_type: item?.item_type ?? '', cover_path: item?.cover_path ?? null }
+            })
+        }
         const userId = await getUserId()
-        // 유저의 아이템 목록 먼저 조회
         const { data: userItems } = await supabase
           .from('items')
           .select('id, title, item_type, cover_path')
@@ -314,6 +429,20 @@ export async function setupWebApi(): Promise<void> {
       },
 
       insert: async (data: Record<string, unknown>) => {
+        if (!(await isAuthenticated())) {
+          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+          const newQuote: Record<string, unknown> = {
+            id: anonNextId(),
+            item_id: data.item_id,
+            text: data.text,
+            page_number: data.page_number ?? null,
+            note: data.note ?? null,
+            created_at: new Date().toISOString(),
+          }
+          quotes.push(newQuote)
+          anonSave(ANON.quotes, quotes)
+          return newQuote
+        }
         const userId = await getUserId()
         const { data: row, error } = await supabase
           .from('quotes')
@@ -331,6 +460,16 @@ export async function setupWebApi(): Promise<void> {
       },
 
       update: async (id: number, data: Record<string, unknown>) => {
+        if (!(await isAuthenticated())) {
+          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+          const idx = quotes.findIndex((q) => q.id === id)
+          if (idx === -1) return
+          if (data.text !== undefined) quotes[idx].text = data.text
+          if (data.page_number !== undefined) quotes[idx].page_number = data.page_number
+          if (data.note !== undefined) quotes[idx].note = data.note
+          anonSave(ANON.quotes, quotes)
+          return
+        }
         const payload: Record<string, unknown> = {}
         if (data.text !== undefined) payload.text = data.text
         if (data.page_number !== undefined) payload.page_number = data.page_number
@@ -341,6 +480,11 @@ export async function setupWebApi(): Promise<void> {
       },
 
       delete: async (id: number) => {
+        if (!(await isAuthenticated())) {
+          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+          anonSave(ANON.quotes, quotes.filter((q) => q.id !== id))
+          return
+        }
         const { error } = await supabase.from('quotes').delete().eq('id', id)
         if (error) throw error
       }
@@ -348,6 +492,10 @@ export async function setupWebApi(): Promise<void> {
 
     settings: {
       get: async (key: string) => {
+        if (!(await isAuthenticated())) {
+          const settings = anonLoad<Record<string, string>>(ANON.settings, {})
+          return settings[key] ?? ''
+        }
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return ''
         const { data } = await supabase
@@ -359,6 +507,12 @@ export async function setupWebApi(): Promise<void> {
         return (data?.value as string) ?? ''
       },
       set: async (key: string, value: string) => {
+        if (!(await isAuthenticated())) {
+          const settings = anonLoad<Record<string, string>>(ANON.settings, {})
+          settings[key] = value
+          anonSave(ANON.settings, settings)
+          return
+        }
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
         await supabase.from('settings').upsert({ user_id: user.id, key, value })
@@ -377,19 +531,22 @@ export async function setupWebApi(): Promise<void> {
       pick: async (): Promise<string | null> => {
         const dataUrl = await pickImageRaw()
         if (!dataUrl) return null
+        // 비로그인: data URL 그대로 반환 (localStorage에 저장됨)
+        if (!(await isAuthenticated())) return dataUrl
         try {
           const userId = await getUserId()
           return await uploadCover(dataUrl, userId)
         } catch {
-          return dataUrl // 비로그인 fallback
+          return dataUrl
         }
       },
       saveCropped: async (base64Data: string, _fileName: string): Promise<string> => {
+        if (!(await isAuthenticated())) return base64Data
         try {
           const userId = await getUserId()
           return await uploadCover(base64Data, userId)
         } catch {
-          return base64Data // fallback
+          return base64Data
         }
       },
       copyLocal: async (srcPath: string): Promise<string> => srcPath
@@ -397,12 +554,20 @@ export async function setupWebApi(): Promise<void> {
 
     db: {
       backup: async () => {
-        const userId = await getUserId()
-        const [{ data: items }, { data: quotes }] = await Promise.all([
-          supabase.from('items').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
-          supabase.from('quotes').select('*').eq('user_id', userId).order('created_at', { ascending: true })
-        ])
-        const json = JSON.stringify({ items: items ?? [], quotes: quotes ?? [] }, null, 2)
+        let items: unknown[], quotes: unknown[]
+        if (!(await isAuthenticated())) {
+          items = anonLoad<unknown[]>(ANON.items, [])
+          quotes = anonLoad<unknown[]>(ANON.quotes, [])
+        } else {
+          const userId = await getUserId()
+          const [{ data: i }, { data: q }] = await Promise.all([
+            supabase.from('items').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
+            supabase.from('quotes').select('*').eq('user_id', userId).order('created_at', { ascending: true })
+          ])
+          items = i ?? []
+          quotes = q ?? []
+        }
+        const json = JSON.stringify({ items, quotes }, null, 2)
         const blob = new Blob([json], { type: 'application/json' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -427,13 +592,19 @@ export async function setupWebApi(): Promise<void> {
                 items: Record<string, unknown>[]
                 quotes: Record<string, unknown>[]
               }
-              const userId = await getUserId()
 
-              // 기존 데이터 삭제
+              if (!(await isAuthenticated())) {
+                // 비로그인: localStorage에 덮어쓰기
+                anonSave(ANON.items, items)
+                anonSave(ANON.quotes, quotes)
+                resolve({ success: true })
+                return
+              }
+
+              const userId = await getUserId()
               await supabase.from('quotes').delete().eq('user_id', userId)
               await supabase.from('items').delete().eq('user_id', userId)
 
-              // 아이템 삽입 + ID 매핑 (old id → new id)
               const idMap = new Map<number, number>()
               for (const item of items) {
                 const oldId = item.id as number
@@ -468,7 +639,6 @@ export async function setupWebApi(): Promise<void> {
                 if (newItem) idMap.set(oldId, (newItem as Record<string, unknown>).id as number)
               }
 
-              // 명언 삽입 (새 item_id로 매핑)
               for (const q of quotes) {
                 const newItemId = idMap.get(q.item_id as number)
                 if (!newItemId) continue

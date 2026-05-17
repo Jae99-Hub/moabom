@@ -2113,6 +2113,31 @@ body {
   line-height: 1.5;
 }
 
+/* 비로그인 계속 버튼 */
+.auth-anon-btn {
+  margin-top: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s;
+}
+.auth-anon-btn:hover { color: var(--text-secondary); }
+
+/* 비로그인 설정 행 */
+.settings-anon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+.settings-anon-info { flex: 1; min-width: 0; }
+
 /* ── SettingsModal 유저 정보 ── */
 .settings-user-row {
   display: flex;

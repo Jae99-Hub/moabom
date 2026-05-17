@@ -1,7 +1,11 @@
 import React, { useState } from 'react'
 import { supabase } from '../api/supabaseClient'
 
-export default function AuthScreen() {
+interface Props {
+  onContinueAnonymous?: () => void
+}
+
+export default function AuthScreen({ onContinueAnonymous }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -65,6 +69,12 @@ export default function AuthScreen() {
         <p className="auth-notice">
           로그인하면 어떤 기기에서도 데이터가 동기화됩니다
         </p>
+
+        {onContinueAnonymous && (
+          <button className="auth-anon-btn" onClick={onContinueAnonymous}>
+            로그인 없이 계속하기
+          </button>
+        )}
       </div>
     </div>
   )
