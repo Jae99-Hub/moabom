@@ -86,7 +86,7 @@ function SelectedDetail({ item }: { item: Item }) {
   }
 
   const coverSrc = item.cover_path
-    ? item.cover_path.startsWith('http')
+    ? (item.cover_path.startsWith('http') || item.cover_path.startsWith('data:'))
       ? item.cover_path
       : `file://${item.cover_path}`
     : null

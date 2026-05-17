@@ -22,7 +22,7 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
   const [startPos, setStartPos] = useState({ x: 0, y: 0 })
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0, naturalW: 0, naturalH: 0 })
 
-  const src = imagePath.startsWith('http') ? imagePath : `file://${imagePath}`
+  const src = (imagePath.startsWith('http') || imagePath.startsWith('data:')) ? imagePath : `file://${imagePath}`
 
   const onImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
@@ -68,15 +68,20 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
     const canvas = document.createElement('canvas')
     const scaleX = displaySize.naturalW / displaySize.w
     const scaleY = displaySize.naturalH / displaySize.h
-    canvas.width = crop.w * scaleX
-    canvas.height = crop.h * scaleY
+    const rawW = crop.w * scaleX
+    const rawH = crop.h * scaleY
+    // 최대 800px 제한으로 메모리 절약
+    const MAX_PX = 800
+    const downScale = rawW > MAX_PX ? MAX_PX / rawW : 1
+    canvas.width = Math.round(rawW * downScale)
+    canvas.height = Math.round(rawH * downScale)
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(
       imgRef.current,
-      crop.x * scaleX, crop.y * scaleY, crop.w * scaleX, crop.h * scaleY,
+      crop.x * scaleX, crop.y * scaleY, rawW, rawH,
       0, 0, canvas.width, canvas.height
     )
-    onDone(canvas.toDataURL('image/jpeg', 0.92))
+    onDone(canvas.toDataURL('image/jpeg', 0.85))
   }
 
   return (

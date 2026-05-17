@@ -296,7 +296,25 @@ function pickImageFile(): Promise<string | null> {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) { resolve(null); return }
       const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        // 이미지 크기 제한: 최대 1200px, JPEG 0.85 품질로 재인코딩
+        const img = new Image()
+        img.onload = () => {
+          const MAX = 1200
+          const scale = img.width > MAX || img.height > MAX
+            ? Math.min(MAX / img.width, MAX / img.height)
+            : 1
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(img.width * scale)
+          canvas.height = Math.round(img.height * scale)
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', 0.85))
+        }
+        img.onerror = () => resolve(dataUrl) // 실패 시 원본 반환
+        img.src = dataUrl
+      }
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(file)
     }
@@ -493,19 +511,54 @@ export async function setupWebApi(): Promise<void> {
               const text = await file.text()
               const { items, quotes } = JSON.parse(text) as { items: Record<string, unknown>[]; quotes: Record<string, unknown>[] }
               const restoreDb = await getDb()
-              restoreDb.run('DELETE FROM quotes')
-              restoreDb.run('DELETE FROM items')
-              for (const item of items) {
-                await api.items.insert(item)
+              // 복원 실패 시 롤백할 수 있도록 현재 DB 스냅샷 저장
+              const snapshot = restoreDb.export()
+              try {
+                restoreDb.run('DELETE FROM quotes')
+                restoreDb.run('DELETE FROM items')
+                for (const item of items) {
+                  restoreDb.run(
+                    `INSERT INTO items (id, title, original_title, item_type, cover_path, backdrop_path, author, publisher,
+                      isbn, page_count, current_page, director, platform, tmdb_id, google_books_id, genre, year,
+                      overview, rating, status, review, read_date, created_at, updated_at)
+                     VALUES (:id, :title, :original_title, :item_type, :cover_path, :backdrop_path, :author, :publisher,
+                      :isbn, :page_count, :current_page, :director, :platform, :tmdb_id, :google_books_id, :genre, :year,
+                      :overview, :rating, :status, :review, :read_date,
+                      COALESCE(:created_at, datetime('now')), COALESCE(:updated_at, datetime('now')))`,
+                    {
+                      ':id': p(item.id), ':title': p(item.title ?? ''), ':original_title': p(item.original_title),
+                      ':item_type': p(item.item_type ?? 'book'), ':cover_path': p(item.cover_path),
+                      ':backdrop_path': p(item.backdrop_path), ':author': p(item.author),
+                      ':publisher': p(item.publisher), ':isbn': p(item.isbn),
+                      ':page_count': p(item.page_count), ':current_page': p(item.current_page ?? 0),
+                      ':director': p(item.director), ':platform': p(item.platform),
+                      ':tmdb_id': p(item.tmdb_id), ':google_books_id': p(item.google_books_id),
+                      ':genre': p(item.genre), ':year': p(item.year), ':overview': p(item.overview),
+                      ':rating': p(item.rating), ':status': p(item.status ?? 'want'),
+                      ':review': p(item.review), ':read_date': p(item.read_date),
+                      ':created_at': p(item.created_at), ':updated_at': p(item.updated_at)
+                    }
+                  )
+                }
+                for (const q of quotes) {
+                  restoreDb.run(
+                    "INSERT INTO quotes (id, item_id, text, page_number, note, created_at) VALUES (:id, :item_id, :text, :page_number, :note, COALESCE(:created_at, datetime('now')))",
+                    { ':id': p(q.id), ':item_id': p(q.item_id), ':text': p(q.text), ':page_number': p(q.page_number), ':note': p(q.note), ':created_at': p(q.created_at) }
+                  )
+                }
+                await persist()
+                db = null
+                resolve({ success: true })
+              } catch (innerErr) {
+                // 복원 실패 시 스냅샷으로 롤백
+                const SQL = await loadSqlJs()
+                db = new SQL.Database(snapshot)
+                await persist()
+                console.error('복원 실패, 롤백 완료:', innerErr)
+                resolve({ success: false })
               }
-              for (const q of quotes) {
-                await api.quotes.insert(q)
-              }
-              await persist()
-              // 모듈 레벨 DB 캐시 초기화 → 다음 getDb() 호출 시 새 데이터 로드
-              db = null
-              resolve({ success: true })
-            } catch {
+            } catch (outerErr) {
+              console.error('파일 파싱 실패:', outerErr)
               resolve({ success: false })
             }
           }

@@ -81,7 +81,7 @@ export default function SettingsModal() {
           <div className="settings-actions-row">
             <div>
               <div className="settings-group-label">데이터 백업</div>
-              <div className="settings-group-desc">DB 파일을 원하는 위치에 저장</div>
+              <div className="settings-group-desc">JSON 파일로 내보내기</div>
             </div>
             <button className="btn-secondary" style={{ flexShrink: 0 }} onClick={handleBackup}>백업</button>
           </div>
@@ -89,7 +89,7 @@ export default function SettingsModal() {
           <div className="settings-actions-row">
             <div>
               <div className="settings-group-label">데이터 복원</div>
-              <div className="settings-group-desc">이전에 백업한 DB 파일로 복원</div>
+              <div className="settings-group-desc">이전에 내보낸 JSON 파일로 복원</div>
             </div>
             <button
               className="btn-secondary"

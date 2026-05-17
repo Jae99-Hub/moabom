@@ -30,7 +30,7 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
         return (
           <div key={r.id} className="quote-result-card" onClick={() => item && selectItem(item.id)}>
             {r.cover_path ? (
-              <img className="quote-result-cover" src={`file://${r.cover_path}`} alt="" />
+              <img className="quote-result-cover" src={(r.cover_path.startsWith('http') || r.cover_path.startsWith('data:')) ? r.cover_path : `file://${r.cover_path}`} alt="" />
             ) : (
               <div className="quote-result-cover" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -60,7 +60,7 @@ function ItemRow({ item }: { item: Item }) {
   const isChecked = checkedItems.includes(item.id)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const coverSrc = item.cover_path
-    ? item.cover_path.startsWith('http') ? item.cover_path : `file://${item.cover_path}`
+    ? (item.cover_path.startsWith('http') || item.cover_path.startsWith('data:')) ? item.cover_path : `file://${item.cover_path}`
     : null
 
   const handleContextMenu = (e: React.MouseEvent) => {
