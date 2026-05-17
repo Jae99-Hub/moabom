@@ -167,12 +167,24 @@ function queryOne(database: SqlDatabase, sql: string, params: SqlParams = {}): R
   return queryAll(database, sql, params)[0]
 }
 
-// ── API 키 ────────────────────────────────────────────────────────
-const GOOGLE_BOOKS_API_KEY = 'AIzaSyB2CqQVMkx89-S3xAAfG85Qk-LycoKNA0o'
-const TMDB_API_KEY = '2231c307ea12a6d255fca6d45014212b'
+// ── API 키 (기본값 / 설정에 저장된 키가 있으면 우선 사용) ───────────
+const DEFAULT_GOOGLE_BOOKS_KEY = 'AIzaSyB2CqQVMkx89-S3xAAfG85Qk-LycoKNA0o'
+const DEFAULT_TMDB_KEY = '2231c307ea12a6d255fca6d45014212b'
+
+async function getApiKey(settingKey: string, defaultKey: string): Promise<string> {
+  try {
+    const db = await getDb()
+    const row = queryOne(db, 'SELECT value FROM settings WHERE key = :key', { ':key': settingKey })
+    const stored = (row?.value as string) ?? ''
+    return stored.trim() || defaultKey
+  } catch {
+    return defaultKey
+  }
+}
 
 // ── Google Books ──────────────────────────────────────────────────
 async function searchGoogleBooks(query: string): Promise<unknown[]> {
+  const GOOGLE_BOOKS_API_KEY = await getApiKey('google_books_api_key', DEFAULT_GOOGLE_BOOKS_KEY)
   const fetchBooks = async (q: string) => {
     const params = new URLSearchParams({ q, maxResults: '10', printType: 'books', key: GOOGLE_BOOKS_API_KEY })
     const res = await fetch(`https://www.googleapis.com/books/v1/volumes?${params}`)
@@ -230,6 +242,7 @@ const TV_GENRES: Record<number, string> = {
 }
 
 async function searchTmdb(query: string): Promise<unknown[]> {
+  const TMDB_API_KEY = await getApiKey('tmdb_api_key', DEFAULT_TMDB_KEY)
   const params = new URLSearchParams({ api_key: TMDB_API_KEY, query, language: 'ko-KR', page: '1' })
   const res = await fetch(`https://api.themoviedb.org/3/search/multi?${params}`)
   if (!res.ok) throw new Error(`TMDB API 오류: ${res.status}`)
@@ -479,9 +492,9 @@ export async function setupWebApi(): Promise<void> {
             try {
               const text = await file.text()
               const { items, quotes } = JSON.parse(text) as { items: Record<string, unknown>[]; quotes: Record<string, unknown>[] }
-              const db = await getDb()
-              db.run('DELETE FROM quotes')
-              db.run('DELETE FROM items')
+              const restoreDb = await getDb()
+              restoreDb.run('DELETE FROM quotes')
+              restoreDb.run('DELETE FROM items')
               for (const item of items) {
                 await api.items.insert(item)
               }
@@ -489,6 +502,8 @@ export async function setupWebApi(): Promise<void> {
                 await api.quotes.insert(q)
               }
               await persist()
+              // 모듈 레벨 DB 캐시 초기화 → 다음 getDb() 호출 시 새 데이터 로드
+              db = null
               resolve({ success: true })
             } catch {
               resolve({ success: false })

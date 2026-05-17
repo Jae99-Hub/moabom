@@ -334,7 +334,7 @@ export default function AddItemModal() {
   if (!isAddModalOpen) return null
 
   const coverSrc = form.cover_path
-    ? form.cover_path.startsWith('http') ? form.cover_path : `file://${form.cover_path}`
+    ? (form.cover_path.startsWith('http') || form.cover_path.startsWith('data:')) ? form.cover_path : `file://${form.cover_path}`
     : null
 
   const hasResults = bookResults.length > 0 || tmdbResults.length > 0

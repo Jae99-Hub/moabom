@@ -21,14 +21,20 @@ export default function SettingsModal() {
   }
 
   const handleBackup = async () => {
-    const result = await window.api.db.backup()
-    if (result.success) alert(`백업 완료: ${result.path}`)
+    const result = await window.api.db.backup() as { success: boolean; path?: string }
+    if (result.success) {
+      if (result.path) alert(`백업 완료: ${result.path}`)
+      else alert('백업 파일이 다운로드됐습니다.')
+    }
   }
 
   const handleRestore = async () => {
     if (!window.confirm('복원하면 현재 데이터가 교체됩니다. 계속할까요?')) return
-    const result = await window.api.db.restore()
-    if (result.success) alert('복원 완료. 앱을 재시작해주세요.')
+    const result = await window.api.db.restore() as { success: boolean; path?: string }
+    if (result.success) {
+      alert('복원 완료. 앱을 재시작(또는 새로고침)해 주세요.')
+      if (!result.path) window.location.reload() // 웹 환경: 자동 새로고침
+    }
   }
 
   if (!isSettingsOpen) return null
