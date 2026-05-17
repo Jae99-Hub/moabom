@@ -109,7 +109,7 @@ export const useStore = create<AppState>((set, get) => ({
     search: '',
     searchMode: 'title'
   },
-  theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
+  theme: (() => { try { return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark' } catch { return 'dark' } })(),
   isAddModalOpen: false,
   isSettingsOpen: false,
   isQuotesModalOpen: false,
@@ -117,7 +117,7 @@ export const useStore = create<AppState>((set, get) => ({
   quoteSearchResults: [],
   quoteSearchQuery: '',
   quotesVersion: 0,
-  viewMode: (localStorage.getItem('viewMode') as 'grid' | 'list') || 'grid',
+  viewMode: (() => { try { return (localStorage.getItem('viewMode') as 'grid' | 'list') || 'grid' } catch { return 'grid' } })(),
   selectionMode: false,
   checkedItems: [],
   isSidebarOpen: false,

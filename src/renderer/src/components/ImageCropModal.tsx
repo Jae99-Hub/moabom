@@ -70,6 +70,38 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
     return () => document.removeEventListener('mouseup', handleGlobalMouseUp)
   }, [])
 
+  // ── 터치 이벤트 (모바일 크롭 지원) ──────────────────────────────
+  const getTouchRelPos = (e: React.TouchEvent) => {
+    const rect = containerRef.current!.getBoundingClientRect()
+    const touch = e.touches[0]
+    return {
+      x: Math.max(0, Math.min(displaySize.w, touch.clientX - rect.left)),
+      y: Math.max(0, Math.min(displaySize.h, touch.clientY - rect.top))
+    }
+  }
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault()
+    const pos = getTouchRelPos(e)
+    setStartPos(pos)
+    setCrop({ x: pos.x, y: pos.y, w: 0, h: 0 })
+    setDragging(true)
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault()
+    if (!dragging) return
+    const pos = getTouchRelPos(e)
+    setCrop({
+      x: Math.min(startPos.x, pos.x),
+      y: Math.min(startPos.y, pos.y),
+      w: Math.abs(pos.x - startPos.x),
+      h: Math.abs(pos.y - startPos.y)
+    })
+  }
+
+  const onTouchEnd = () => setDragging(false)
+
   const handleCrop = () => {
     if (!crop || !imgRef.current || crop.w < 10 || crop.h < 10) return
     const canvas = document.createElement('canvas')
@@ -111,6 +143,9 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
           >
             <img
               ref={imgRef}

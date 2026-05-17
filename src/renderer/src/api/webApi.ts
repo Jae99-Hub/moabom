@@ -174,10 +174,16 @@ function pickImageRaw(): Promise<string | null> {
     input.type = 'file'
     input.accept = 'image/*'
     let resolved = false
-    input.onchange = (e) => {
+
+    const done = (val: string | null) => {
+      if (resolved) return
       resolved = true
+      resolve(val)
+    }
+
+    input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) { resolve(null); return }
+      if (!file) { done(null); return }
       const reader = new FileReader()
       reader.onload = () => {
         const dataUrl = reader.result as string
@@ -191,17 +197,23 @@ function pickImageRaw(): Promise<string | null> {
           canvas.height = Math.round(img.height * scale)
           const ctx = canvas.getContext('2d')!
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-          resolve(canvas.toDataURL('image/jpeg', 0.85))
+          done(canvas.toDataURL('image/jpeg', 0.85))
         }
-        img.onerror = () => resolve(dataUrl)
+        img.onerror = () => done(dataUrl)
         img.src = dataUrl
       }
-      reader.onerror = () => resolve(null)
+      reader.onerror = () => done(null)
       reader.readAsDataURL(file)
     }
+
+    // 취소 이벤트 (모던 브라우저 지원)
+    input.addEventListener('cancel', () => done(null))
+
+    // 폴백: focus 복귀 후 충분한 시간 대기 (모바일 대응 1500ms)
     window.addEventListener('focus', () => {
-      setTimeout(() => { if (!resolved) resolve(null) }, 600)
+      setTimeout(() => done(null), 1500)
     }, { once: true })
+
     input.click()
   })
 }
@@ -368,6 +380,8 @@ export async function setupWebApi(): Promise<void> {
           anonSave(ANON.quotes, quotes.filter((q) => q.item_id !== id))
           return
         }
+        // CASCADE가 없는 환경을 대비해 명시적으로 quotes 먼저 삭제
+        await supabase.from('quotes').delete().eq('item_id', id)
         const { error } = await supabase.from('items').delete().eq('id', id)
         if (error) throw error
       }

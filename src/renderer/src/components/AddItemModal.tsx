@@ -327,7 +327,12 @@ export default function AddItemModal() {
         selectItem(newItem.id)
       }
       closeAddModal()
-    } finally { setIsSaving(false) }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '알 수 없는 오류가 발생했습니다'
+      alert(`저장에 실패했습니다: ${msg}`)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const set = (key: keyof ItemFormData, value: unknown) =>

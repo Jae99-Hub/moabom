@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Item, ItemType, ItemStatus } from '../types'
 import { useStore } from '../store/useStore'
 import { CardContextMenu } from './CardContextMenu'
@@ -61,6 +61,16 @@ export default function ItemCard({ item }: { item: Item }) {
       longPressTimer.current = null
     }
   }
+
+  // 언마운트 시 타이머 해제 (stale setState 방지)
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current)
+        longPressTimer.current = null
+      }
+    }
+  }, [])
 
   const handleClick = () => {
     if (selectionMode) {

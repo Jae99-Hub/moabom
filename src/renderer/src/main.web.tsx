@@ -6,7 +6,8 @@ import { setupWebApi } from './api/webApi'
 import { supabase, isSupabaseConfigured } from './api/supabaseClient'
 import AuthScreen from './components/AuthScreen'
 
-const root = ReactDOM.createRoot(document.getElementById('root')!)
+const rootEl = document.getElementById('root') ?? document.body
+const root = ReactDOM.createRoot(rootEl)
 
 function LoadingScreen() {
   return (
@@ -56,6 +57,9 @@ function SetupScreen() {
   )
 }
 
+// 인증 리스너 중복 방지용 참조
+let authSubscription: { unsubscribe: () => void } | null = null
+
 async function bootstrap() {
   root.render(<LoadingScreen />)
 
@@ -73,23 +77,25 @@ async function bootstrap() {
     const { data: { session } } = await supabase.auth.getSession()
 
     const renderApp = () => root.render(<React.StrictMode><App /></React.StrictMode>)
+    const renderAuth = () => root.render(<AuthScreen onContinueAnonymous={renderApp} />)
 
     if (session) {
-      // 이미 로그인 → 앱 바로 렌더
       renderApp()
     } else {
-      // 비로그인 → 로그인 화면 (비로그인 계속 버튼 포함)
-      root.render(<AuthScreen onContinueAnonymous={renderApp} />)
+      renderAuth()
     }
 
-    // 로그인/로그아웃 상태 변화 감지
-    supabase.auth.onAuthStateChange((event, session) => {
+    // 기존 리스너 해제 후 재등록 (bootstrap 재호출 시 중복 방지)
+    if (authSubscription) authSubscription.unsubscribe()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        root.render(<React.StrictMode><App /></React.StrictMode>)
+        renderApp()
       } else if (event === 'SIGNED_OUT') {
-        root.render(<AuthScreen />)
+        // 로그아웃 후에도 비로그인 계속 버튼 유지
+        renderAuth()
       }
     })
+    authSubscription = subscription
 
   } catch (e) {
     console.error('웹 API 초기화 실패:', e)

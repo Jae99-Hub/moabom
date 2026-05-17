@@ -27,7 +27,11 @@ export default function AuthScreen({ onContinueAnonymous, isElectron }: Props) {
       if (error) { setError(error.message); setLoading(false); return }
       if (data.url) {
         const bridge = (window as unknown as { authBridge?: { openExternal: (url: string) => Promise<void> } }).authBridge
-        await bridge?.openExternal(data.url)
+        try {
+          await bridge?.openExternal(data.url)
+        } catch {
+          setError('브라우저 열기에 실패했습니다. 직접 로그인 링크를 열어주세요.')
+        }
       }
       // 로그인 완료는 main process → auth:callback IPC로 처리됨
       setLoading(false)

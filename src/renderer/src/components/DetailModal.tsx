@@ -28,7 +28,7 @@ function QuotesList({ itemId }: { itemId: number }) {
   const { openQuotesModal, quotesVersion } = useStore()
 
   useEffect(() => {
-    window.api.quotes.getByItemId(itemId).then(setQuotes)
+    window.api.quotes.getByItemId(itemId).then(setQuotes).catch(() => {})
   }, [itemId, quotesVersion])
 
   return (
