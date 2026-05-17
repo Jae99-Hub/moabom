@@ -1,0 +1,46 @@
+{
+  appId: "com.bookvault.app",
+  productName: "BookVault",
+  copyright: "Copyright © 2024",
+  directories: {
+    buildResources: "build"
+  },
+  files: [
+    "out/**/*"
+  ],
+  extraResources: [
+    {
+      from: "node_modules/sql.js/dist/sql-wasm.wasm",
+      to: "sql-wasm.wasm"
+    }
+  ],
+  win: {
+    executableName: "BookVault",
+    target: [
+      {
+        target: "nsis",
+        arch: ["x64"]
+      },
+      {
+        target: "portable",
+        arch: ["x64"]
+      }
+    ]
+  },
+  portable: {
+    artifactName: "BookVault-Portable-${version}.exe"
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true
+  },
+  mac: {
+    target: [
+      {
+        target: "dmg",
+        arch: ["x64", "arm64"]
+      }
+    ]
+  }
+}
