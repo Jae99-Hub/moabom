@@ -16,10 +16,9 @@ export default function Header() {
 
   const handleSearchChange = (val: string) => {
     setFilter('search', val)
-    if (isQuoteMode) {
-      if (val.trim()) searchQuotes(val)
-      else clearQuoteSearch()
-    }
+    // 제목 모드에서도 명언 검색 병행 (결과를 필터에 활용)
+    if (val.trim()) searchQuotes(val)
+    else clearQuoteSearch()
   }
 
   const toggleSearchMode = () => {

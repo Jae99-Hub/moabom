@@ -44,7 +44,7 @@ interface AppState {
   closeSidebar: () => void
 }
 
-function applyFilters(list: Item[], filters: FilterState): Item[] {
+function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
   let result = [...list]
 
   if (filters.type !== 'all') {
@@ -71,7 +71,8 @@ function applyFilters(list: Item[], filters: FilterState): Item[] {
         m.original_title?.toLowerCase().includes(q) ||
         m.author?.toLowerCase().includes(q) ||
         m.director?.toLowerCase().includes(q) ||
-        m.isbn?.includes(q)
+        m.isbn?.includes(q) ||
+        quoteItemIds?.has(m.id)  // 명언 내용이 일치하는 작품도 포함
     )
   }
 
@@ -206,8 +207,11 @@ export const useStore = create<AppState>((set, get) => ({
 }))
 
 export function useFilteredItems(): Item[] {
-  const { itemList, filters } = useStore()
-  return applyFilters(itemList, filters)
+  const { itemList, filters, quoteSearchResults } = useStore()
+  const quoteItemIds = quoteSearchResults.length > 0
+    ? new Set(quoteSearchResults.map((q) => q.item_id))
+    : undefined
+  return applyFilters(itemList, filters, quoteItemIds)
 }
 
 export function useAllGenres(): string[] {
