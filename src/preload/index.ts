@@ -38,6 +38,24 @@ const api = {
   }
 }
 
+// ── 자동 업데이트 브릿지 ──────────────────────────────────────────
+const updaterBridge = {
+  onAvailable: (cb: (version: string) => void) => {
+    ipcRenderer.removeAllListeners('updater:available')
+    ipcRenderer.on('updater:available', (_e, version: string) => cb(version))
+  },
+  onProgress: (cb: (pct: number) => void) => {
+    ipcRenderer.removeAllListeners('updater:progress')
+    ipcRenderer.on('updater:progress', (_e, pct: number) => cb(pct))
+  },
+  onDownloaded: (cb: () => void) => {
+    ipcRenderer.removeAllListeners('updater:downloaded')
+    ipcRenderer.on('updater:downloaded', () => cb())
+  },
+  startDownload: () => ipcRenderer.invoke('updater:startDownload'),
+  install: () => ipcRenderer.invoke('updater:install'),
+}
+
 // ── Google OAuth 브릿지 (Electron 전용) ───────────────────────────
 const authBridge = {
   openExternal: (url: string) => ipcRenderer.invoke('auth:openExternal', url),
@@ -52,6 +70,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
     contextBridge.exposeInMainWorld('authBridge', authBridge)
+    contextBridge.exposeInMainWorld('updaterBridge', updaterBridge)
   } catch (error) {
     console.error(error)
   }
@@ -62,4 +81,6 @@ if (process.contextIsolated) {
   window.api = api
   // @ts-ignore
   window.authBridge = authBridge
+  // @ts-ignore
+  window.updaterBridge = updaterBridge
 }

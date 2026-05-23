@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -7,48 +7,40 @@ import { registerIpcHandlers } from './ipc'
 
 // ── 자동 업데이트 설정 ────────────────────────────────────────────
 function setupAutoUpdater(win: BrowserWindow) {
-  if (is.dev) return // 개발 중엔 업데이트 체크 안 함
+  if (is.dev) return
 
-  autoUpdater.autoDownload = false // 사용자 확인 후 다운로드
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
+  // 업데이트 있음 → 렌더러에 버전 알림 (다운로드 버튼은 렌더러가 표시)
   autoUpdater.on('update-available', (info) => {
-    dialog.showMessageBox(win, {
-      type: 'info',
-      title: '업데이트 가능',
-      message: `새 버전이 있습니다 (v${info.version})\n지금 다운로드할까요?`,
-      buttons: ['다운로드', '나중에'],
-      defaultId: 0
-    }).then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.downloadUpdate()
-        win.webContents.send('updater:downloading')
-      }
-    })
+    win.webContents.send('updater:available', info.version)
   })
 
-  autoUpdater.on('update-not-available', () => {
-    // 조용히 무시
-  })
+  autoUpdater.on('update-not-available', () => { /* 조용히 무시 */ })
 
+  // 다운로드 진행률 → 렌더러로 전달
   autoUpdater.on('download-progress', (progress) => {
     win.webContents.send('updater:progress', Math.round(progress.percent))
   })
 
+  // 다운로드 완료 → 렌더러에 알림 (재시작 버튼은 렌더러가 표시)
   autoUpdater.on('update-downloaded', () => {
-    dialog.showMessageBox(win, {
-      type: 'info',
-      title: '업데이트 준비 완료',
-      message: '다운로드가 완료됐습니다.\n지금 재시작해서 업데이트를 적용할까요?',
-      buttons: ['재시작', '나중에'],
-      defaultId: 0
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall()
-    })
+    win.webContents.send('updater:downloaded')
   })
 
   autoUpdater.on('error', (err) => {
     console.error('업데이트 오류:', err)
+  })
+
+  // 렌더러에서 다운로드 시작 요청
+  ipcMain.handle('updater:startDownload', () => {
+    autoUpdater.downloadUpdate()
+  })
+
+  // 렌더러에서 설치 요청
+  ipcMain.handle('updater:install', () => {
+    autoUpdater.quitAndInstall()
   })
 
   // 앱 시작 3초 후 업데이트 체크

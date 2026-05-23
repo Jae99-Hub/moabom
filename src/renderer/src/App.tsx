@@ -10,6 +10,7 @@ import QuotesModal from './components/QuotesModal'
 import SettingsModal from './components/SettingsModal'
 import SelectionBar from './components/SelectionBar'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import UpdaterToast from './components/UpdaterToast'
 
 export default function App() {
   const { fetchAll, theme } = useStore()
@@ -42,6 +43,7 @@ export default function App() {
         <AddItemModal />
         <QuotesModal />
         <SettingsModal />
+        <UpdaterToast />
       </div>
     </ErrorBoundary>
   )
