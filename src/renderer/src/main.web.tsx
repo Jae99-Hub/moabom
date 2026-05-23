@@ -75,48 +75,30 @@ const setAnonMode = (v: boolean) => { try { v ? localStorage.setItem(ANON_KEY, '
 let authSubscription: { unsubscribe: () => void } | null = null
 
 // ── Electron OAuth 릴레이 ─────────────────────────────────────────
-// Electron이 redirectTo: 'https://moabom-app.vercel.app?from=electron' 로 설정하면
-// Google OAuth 후 이 웹페이지에 access_token이 hash로 붙어서 옴
-// 이를 감지해 moabom://auth-callback 으로 자동 전달
-function handleElectronRelay() {
-  try {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('from') !== 'electron') return false
+// Supabase v2는 PKCE 방식 → 토큰이 해시가 아닌 ?code= 파라미터로 옴
+// Supabase 클라이언트가 code를 자동으로 세션으로 교환한 뒤 moabom://으로 전달
+function isElectronRelay() {
+  return new URLSearchParams(window.location.search).get('from') === 'electron'
+}
 
-    const hash = window.location.hash.slice(1)
-    const hashParams = new URLSearchParams(hash)
-    const access_token = hashParams.get('access_token')
-    const refresh_token = hashParams.get('refresh_token')
-
-    if (access_token && refresh_token) {
-      // Electron 앱으로 토큰 전달
-      window.location.href = `moabom://auth-callback#access_token=${access_token}&refresh_token=${refresh_token}`
-      return true
-    }
-
-    // 토큰 아직 없음 (페이지 첫 로드) - 기다리는 화면 표시
-    root.render(
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', gap: 16, background: 'var(--bg-primary, #0f0f0f)', color: 'var(--text-primary, #e8e8e8)'
-      }}>
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.6 }}>
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
-        <p style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>모아봄</p>
-        <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>Google 로그인 처리 중...</p>
-        <p style={{ fontSize: 12, opacity: 0.4, margin: 0 }}>완료되면 자동으로 앱으로 돌아갑니다</p>
-      </div>
-    )
-    return true
-  } catch { return false }
+function ElectronRelayScreen() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', gap: 16, background: '#0f0f13', color: '#e8e8e8'
+    }}>
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.5">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+      <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>모아봄</p>
+      <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>로그인 처리 중... 잠시만 기다려주세요</p>
+      <p style={{ fontSize: 12, opacity: 0.35, margin: 0 }}>완료되면 자동으로 앱으로 돌아갑니다</p>
+    </div>
+  )
 }
 
 async function bootstrap() {
   root.render(<LoadingScreen />)
-
-  // Electron OAuth 릴레이 처리 (from=electron 파라미터 감지)
-  if (handleElectronRelay()) return
 
   // Supabase 환경변수 없으면 안내 화면
   if (!isSupabaseConfigured) {
@@ -125,32 +107,53 @@ async function bootstrap() {
   }
 
   try {
-    // window.api 설정 (Supabase 기반)
     await setupWebApi()
 
-    // 현재 로그인 세션 확인
+    // ── Electron OAuth 릴레이 모드 ──────────────────────────────
+    // ?from=electron 감지: Supabase가 PKCE code를 자동 교환하도록 기다린 후
+    // 세션이 생기면 moabom://auth-callback 으로 토큰 전달
+    if (isElectronRelay()) {
+      root.render(<ElectronRelayScreen />)
+
+      // Supabase가 URL의 ?code= 를 자동으로 세션으로 교환함
+      // getSession()을 먼저 시도하고, 없으면 onAuthStateChange 로 대기
+      const { data: { session: existing } } = await supabase.auth.getSession()
+      if (existing) {
+        window.location.href = `moabom://auth-callback#access_token=${existing.access_token}&refresh_token=${existing.refresh_token}`
+        return
+      }
+
+      // code 교환이 아직 안 된 경우 → 상태 변화 대기
+      supabase.auth.onAuthStateChange((event, session) => {
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+          window.location.href = `moabom://auth-callback#access_token=${session.access_token}&refresh_token=${session.refresh_token}`
+        }
+      })
+      return
+    }
+
+    // ── 일반 웹 모드 ────────────────────────────────────────────
     const { data: { session } } = await supabase.auth.getSession()
 
     const renderApp = () => root.render(<React.StrictMode><App /></React.StrictMode>)
     const renderAuth = () => root.render(<AuthScreen onContinueAnonymous={() => { setAnonMode(true); renderApp() }} />)
 
     if (session) {
-      setAnonMode(false) // 로그인 상태면 플래그 초기화
+      setAnonMode(false)
       renderApp()
     } else if (isAnonMode()) {
-      renderApp() // 이전에 비로그인 선택 → 로그인 화면 건너뜀
+      renderApp()
     } else {
       renderAuth()
     }
 
-    // 기존 리스너 해제 후 재등록 (bootstrap 재호출 시 중복 방지)
     if (authSubscription) authSubscription.unsubscribe()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        setAnonMode(false) // 로그인 시 플래그 해제
+        setAnonMode(false)
         renderApp()
       } else if (event === 'SIGNED_OUT') {
-        setAnonMode(false) // 로그아웃 시 플래그 해제 → 다음엔 로그인 화면 표시
+        setAnonMode(false)
         renderAuth()
       }
     })
