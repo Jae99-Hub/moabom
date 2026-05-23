@@ -143,7 +143,7 @@ const DEFAULT_FORM: ItemFormData = {
 type ActiveTab = 'info' | 'record'
 
 export default function AddItemModal() {
-  const { isAddModalOpen, editingItem, closeAddModal, addItem, updateItem, selectItem } = useStore()
+  const { isAddModalOpen, editingItem, closeAddModal, addItem, updateItem, selectItem, filters, itemList } = useStore()
 
   const [form, setForm] = useState<ItemFormData>(DEFAULT_FORM)
   const [activeTab, setActiveTab] = useState<ActiveTab>('info')
@@ -189,7 +189,12 @@ export default function AddItemModal() {
         read_date: editingItem.read_date ?? ''
       })
     } else {
-      setForm(DEFAULT_FORM)
+      // 사이드바 필터에 따라 기본 종류 결정
+      const defaultType: ItemType =
+        filters.type !== 'all'
+          ? (filters.type as ItemType)
+          : ([...itemList].sort((a, b) => b.id - a.id)[0]?.item_type as ItemType | undefined) ?? 'book'
+      setForm({ ...DEFAULT_FORM, item_type: defaultType })
     }
   }, [isAddModalOpen, editingItem])
 
