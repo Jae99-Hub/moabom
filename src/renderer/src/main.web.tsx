@@ -74,8 +74,49 @@ const setAnonMode = (v: boolean) => { try { v ? localStorage.setItem(ANON_KEY, '
 // 인증 리스너 중복 방지용 참조
 let authSubscription: { unsubscribe: () => void } | null = null
 
+// ── Electron OAuth 릴레이 ─────────────────────────────────────────
+// Electron이 redirectTo: 'https://moabom-app.vercel.app?from=electron' 로 설정하면
+// Google OAuth 후 이 웹페이지에 access_token이 hash로 붙어서 옴
+// 이를 감지해 moabom://auth-callback 으로 자동 전달
+function handleElectronRelay() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('from') !== 'electron') return false
+
+    const hash = window.location.hash.slice(1)
+    const hashParams = new URLSearchParams(hash)
+    const access_token = hashParams.get('access_token')
+    const refresh_token = hashParams.get('refresh_token')
+
+    if (access_token && refresh_token) {
+      // Electron 앱으로 토큰 전달
+      window.location.href = `moabom://auth-callback#access_token=${access_token}&refresh_token=${refresh_token}`
+      return true
+    }
+
+    // 토큰 아직 없음 (페이지 첫 로드) - 기다리는 화면 표시
+    root.render(
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        height: '100vh', gap: 16, background: 'var(--bg-primary, #0f0f0f)', color: 'var(--text-primary, #e8e8e8)'
+      }}>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.6 }}>
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+        <p style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>모아봄</p>
+        <p style={{ fontSize: 13, opacity: 0.6, margin: 0 }}>Google 로그인 처리 중...</p>
+        <p style={{ fontSize: 12, opacity: 0.4, margin: 0 }}>완료되면 자동으로 앱으로 돌아갑니다</p>
+      </div>
+    )
+    return true
+  } catch { return false }
+}
+
 async function bootstrap() {
   root.render(<LoadingScreen />)
+
+  // Electron OAuth 릴레이 처리 (from=electron 파라미터 감지)
+  if (handleElectronRelay()) return
 
   // Supabase 환경변수 없으면 안내 화면
   if (!isSupabaseConfigured) {

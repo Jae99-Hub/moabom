@@ -62,7 +62,7 @@ function GenreNodes({
           <div key={node.path}>
             <div className="sidebar-genre-row">
               <button
-                className={`sidebar-item sidebar-genre-item${isActive ? ' active' : ''}`}
+                className={`sidebar-nav-item sidebar-genre-item${isActive ? ' active' : ''}`}
                 style={{ paddingLeft: 12 + Math.min(depth, 4) * 14 }}
                 onClick={() => { onSelect(type, node.path); if (hasChildren) onToggle(node.path) }}
               >
@@ -77,7 +77,7 @@ function GenreNodes({
                 )}
                 {!hasChildren && <span className="sidebar-genre-hash">{depth === 0 ? '#' : '·'}</span>}
                 <span className="sidebar-genre-name">{name}</span>
-                <span className="count">{node.itemIds.size}</span>
+                <span className="nav-count">{node.itemIds.size}</span>
               </button>
             </div>
             {isOpen && hasChildren && (
@@ -127,6 +127,10 @@ export default function Sidebar() {
     closeSidebar() // 모바일: 선택 후 사이드바 닫기
   }
 
+  const bookCount = itemList.filter((m) => m.item_type === 'book').length
+  const movieCount = itemList.filter((m) => m.item_type === 'movie').length
+  const dramaCount = itemList.filter((m) => m.item_type === 'drama').length
+
   return (
     <>
       {/* 모바일: 사이드바 오버레이 */}
@@ -134,18 +138,43 @@ export default function Sidebar() {
         <div className="sidebar-overlay" onClick={closeSidebar} />
       )}
     <div className={`sidebar${isSidebarOpen ? ' sidebar-open' : ''}`}>
-      <div className="sidebar-section-title">라이브러리</div>
 
+      {/* Stats row */}
+      <div className="sidebar-stats">
+        <div className="sidebar-stat">
+          <span className="sidebar-stat-dot" style={{ background: '#3b82f6' }} />
+          <span className="sidebar-stat-number">{bookCount}</span>
+          <span className="sidebar-stat-label">도서</span>
+        </div>
+        <div className="sidebar-stat">
+          <span className="sidebar-stat-dot" style={{ background: '#8b5cf6' }} />
+          <span className="sidebar-stat-number">{movieCount}</span>
+          <span className="sidebar-stat-label">영화</span>
+        </div>
+        <div className="sidebar-stat">
+          <span className="sidebar-stat-dot" style={{ background: '#ec4899' }} />
+          <span className="sidebar-stat-number">{dramaCount}</span>
+          <span className="sidebar-stat-label">드라마</span>
+        </div>
+      </div>
+
+      <div className="sidebar-section-header">라이브러리</div>
+
+      {/* 전체 */}
       <button
-        className={`sidebar-item${filters.type === 'all' ? ' active' : ''}`}
+        className={`sidebar-nav-item${filters.type === 'all' ? ' active' : ''}`}
         onClick={() => handleSelectType('all')}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
+        <span className="sidebar-type-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+        </span>
         전체
-        <span className="count">{itemList.length}</span>
+        <span className="nav-count">{itemList.length}</span>
       </button>
 
       {TYPES.map((t) => {
@@ -158,13 +187,38 @@ export default function Sidebar() {
           <div key={t.value}>
             <div className="sidebar-type-row">
               <button
-                className={`sidebar-item sidebar-type-item${isTypeActive ? ' active' : ''}`}
+                className={`sidebar-nav-item sidebar-type-item${isTypeActive ? ' active' : ''}`}
                 onClick={() => handleSelectType(t.value)}
                 style={{ flex: 1 }}
               >
-                <span className="sidebar-type-dot" style={{ background: t.color }} />
+                <span className="sidebar-type-icon" style={{ color: t.color }}>
+                  {t.value === 'book' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                  )}
+                  {t.value === 'movie' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                      <line x1="7" y1="2" x2="7" y2="22" />
+                      <line x1="17" y1="2" x2="17" y2="22" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <line x1="2" y1="7" x2="7" y2="7" />
+                      <line x1="2" y1="17" x2="7" y2="17" />
+                      <line x1="17" y1="17" x2="22" y2="17" />
+                      <line x1="17" y1="7" x2="22" y2="7" />
+                    </svg>
+                  )}
+                  {t.value === 'drama' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
+                      <polyline points="17 2 12 7 7 2" />
+                    </svg>
+                  )}
+                </span>
                 {t.label}
-                <span className="count">{typeCount}</span>
+                <span className="nav-count">{typeCount}</span>
               </button>
               {forest.size > 0 && (
                 <button
@@ -195,13 +249,16 @@ export default function Sidebar() {
           </div>
         )
       })}
-      {/* 모바일 전용: 설정 버튼 */}
+
+      {/* 설정 버튼 (데스크탑 + 모바일 공통) */}
       <div className="sidebar-footer">
-        <button className="sidebar-item sidebar-settings-btn" onClick={() => { openSettings(); closeSidebar() }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+        <button className="sidebar-nav-item sidebar-settings-btn" onClick={() => { openSettings(); closeSidebar() }}>
+          <span className="sidebar-type-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </span>
           설정
         </button>
       </div>

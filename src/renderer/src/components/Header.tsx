@@ -79,7 +79,15 @@ export default function Header() {
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
-        <span className="header-logo-text">모아봄</span>
+        <span
+          className="header-logo-text"
+          style={{
+            background: 'linear-gradient(135deg, var(--text-accent) 0%, var(--accent) 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >모아봄</span>
       </div>
 
       {/* 데스크탑 전용 검색 */}
@@ -146,7 +154,7 @@ export default function Header() {
           </svg>
         </button>
 
-        <button className="btn-primary" onClick={() => openAddModal()}>
+        <button className="btn-primary" onClick={() => openAddModal()} title="새 항목 추가">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
