@@ -1,8 +1,59 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { initDatabase } from './database'
 import { registerIpcHandlers } from './ipc'
+
+// ── 자동 업데이트 설정 ────────────────────────────────────────────
+function setupAutoUpdater(win: BrowserWindow) {
+  if (is.dev) return // 개발 중엔 업데이트 체크 안 함
+
+  autoUpdater.autoDownload = false // 사용자 확인 후 다운로드
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    dialog.showMessageBox(win, {
+      type: 'info',
+      title: '업데이트 가능',
+      message: `새 버전이 있습니다 (v${info.version})\n지금 다운로드할까요?`,
+      buttons: ['다운로드', '나중에'],
+      defaultId: 0
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.downloadUpdate()
+        win.webContents.send('updater:downloading')
+      }
+    })
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    // 조용히 무시
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    win.webContents.send('updater:progress', Math.round(progress.percent))
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox(win, {
+      type: 'info',
+      title: '업데이트 준비 완료',
+      message: '다운로드가 완료됐습니다.\n지금 재시작해서 업데이트를 적용할까요?',
+      buttons: ['재시작', '나중에'],
+      defaultId: 0
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall()
+    })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('업데이트 오류:', err)
+  })
+
+  // 앱 시작 3초 후 업데이트 체크
+  setTimeout(() => autoUpdater.checkForUpdates(), 3000)
+}
 
 // ── Custom protocol (moabom://) for Google OAuth callback ─────────
 if (process.defaultApp) {
@@ -70,7 +121,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.bookvault.app')
+  electronApp.setAppUserModelId('com.moabom.app')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -91,6 +142,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers(ipcMain)
 
   createWindow()
+  if (mainWindow) setupAutoUpdater(mainWindow)
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

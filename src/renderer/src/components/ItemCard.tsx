@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Item, ItemType, ItemStatus } from '../types'
 import { useStore } from '../store/useStore'
 import { CardContextMenu } from './CardContextMenu'
@@ -25,6 +25,7 @@ export default function ItemCard({ item }: { item: Item }) {
   const isChecked = checkedItems.includes(item.id)
   const progress = getProgress(item)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchMoved = useRef(false)
 
@@ -157,7 +158,7 @@ export default function ItemCard({ item }: { item: Item }) {
         )}
       </div>
 
-      {menu && <CardContextMenu item={item} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
+      {menu && <CardContextMenu item={item} x={menu.x} y={menu.y} onClose={closeMenu} />}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useStore, useFilteredItems } from '../store/useStore'
 import ItemCard from './ItemCard'
 import { CardContextMenu } from './CardContextMenu'
@@ -16,7 +16,7 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
-        <p>명언 검색 결과가 없습니다</p>
+        <p>명문장 검색 결과가 없습니다</p>
         <span>다른 키워드로 검색해보세요</span>
       </div>
     )
@@ -59,6 +59,7 @@ function ItemRow({ item }: { item: Item }) {
   const isSelected = selectedId === item.id
   const isChecked = checkedItems.includes(item.id)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
   const coverSrc = item.cover_path
     ? (item.cover_path.startsWith('http') || item.cover_path.startsWith('data:')) ? item.cover_path : `file://${item.cover_path}`
     : null
@@ -140,7 +141,7 @@ function ItemRow({ item }: { item: Item }) {
           {TYPE_LABEL[item.item_type as ItemType]}
         </span>
       </div>
-      {menu && <CardContextMenu item={item} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
+      {menu && <CardContextMenu item={item} x={menu.x} y={menu.y} onClose={closeMenu} />}
     </div>
   )
 }

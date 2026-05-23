@@ -34,11 +34,11 @@ function QuotesList({ itemId }: { itemId: number }) {
   return (
     <div className="detail-section">
       <div className="detail-section-title">
-        <span>명언 · 문장 {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
+        <span>명문장 {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
         <button className="btn-text" onClick={openQuotesModal}>관리</button>
       </div>
       {quotes.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록된 명언이 없습니다</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록된 명문장이 없습니다</div>
       ) : (
         quotes.slice(0, 3).map((q) => (
           <div key={q.id} className="quote-item">
@@ -219,7 +219,7 @@ function DetailContent({ item }: { item: Item }) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            명언 · 문장
+            명문장
           </button>
         )}
         <div style={{ flex: 1 }} />
@@ -260,7 +260,7 @@ export default function DetailModal() {
       if (e.key === 'Escape') { selectItem(null); return }
       if (!selectedId) return
       const idx = filtered.findIndex((m) => m.id === selectedId)
-      if (e.key === 'Enter' || e.key === 'ArrowRight') {
+      if (e.key === 'ArrowRight') {
         if (idx < filtered.length - 1) selectItem(filtered[idx + 1].id)
       } else if (e.key === 'ArrowLeft') {
         if (idx > 0) selectItem(filtered[idx - 1].id)

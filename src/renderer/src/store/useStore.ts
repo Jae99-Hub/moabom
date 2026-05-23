@@ -91,7 +91,7 @@ function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<num
       result.sort((a, b) => (a.rating ?? 99) - (b.rating ?? 99))
       break
     case 'title_asc':
-      result.sort((a, b) => a.title.localeCompare(b.title))
+      result.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
       break
   }
 
@@ -228,14 +228,16 @@ export function useFilteredItems(): Item[] {
 
 export function useAllGenres(): string[] {
   const { itemList } = useStore()
-  const genreSet = new Set<string>()
-  itemList.forEach((item) => {
-    if (item.genre) {
-      item.genre.split(',').forEach((g) => {
-        const trimmed = g.trim()
-        if (trimmed) genreSet.add(trimmed)
-      })
-    }
-  })
-  return Array.from(genreSet).sort()
+  return React.useMemo(() => {
+    const genreSet = new Set<string>()
+    itemList.forEach((item) => {
+      if (item.genre) {
+        item.genre.split(',').forEach((g) => {
+          const trimmed = g.trim()
+          if (trimmed) genreSet.add(trimmed)
+        })
+      }
+    })
+    return Array.from(genreSet).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [itemList])
 }

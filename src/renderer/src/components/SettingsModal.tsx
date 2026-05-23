@@ -14,8 +14,8 @@ export default function SettingsModal() {
 
   useEffect(() => {
     if (!isSettingsOpen) return
-    window.api.settings.get('tmdb_api_key').then(setTmdbKey)
-    window.api.settings.get('google_books_api_key').then(setGoogleKey)
+    window.api.settings.get('tmdb_api_key').then(setTmdbKey).catch(() => {})
+    window.api.settings.get('google_books_api_key').then(setGoogleKey).catch(() => {})
 
     // 웹 환경에서만 유저 정보 로드
     if (isWebEnv) {
@@ -42,10 +42,14 @@ export default function SettingsModal() {
   }
 
   const handleBackup = async () => {
-    const result = await window.api.db.backup() as { success: boolean; path?: string }
-    if (result.success) {
-      if (result.path) alert(`백업 완료: ${result.path}`)
-      else alert('백업 파일이 다운로드됐습니다.')
+    try {
+      const result = await window.api.db.backup() as { success: boolean; path?: string }
+      if (result.success) {
+        if (result.path) alert(`백업 완료: ${result.path}`)
+        else alert('백업 파일이 다운로드됐습니다.')
+      }
+    } catch {
+      alert('백업에 실패했습니다. 다시 시도해주세요.')
     }
   }
 

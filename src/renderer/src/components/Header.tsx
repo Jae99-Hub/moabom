@@ -50,7 +50,7 @@ export default function Header() {
           <input
             ref={mobileInputRef}
             type="text"
-            placeholder={isQuoteMode ? '명언·문장 검색...' : '제목, 저자, ISBN 검색...'}
+            placeholder={isQuoteMode ? '명문장 검색...' : '제목, 저자, ISBN 검색...'}
             value={filters.search}
             onChange={(e) => handleSearchChange(e.target.value)}
             onKeyDown={(e) => {
@@ -60,7 +60,7 @@ export default function Header() {
           <button
             className={`search-mode-toggle mobile-mode-toggle${isQuoteMode ? ' quote-mode' : ''}`}
             onClick={toggleSearchMode}
-            title={isQuoteMode ? '제목 검색으로 전환' : '명언 검색으로 전환'}
+            title={isQuoteMode ? '제목 검색으로 전환' : '명문장 검색으로 전환'}
           >
             {isQuoteMode ? '💬' : '📖'}
           </button>
@@ -90,7 +90,7 @@ export default function Header() {
         </svg>
         <input
           type="text"
-          placeholder={isQuoteMode ? '명언·문장 검색...' : '제목, 저자, ISBN 검색...'}
+          placeholder={isQuoteMode ? '명문장 검색...' : '제목, 저자, ISBN 검색...'}
           value={filters.search}
           onChange={(e) => handleSearchChange(e.target.value)}
           onKeyDown={(e) => {
@@ -100,9 +100,9 @@ export default function Header() {
         <button
           className={`search-mode-toggle${isQuoteMode ? ' quote-mode' : ''}`}
           onClick={toggleSearchMode}
-          title={isQuoteMode ? '제목 검색으로 전환' : '명언 검색으로 전환'}
+          title={isQuoteMode ? '제목 검색으로 전환' : '명문장 검색으로 전환'}
         >
-          {isQuoteMode ? '💬 명언' : '📖 제목'}
+          {isQuoteMode ? '💬 명문장' : '📖 제목'}
         </button>
       </div>
 

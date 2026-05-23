@@ -18,6 +18,7 @@ const STATUS_LABEL_MEDIA: Record<string, string> = {
 }
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
+  if (!total || total <= 0) return null
   const pct = Math.min(100, Math.round((current / total) * 100))
   return (
     <div className="detail-progress-wrap">
@@ -43,12 +44,12 @@ function QuotesList({ itemId }: { itemId: number }) {
   return (
     <div className="detail-section">
       <div className="detail-section-title">
-        <span>명언 · 문장 {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
+        <span>명문장 {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
         <button className="btn-text" onClick={openQuotesModal}>관리</button>
       </div>
       {quotes.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          기록된 명언이 없습니다
+          기록된 명문장이 없습니다
         </div>
       ) : (
         quotes.slice(0, 3).map((q) => (
@@ -253,7 +254,7 @@ function SelectedDetail({ item }: { item: Item }) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
-          명언 · 문장 기록하기
+          명문장 기록하기
         </button>
       )}
 

@@ -1,10 +1,19 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import * as Sentry from '@sentry/react'
 import App from './App'
 import './styles/index.css'
 import { setupWebApi } from './api/webApi'
 import { supabase, isSupabaseConfigured } from './api/supabaseClient'
 import AuthScreen from './components/AuthScreen'
+
+// ── Sentry 에러 모니터링 초기화 ───────────────────────────────────
+Sentry.init({
+  dsn: 'https://c1a6f0fc7eaa862efb711e724e94e3d6@o4511405192052736.ingest.us.sentry.io/4511405197295616',
+  environment: 'production',
+  tracesSampleRate: 0.2,   // 20% 성능 트레이싱
+  replaysOnErrorSampleRate: 1.0,  // 에러 발생 시 100% 세션 리플레이
+})
 
 const rootEl = document.getElementById('root') ?? document.body
 const root = ReactDOM.createRoot(rootEl)
@@ -57,6 +66,11 @@ function SetupScreen() {
   )
 }
 
+// ── 비로그인 모드 유지 플래그 ────────────────────────────────────
+const ANON_KEY = 'moabom_anon_mode'
+const isAnonMode = () => { try { return localStorage.getItem(ANON_KEY) === '1' } catch { return false } }
+const setAnonMode = (v: boolean) => { try { v ? localStorage.setItem(ANON_KEY, '1') : localStorage.removeItem(ANON_KEY) } catch {} }
+
 // 인증 리스너 중복 방지용 참조
 let authSubscription: { unsubscribe: () => void } | null = null
 
@@ -77,10 +91,13 @@ async function bootstrap() {
     const { data: { session } } = await supabase.auth.getSession()
 
     const renderApp = () => root.render(<React.StrictMode><App /></React.StrictMode>)
-    const renderAuth = () => root.render(<AuthScreen onContinueAnonymous={renderApp} />)
+    const renderAuth = () => root.render(<AuthScreen onContinueAnonymous={() => { setAnonMode(true); renderApp() }} />)
 
     if (session) {
+      setAnonMode(false) // 로그인 상태면 플래그 초기화
       renderApp()
+    } else if (isAnonMode()) {
+      renderApp() // 이전에 비로그인 선택 → 로그인 화면 건너뜀
     } else {
       renderAuth()
     }
@@ -89,9 +106,10 @@ async function bootstrap() {
     if (authSubscription) authSubscription.unsubscribe()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
+        setAnonMode(false) // 로그인 시 플래그 해제
         renderApp()
       } else if (event === 'SIGNED_OUT') {
-        // 로그아웃 후에도 비로그인 계속 버튼 유지
+        setAnonMode(false) // 로그아웃 시 플래그 해제 → 다음엔 로그인 화면 표시
         renderAuth()
       }
     })

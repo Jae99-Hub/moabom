@@ -1,6 +1,6 @@
 {
-  appId: "com.bookvault.app",
-  productName: "BookVault",
+  appId: "com.moabom.app",
+  productName: "모아봄",
   copyright: "Copyright © 2024",
   protocols: [
     {
@@ -8,6 +8,11 @@
       schemes: ["moabom"]
     }
   ],
+  publish: {
+    provider: "github",
+    owner: "Jae99-Hub",
+    repo: "moabom"
+  },
   directories: {
     buildResources: "build"
   },
@@ -21,25 +26,19 @@
     }
   ],
   win: {
-    executableName: "BookVault",
+    executableName: "moabom",
     target: [
       {
         target: "nsis",
         arch: ["x64"]
-      },
-      {
-        target: "portable",
-        arch: ["x64"]
       }
     ]
-  },
-  portable: {
-    artifactName: "BookVault-Portable-${version}.exe"
   },
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
-    createDesktopShortcut: true
+    createDesktopShortcut: true,
+    shortcutName: "모아봄"
   },
   mac: {
     target: [

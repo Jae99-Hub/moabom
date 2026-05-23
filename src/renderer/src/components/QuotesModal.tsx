@@ -87,13 +87,16 @@ export default function QuotesModal() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('이 명언을 삭제할까요?')) return
+    if (!window.confirm('이 명문장을 삭제할까요?')) return
+    setIsSaving(true)
     setMutError(null)
     try {
       await window.api.quotes.delete(id)
       await reload()
     } catch {
       setMutError('삭제에 실패했습니다. 다시 시도해주세요.')
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -104,7 +107,7 @@ export default function QuotesModal() {
       <div className="modal modal-lg">
         <div className="modal-header">
           <span className="modal-title">
-            {item ? `"${item.title}" 명언 · 문장` : '명언 · 문장'}
+            {item ? `"${item.title}" 명문장` : '명문장'}
           </span>
           <button className="btn-icon" onClick={closeQuotesModal}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -119,10 +122,10 @@ export default function QuotesModal() {
               {mutError}
             </div>
           )}
-          {/* 새 명언 추가 */}
+          {/* 새 명문장 추가 */}
           <div className="add-quote-form">
             <div className="form-group">
-              <label className="form-label">새 명언 · 문장 추가</label>
+              <label className="form-label">새 명문장 추가</label>
               <textarea
                 className="form-textarea"
                 value={newText}
@@ -166,10 +169,10 @@ export default function QuotesModal() {
             </div>
           </div>
 
-          {/* 기존 명언 목록 */}
+          {/* 기존 명문장 목록 */}
           {quotes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              아직 기록된 명언이 없습니다
+              아직 기록된 명문장이 없습니다
             </div>
           ) : (
             <div className="quotes-list">

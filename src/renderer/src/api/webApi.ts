@@ -591,7 +591,7 @@ export async function setupWebApi(): Promise<void> {
         a.href = url
         a.download = `moabom-backup-${new Date().toISOString().slice(0, 10)}.json`
         a.click()
-        URL.revokeObjectURL(url)
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
         return { success: true }
       },
 
@@ -627,6 +627,13 @@ export async function setupWebApi(): Promise<void> {
               }
 
               const userId = await getUserId()
+
+              // 삭제 전 현재 데이터 백업 (복원 실패 시 롤백용)
+              const [{ data: oldItems }, { data: oldQuotes }] = await Promise.all([
+                supabase.from('items').select('*').eq('user_id', userId),
+                supabase.from('quotes').select('*').eq('user_id', userId)
+              ])
+
               await supabase.from('quotes').delete().eq('user_id', userId)
               await supabase.from('items').delete().eq('user_id', userId)
 
@@ -679,6 +686,22 @@ export async function setupWebApi(): Promise<void> {
               resolve({ success: true })
             } catch (err) {
               console.error('복원 실패:', err)
+              // 복원 실패 시 원래 데이터 복구 시도
+              try {
+                const userId2 = await getUserId()
+                if (oldItems && oldItems.length > 0) {
+                  await supabase.from('quotes').delete().eq('user_id', userId2)
+                  await supabase.from('items').delete().eq('user_id', userId2)
+                  for (const item of oldItems) {
+                    await supabase.from('items').insert({ ...item })
+                  }
+                  for (const quote of (oldQuotes ?? [])) {
+                    await supabase.from('quotes').insert({ ...quote })
+                  }
+                }
+              } catch (rollbackErr) {
+                console.error('롤백 실패:', rollbackErr)
+              }
               resolve({ success: false })
             }
           }

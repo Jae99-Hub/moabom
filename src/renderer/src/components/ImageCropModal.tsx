@@ -167,7 +167,7 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
         <div className="modal-footer">
           <button className="btn-secondary" style={{ width: 80 }} onClick={onCancel}>취소</button>
           <button className="btn-secondary" style={{ width: 100 }} onClick={() => crop && setCrop(null)}>초기화</button>
-          <button className="btn-primary" onClick={handleCrop} disabled={!crop || crop.w < 10}>
+          <button className="btn-primary" onClick={handleCrop} disabled={!crop || crop.w < 10 || crop.h < 10}>
             자르기 적용
           </button>
         </div>
