@@ -12,6 +12,25 @@ const renderApp = () => root.render(<React.StrictMode><App /></React.StrictMode>
 const renderAuth = () =>
   root.render(<AuthScreen onContinueAnonymous={renderApp} isElectron={true} />)
 
+function renderError(msg: string) {
+  root.render(
+    <div style={{
+      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+      height:'100vh', gap:12, background:'#0f0f13', color:'#e8e8e8', padding:24, textAlign:'center'
+    }}>
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="1.5">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <p style={{fontSize:16, fontWeight:700, margin:0, color:'#f87171'}}>앱 시작 오류</p>
+      <p style={{fontSize:12, opacity:0.6, margin:0, maxWidth:480, wordBreak:'break-all'}}>{msg}</p>
+      <button onClick={()=>window.location.reload()}
+        style={{marginTop:8, padding:'8px 20px', borderRadius:99, background:'#6366f1', color:'#fff', border:'none', cursor:'pointer', fontSize:13}}>
+        다시 시도
+      </button>
+    </div>
+  )
+}
+
 // ── 로컬 SQLite → Supabase 마이그레이션 ─────────────────────────
 async function loginAndSwitch() {
   // 1. Supabase 전환 전에 로컬 데이터 스냅샷
@@ -68,6 +87,7 @@ async function loginAndSwitch() {
 }
 
 async function bootstrap() {
+  try {
   // Supabase 환경변수 없으면 그냥 로컬 SQLite로 실행
   if (!isSupabaseConfigured) {
     renderApp()
@@ -75,7 +95,8 @@ async function bootstrap() {
   }
 
   // 저장된 세션 확인
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError) throw sessionError
 
   if (session) {
     await loginAndSwitch()
@@ -114,6 +135,12 @@ async function bootstrap() {
       renderAuth()
     }
   })
+
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[bootstrap 오류]', e)
+    renderError(msg)
+  }
 }
 
 bootstrap()
