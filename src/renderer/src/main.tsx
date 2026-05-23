@@ -45,7 +45,9 @@ async function loginAndSwitch() {
   } catch { /* IPC 실패 시 무시 */ }
 
   // 2. Supabase API로 전환
-  await setupWebApi()
+  // Electron: contextBridge가 window.api를 읽기전용으로 만들므로
+  // setupWebApi()의 window.api 재할당을 건너뜀 (SQLite IPC 유지)
+  try { await setupWebApi() } catch { /* Electron에서는 정상 - SQLite 계속 사용 */ }
 
   // 3. Supabase가 비어있고 로컬 데이터가 있으면 이전 제안
   if (localItems.length === 0) return
