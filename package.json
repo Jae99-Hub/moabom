@@ -1,6 +1,6 @@
 {
   "name": "moabom",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "모아봄 - 책·영화·드라마 기록 앱",
   "main": "out/main/index.js",
   "scripts": {
