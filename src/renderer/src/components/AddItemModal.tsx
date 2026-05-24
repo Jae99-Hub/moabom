@@ -4,132 +4,6 @@ import { ItemFormData, ItemType, ItemStatus, GoogleBookResult, TmdbResult } from
 import StarRating from './StarRating'
 import ImageCropModal from './ImageCropModal'
 
-// ── 장르 태그 입력 컴포넌트 ──────────────────────────────────────
-const MAX_TAGS = 10
-const MAX_DEPTH = 5
-const MAX_RECENT = 5
-
-function useRecentGenres(): string[] {
-  const { itemList } = useStore()
-  const seen = new Set<string>()
-  const result: string[] = []
-  const sorted = [...itemList].sort((a, b) => b.id - a.id)
-  for (const item of sorted) {
-    if (!item.genre) continue
-    for (const path of item.genre.split(',').map((p) => p.trim()).filter(Boolean)) {
-      if (!seen.has(path)) {
-        seen.add(path)
-        result.push(path)
-        if (result.length >= MAX_RECENT) return result
-      }
-    }
-  }
-  return result
-}
-
-function GenreTagInput({ value, onChange, suggestedGenres = [] }: { value: string; onChange: (v: string) => void; suggestedGenres?: string[] }) {
-  const [adding, setAdding] = useState(false)
-  const [levels, setLevels] = useState<string[]>([''])
-  const recentGenres = useRecentGenres()
-
-  const tags = value ? value.split(',').map((p) => p.trim()).filter(Boolean) : []
-
-  const removeTag = (idx: number) => onChange(tags.filter((_, i) => i !== idx).join(', '))
-
-  const addTag = (path: string) => {
-    if (tags.includes(path) || tags.length >= MAX_TAGS) return
-    onChange([...tags, path].join(', '))
-  }
-
-  const confirmTag = () => {
-    const path = levels.map((l) => l.trim()).filter(Boolean).join('>')
-    if (!path) { setAdding(false); return }
-    if (tags.length >= MAX_TAGS) { setAdding(false); setLevels(['']); return }
-    addTag(path)
-    setAdding(false)
-    setLevels([''])
-  }
-
-  const setLevel = (i: number, v: string) => setLevels(levels.map((l, li) => (li === i ? v : l)))
-  const addLevel = () => { if (levels.length < MAX_DEPTH) setLevels([...levels, '']) }
-  const removeLevel = (i: number) => setLevels(levels.filter((_, li) => li !== i))
-
-  const availableRecent = recentGenres.filter((g) => !tags.includes(g) && !suggestedGenres.includes(g))
-  const availableSuggested = suggestedGenres.filter((g) => !tags.includes(g))
-
-  return (
-    <div className="genre-tag-wrap">
-      <div className="genre-chips">
-        {tags.map((tag, i) => (
-          <span key={i} className="genre-chip">
-            {tag.split('>').map((s) => s.trim()).join(' › ')}
-            <button className="genre-chip-remove" onClick={() => removeTag(i)}>×</button>
-          </span>
-        ))}
-        {!adding && tags.length < MAX_TAGS && (
-          <button className="genre-add-btn" onClick={() => { setAdding(true); setLevels(['']) }}>
-            + 장르 추가
-          </button>
-        )}
-        {!adding && tags.length >= MAX_TAGS && (
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>최대 {MAX_TAGS}개</span>
-        )}
-      </div>
-      {availableSuggested.length > 0 && (
-        <div className="genre-recent">
-          <span className="genre-recent-label">추천</span>
-          {availableSuggested.map((g) => (
-            <button key={g} className="genre-recent-chip genre-suggested-chip" onClick={() => addTag(g)}>
-              {g.split('>').map((s) => s.trim()).join(' › ')}
-            </button>
-          ))}
-        </div>
-      )}
-      {adding && (
-        <>
-          {availableRecent.length > 0 && (
-            <div className="genre-recent">
-              <span className="genre-recent-label">최근</span>
-              {availableRecent.map((g) => (
-                <button key={g} className="genre-recent-chip" onClick={() => { addTag(g); setAdding(false); setLevels(['']) }}>
-                  {g.split('>').map((s) => s.trim()).join(' › ')}
-                </button>
-              ))}
-            </div>
-          )}
-        <div className="genre-builder">
-          {levels.map((lvl, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <span className="genre-builder-sep">›</span>}
-              <input
-                className="genre-level-input"
-                value={lvl}
-                placeholder={i === 0 ? '장르' : '하위 장르'}
-                autoFocus={i === levels.length - 1}
-                onChange={(e) => setLevel(i, e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmTag()
-                  if (e.key === 'Escape') { setAdding(false); setLevels(['']) }
-                  if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); if (levels.length < MAX_DEPTH) addLevel() }
-                }}
-              />
-              {i > 0 && (
-                <button className="genre-remove-level" onClick={() => removeLevel(i)} title="삭제">×</button>
-              )}
-            </React.Fragment>
-          ))}
-          {levels.length < MAX_DEPTH && (
-            <button className="genre-add-level" onClick={addLevel} title="하위 장르 추가">＋</button>
-          )}
-          <button className="genre-confirm" onClick={confirmTag}>확인</button>
-          <button className="genre-cancel" onClick={() => { setAdding(false); setLevels(['']) }}>취소</button>
-        </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 const DEFAULT_FORM: ItemFormData = {
   title: '', original_title: '', item_type: 'book',
   cover_path: null, backdrop_path: null,
@@ -140,13 +14,27 @@ const DEFAULT_FORM: ItemFormData = {
   rating: null, status: 'want', review: '', read_date: ''
 }
 
-type ActiveTab = 'info' | 'record'
+// 최근 사용 장르 추천
+function useRecentGenres(): string[] {
+  const { itemList } = useStore()
+  const seen = new Set<string>()
+  const result: string[] = []
+  const sorted = [...itemList].sort((a, b) => b.id - a.id)
+  for (const item of sorted) {
+    if (!item.genre) continue
+    for (const g of item.genre.split(',').map((p) => p.trim()).filter(Boolean)) {
+      if (!seen.has(g)) { seen.add(g); result.push(g) }
+      if (result.length >= 6) return result
+    }
+  }
+  return result
+}
 
 export default function AddItemModal() {
   const { isAddModalOpen, editingItem, closeAddModal, addItem, updateItem, selectItem, filters, itemList } = useStore()
 
   const [form, setForm] = useState<ItemFormData>(DEFAULT_FORM)
-  const [activeTab, setActiveTab] = useState<ActiveTab>('info')
+  const [activeTab, setActiveTab] = useState<'info' | 'record'>('info')
   const [searchQuery, setSearchQuery] = useState('')
   const [bookResults, setBookResults] = useState<GoogleBookResult[]>([])
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([])
@@ -155,6 +43,9 @@ export default function AddItemModal() {
   const [isSaving, setIsSaving] = useState(false)
   const [cropImagePath, setCropImagePath] = useState<string | null>(null)
   const [suggestedGenres, setSuggestedGenres] = useState<string[]>([])
+
+  const recentGenres = useRecentGenres()
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!isAddModalOpen) return
@@ -189,23 +80,20 @@ export default function AddItemModal() {
         read_date: editingItem.read_date ?? ''
       })
     } else {
-      // 사이드바 필터에 따라 기본 종류 결정
       const defaultType: ItemType =
         filters.type !== 'all'
           ? (filters.type as ItemType)
           : ([...itemList].sort((a, b) => b.id - a.id)[0]?.item_type as ItemType | undefined) ?? 'book'
       setForm({ ...DEFAULT_FORM, item_type: defaultType })
     }
+    setTimeout(() => searchInputRef.current?.focus(), 80)
   }, [isAddModalOpen, editingItem])
 
-  // 종류 전환: 타입별 필드만 초기화, 공통 필드(제목·연도·장르·줄거리 등) 유지
   const switchType = (newType: ItemType) => {
     setForm((p) => ({
-      ...p,
-      item_type: newType,
+      ...p, item_type: newType,
       author: '', publisher: '', isbn: '', page_count: null, current_page: 0,
-      director: '', platform: '',
-      google_books_id: null, tmdb_id: null,
+      director: '', platform: '', google_books_id: null, tmdb_id: null,
     }))
     setSearchQuery('')
     setBookResults([])
@@ -216,10 +104,7 @@ export default function AddItemModal() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
-    // 모바일 키보드 닫기
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur()
-    }
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setIsSearching(true)
     setBookResults([])
     setTmdbResults([])
@@ -227,26 +112,22 @@ export default function AddItemModal() {
     try {
       if (form.item_type === 'book') {
         const r = await window.api.books.search(searchQuery)
-        if (r.length === 0) setSearchError('검색 결과가 없습니다. 다른 키워드로 시도해보세요.')
+        if (r.length === 0) setSearchError('검색 결과가 없습니다.')
         else setBookResults(r)
       } else {
         const r = await window.api.tmdb.search(searchQuery)
-        if (r.length === 0) setSearchError('검색 결과가 없습니다. 다른 키워드로 시도해보세요.')
+        if (r.length === 0) setSearchError('검색 결과가 없습니다.')
         else setTmdbResults(r)
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setSearchError(`검색 오류: ${msg}`)
+      setSearchError(`검색 오류: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setIsSearching(false)
     }
   }
 
   const applyBook = (r: GoogleBookResult) => {
-    if (r.genre) {
-      const parsed = r.genre.split(',').map((g) => g.trim()).filter(Boolean)
-      if (parsed.length) setSuggestedGenres(parsed)
-    }
+    if (r.genre) setSuggestedGenres(r.genre.split(',').map((g) => g.trim()).filter(Boolean))
     setForm((p) => ({
       ...p,
       title: r.title, original_title: r.original_title, item_type: 'book',
@@ -260,10 +141,7 @@ export default function AddItemModal() {
   }
 
   const applyTmdb = (r: TmdbResult) => {
-    if (r.genre) {
-      const parsed = r.genre.split(',').map((g) => g.trim()).filter(Boolean)
-      if (parsed.length) setSuggestedGenres(parsed)
-    }
+    if (r.genre) setSuggestedGenres(r.genre.split(',').map((g) => g.trim()).filter(Boolean))
     setForm((p) => ({
       ...p,
       title: r.title, original_title: r.original_title,
@@ -277,14 +155,9 @@ export default function AddItemModal() {
   }
 
   const handleResetSearch = () => {
-    // API로 채워진 필드만 초기화, 사용자가 직접 입력한 필드(독후감·완독일·별점)는 유지
     setForm((p) => ({
-      ...DEFAULT_FORM,
-      item_type: p.item_type,
-      status: p.status,
-      review: p.review,
-      read_date: p.read_date,
-      rating: p.rating,
+      ...DEFAULT_FORM, item_type: p.item_type,
+      status: p.status, review: p.review, read_date: p.read_date, rating: p.rating,
     }))
     setSuggestedGenres([])
     setSearchQuery('')
@@ -306,9 +179,6 @@ export default function AddItemModal() {
     setIsSaving(true)
     try {
       const safePageCount = form.page_count != null ? Math.max(1, Math.round(form.page_count)) : null
-      const safeCurrentPage = safePageCount != null
-        ? Math.min(safePageCount, Math.max(0, Math.round(form.current_page ?? 0)))
-        : 0
       const payload: ItemFormData = {
         ...form,
         title: form.title.trim(),
@@ -323,7 +193,9 @@ export default function AddItemModal() {
         review: form.review?.trim() || null,
         read_date: form.read_date?.trim() || null,
         page_count: safePageCount,
-        current_page: safeCurrentPage
+        current_page: safePageCount != null
+          ? Math.min(safePageCount, Math.max(0, Math.round(form.current_page ?? 0)))
+          : 0
       }
       if (editingItem) {
         await updateItem(editingItem.id, payload)
@@ -333,8 +205,7 @@ export default function AddItemModal() {
       }
       closeAddModal()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '알 수 없는 오류가 발생했습니다'
-      alert(`저장에 실패했습니다: ${msg}`)
+      alert(`저장 실패: ${e instanceof Error ? e.message : '알 수 없는 오류'}`)
     } finally {
       setIsSaving(false)
     }
@@ -343,33 +214,45 @@ export default function AddItemModal() {
   const set = (key: keyof ItemFormData, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
-  const isBook = form.item_type === 'book'
+  const addGenreChip = (g: string) => {
+    const current = form.genre ? form.genre.split(',').map(s => s.trim()).filter(Boolean) : []
+    if (!current.includes(g)) set('genre', [...current, g].join(', '))
+  }
 
   if (!isAddModalOpen) return null
 
-  const coverSrc = form.cover_path
-    ? (form.cover_path.startsWith('http') || form.cover_path.startsWith('data:')) ? form.cover_path : `file://${form.cover_path}`
-    : null
-
+  const isBook = form.item_type === 'book'
   const hasResults = bookResults.length > 0 || tmdbResults.length > 0
   const closeResults = () => { setBookResults([]); setTmdbResults([]) }
+
+  const coverSrc = form.cover_path
+    ? (form.cover_path.startsWith('http') || form.cover_path.startsWith('data:'))
+      ? form.cover_path
+      : `file://${form.cover_path}`
+    : null
+
+  const genreTags = form.genre ? form.genre.split(',').map(s => s.trim()).filter(Boolean) : []
+  const genreSuggestions = [
+    ...suggestedGenres.filter(g => !genreTags.includes(g)),
+    ...recentGenres.filter(g => !genreTags.includes(g) && !suggestedGenres.includes(g)),
+  ].slice(0, 6)
+
+  const progress = isBook && form.status === 'reading' && form.page_count
+    ? Math.min(100, Math.round(((form.current_page ?? 0) / form.page_count) * 100))
+    : null
 
   return (
     <>
       {cropImagePath && (
-        <ImageCropModal
-          imagePath={cropImagePath}
-          onDone={handleCropDone}
-          onCancel={() => setCropImagePath(null)}
-        />
+        <ImageCropModal imagePath={cropImagePath} onDone={handleCropDone} onCancel={() => setCropImagePath(null)} />
       )}
 
       <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeAddModal(); else if (hasResults) closeResults() }}>
         <div className="add-modal-shell" onClick={(e) => { if (hasResults) { closeResults(); e.stopPropagation() } }}>
 
-          {/* ── 왼쪽 패널: 표지 + 종류 ── */}
+          {/* ── 왼쪽: 표지 + 종류 ── */}
           <div className="add-modal-left">
-            <div className="add-modal-cover-wrap">
+            <div className="add-modal-cover-wrap" onClick={!coverSrc ? handlePickImage : undefined} style={!coverSrc ? { cursor: 'pointer' } : {}}>
               {coverSrc ? (
                 <>
                   <img className="add-modal-cover-img" src={coverSrc} alt="" />
@@ -379,67 +262,46 @@ export default function AddItemModal() {
                   </div>
                 </>
               ) : (
-                <div className="add-modal-cover-empty" onClick={handlePickImage}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <div className="add-modal-cover-empty">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <rect x="3" y="3" width="18" height="18" rx="3" />
                     <circle cx="8.5" cy="8.5" r="1.5" />
                     <polyline points="21 15 16 10 5 21" />
                   </svg>
                   <span>표지 추가</span>
-                  <span className="cover-hint">클릭 후 크롭 가능</span>
                 </div>
               )}
             </div>
 
-            <div className="add-modal-url-wrap">
-              <input
-                className="form-input"
-                style={{ fontSize: 11, height: 30 }}
-                value={form.cover_path?.startsWith('http') ? form.cover_path : ''}
-                onChange={(e) => set('cover_path', e.target.value || null)}
-                placeholder="이미지 URL..."
-              />
+            <div className="add-modal-type-btns" style={{ marginTop: 12 }}>
+              {([
+                { v: 'book',  icon: '📖', l: '도서' },
+                { v: 'movie', icon: '🎬', l: '영화' },
+                { v: 'drama', icon: '📺', l: '드라마' }
+              ] as const).map(({ v, icon, l }) => (
+                <button
+                  key={v}
+                  className={`add-modal-type-btn${form.item_type === v ? ' active' : ''}`}
+                  onClick={() => switchType(v)}
+                >
+                  <span>{icon}</span>
+                  <span>{l}</span>
+                  {form.item_type === v && (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ marginLeft: 'auto', color: 'var(--accent)' }}>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+              ))}
             </div>
 
-            {/* 종류 선택 */}
-            <div className="add-modal-type-section">
-              <div className="add-modal-type-label">종류</div>
-              <div className="add-modal-type-btns">
-                {([
-                  { v: 'book',  icon: '📖', l: '도서' },
-                  { v: 'movie', icon: '🎬', l: '영화' },
-                  { v: 'drama', icon: '📺', l: '드라마' }
-                ] as const).map(({ v, icon, l }) => (
-                  <button
-                    key={v}
-                    className={`add-modal-type-btn${form.item_type === v ? ' active' : ''}`}
-                    onClick={() => switchType(v)}
-                  >
-                    <span>{icon}</span>
-                    <span>{l}</span>
-                    {form.item_type === v && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ marginLeft: 'auto', color: 'var(--accent)' }}>
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 미리보기 */}
             {form.title && (
-              <div className="add-modal-summary">
+              <div className="add-modal-summary" style={{ marginTop: 10 }}>
                 <div className="add-modal-summary-title">{form.title}</div>
                 {(form.author || form.director) && (
                   <div className="add-modal-summary-sub">{(form.author || form.director) as string}</div>
                 )}
                 {form.year && <div className="add-modal-summary-sub">{form.year}년</div>}
-                {form.genre && <div className="add-modal-summary-sub" style={{ color: 'var(--text-accent)', fontSize: 10 }}>
-                {(form.genre as string).split(',').map(p => p.trim()).filter(Boolean).map((p, i) => (
-                  <span key={i} style={{ marginRight: 6 }}># {p.replace(/>/g, ' › ')}</span>
-                ))}
-              </div>}
               </div>
             )}
           </div>
@@ -457,73 +319,55 @@ export default function AddItemModal() {
 
             <div className="add-modal-tabs">
               <button className={`add-modal-tab${activeTab === 'info' ? ' active' : ''}`} onClick={() => setActiveTab('info')}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                </svg>
-                기본 정보
+                📋 기본 정보
               </button>
               <button className={`add-modal-tab${activeTab === 'record' ? ' active' : ''}`} onClick={() => setActiveTab('record')}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-                {isBook ? '독서 기록' : '시청 기록'}
+                ✍️ {isBook ? '독서 기록' : '시청 기록'}
               </button>
             </div>
 
             <div className="add-modal-body">
+
+              {/* ── 기본 정보 탭 ── */}
               {activeTab === 'info' && (
                 <div className="add-tab-content">
-                  {/* 자동 검색 */}
-                  <div className="form-section">
-                    <div className="form-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>{isBook ? '구글 북스 자동 검색' : 'TMDB 자동 검색'}</span>
-                      {(form.google_books_id || form.tmdb_id) && (
-                        <button className="btn-reset-search" onClick={handleResetSearch}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <polyline points="1 4 1 10 7 10" />
-                            <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
-                          </svg>
-                          초기화
-                        </button>
-                      )}
-                    </div>
 
-                    <div className="search-row" onClick={(e) => e.stopPropagation()}>
+                  {/* 자동 검색 */}
+                  <div className="form-section" onClick={(e) => e.stopPropagation()}>
+                    <div className="search-row">
                       <input
+                        ref={searchInputRef}
                         className="form-input"
-                        placeholder="제목으로 검색..."
+                        placeholder={isBook ? '책 제목 또는 저자 검색...' : '제목 또는 감독 검색...'}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                        autoFocus
                       />
                       <button className="btn-search" onClick={handleSearch} disabled={isSearching || !searchQuery.trim()}>
                         {isSearching ? <span className="spinner" /> : '검색'}
                       </button>
+                      {(form.google_books_id || form.tmdb_id) && (
+                        <button className="btn-reset-search" onClick={handleResetSearch} title="초기화">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <polyline points="1 4 1 10 7 10" />
+                            <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
 
                     {searchError && (
-                      <div className="search-error-msg">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                        </svg>
-                        {searchError}
-                      </div>
+                      <div className="search-error-msg">{searchError}</div>
                     )}
 
                     {hasResults && (
-                      <div className="search-results" onClick={(e) => e.stopPropagation()}>
+                      <div className="search-results">
                         {bookResults.map((r) => (
                           <div key={r.google_books_id} className="search-result-item" onClick={() => applyBook(r)}>
-                            {r.cover_path
-                              ? <img className="search-result-poster" src={r.cover_path} alt="" />
-                              : <div className="search-result-poster" />}
+                            {r.cover_path ? <img className="search-result-poster" src={r.cover_path} alt="" /> : <div className="search-result-poster" />}
                             <div className="search-result-info">
                               <div className="search-result-title">{r.title}</div>
-                              <div className="search-result-meta">
-                                {[r.author, r.year, r.publisher].filter(Boolean).join(' · ')}
-                              </div>
+                              <div className="search-result-meta">{[r.author, r.year, r.publisher].filter(Boolean).join(' · ')}</div>
                             </div>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                               <polyline points="9 18 15 12 9 6" />
@@ -532,9 +376,7 @@ export default function AddItemModal() {
                         ))}
                         {tmdbResults.map((r) => (
                           <div key={r.tmdb_id} className="search-result-item" onClick={() => applyTmdb(r)}>
-                            {r.cover_path
-                              ? <img className="search-result-poster" src={r.cover_path} alt="" />
-                              : <div className="search-result-poster" />}
+                            {r.cover_path ? <img className="search-result-poster" src={r.cover_path} alt="" /> : <div className="search-result-poster" />}
                             <div className="search-result-info">
                               <div className="search-result-title">{r.title}</div>
                               <div className="search-result-meta">
@@ -553,108 +395,103 @@ export default function AddItemModal() {
                   <div className="form-section-divider" />
 
                   {/* 제목 */}
-                  <div className="form-section">
-                    <div className="form-section-title">제목</div>
-                    <div className="form-group" style={{ marginBottom: 10 }}>
-                      <label className="form-label">한국어 제목 <span style={{ color: 'var(--accent)' }}>*</span></label>
-                      <input className="form-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="제목을 입력하세요" />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">원제 (선택)</label>
-                      <input className="form-input" value={form.original_title ?? ''} onChange={(e) => set('original_title', e.target.value)} placeholder="Original Title" />
-                    </div>
+                  <div className="form-group">
+                    <label className="form-label">제목 <span style={{ color: 'var(--accent)' }}>*</span></label>
+                    <input className="form-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="제목" />
+                  </div>
+                  <div className="form-group" style={{ marginTop: 8 }}>
+                    <label className="form-label">원제</label>
+                    <input className="form-input" value={form.original_title ?? ''} onChange={(e) => set('original_title', e.target.value)} placeholder="Original Title (선택)" />
                   </div>
 
                   <div className="form-section-divider" />
 
-                  {/* 책 전용 */}
+                  {/* 책 전용 필드 */}
                   {isBook && (
-                    <div className="form-section">
-                      <div className="form-section-title">도서 정보</div>
-                      <div className="form-row" style={{ marginBottom: 10 }}>
-                        <div className="form-group">
-                          <label className="form-label">저자</label>
-                          <input className="form-input" value={form.author ?? ''} onChange={(e) => set('author', e.target.value)} placeholder="저자 이름" />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">출판사</label>
-                          <input className="form-input" value={form.publisher ?? ''} onChange={(e) => set('publisher', e.target.value)} placeholder="출판사" />
-                        </div>
-                      </div>
-                      <div className="form-row">
-                        <div className="form-group">
-                          <label className="form-label">ISBN</label>
-                          <input className="form-input" value={form.isbn ?? ''} onChange={(e) => set('isbn', e.target.value)} placeholder="9791234567890" />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">전체 페이지</label>
-                          <input className="form-input" type="number" value={form.page_count ?? ''} onChange={(e) => set('page_count', e.target.value ? parseInt(e.target.value) : null)} placeholder="300" min={1} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 영화/드라마 전용 */}
-                  {!isBook && (
-                    <div className="form-section">
-                      <div className="form-section-title">작품 정보</div>
-                      <div className="form-row">
-                        <div className="form-group">
-                          <label className="form-label">감독</label>
-                          <input className="form-input" value={form.director ?? ''} onChange={(e) => set('director', e.target.value)} placeholder="감독 이름" />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">플랫폼</label>
-                          <input className="form-input" value={form.platform ?? ''} onChange={(e) => set('platform', e.target.value)} placeholder="Netflix, 왓챠, 웨이브..." />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {isBook && <div className="form-section-divider" />}
-
-                  {/* 장르 + 연도 */}
-                  <div className="form-section">
-                    <div className="form-section-title">분류</div>
-                    <div className="form-row">
-                      <div className="form-group" style={{ flex: '1 1 100%' }}>
-                        <label className="form-label">장르</label>
-                        <GenreTagInput
-                          value={form.genre ?? ''}
-                          onChange={(v) => set('genre', v)}
-                          suggestedGenres={suggestedGenres}
-                        />
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                          Tab 또는 ＋ 으로 하위 장르 추가
-                        </div>
+                    <div className="form-row" style={{ marginBottom: 8 }}>
+                      <div className="form-group">
+                        <label className="form-label">저자</label>
+                        <input className="form-input" value={form.author ?? ''} onChange={(e) => set('author', e.target.value)} placeholder="저자" />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">출판 / 개봉 연도</label>
-                        <input className="form-input" type="number" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="2024" min={1900} max={2100} />
+                        <label className="form-label">출판사</label>
+                        <input className="form-input" value={form.publisher ?? ''} onChange={(e) => set('publisher', e.target.value)} placeholder="출판사" />
                       </div>
+                    </div>
+                  )}
+                  {isBook && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">전체 페이지</label>
+                        <input className="form-input" type="number" value={form.page_count ?? ''} onChange={(e) => set('page_count', e.target.value ? parseInt(e.target.value) : null)} placeholder="300" min={1} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">ISBN</label>
+                        <input className="form-input" value={form.isbn ?? ''} onChange={(e) => set('isbn', e.target.value)} placeholder="9791234567890" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 영화/드라마 전용 필드 */}
+                  {!isBook && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">감독</label>
+                        <input className="form-input" value={form.director ?? ''} onChange={(e) => set('director', e.target.value)} placeholder="감독 / 연출" />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">플랫폼</label>
+                        <input className="form-input" value={form.platform ?? ''} onChange={(e) => set('platform', e.target.value)} placeholder="Netflix, 왓챠..." />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-section-divider" />
+
+                  {/* 연도 + 장르 */}
+                  <div className="form-row" style={{ alignItems: 'flex-start' }}>
+                    <div className="form-group" style={{ flex: '0 0 90px' }}>
+                      <label className="form-label">연도</label>
+                      <input className="form-input" type="number" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="2024" min={1900} max={2100} />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">장르 <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>쉼표로 구분</span></label>
+                      <input className="form-input" value={form.genre ?? ''} onChange={(e) => set('genre', e.target.value)} placeholder="SF, 스릴러, 액션..." />
+                      {genreSuggestions.length > 0 && (
+                        <div className="genre-chips" style={{ marginTop: 6 }}>
+                          {genreSuggestions.map((g) => (
+                            <button key={g} className="genre-recent-chip" onClick={() => addGenreChip(g)}>
+                              + {g}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="form-section-divider" />
 
                   {/* 줄거리 */}
-                  <div className="form-section">
-                    <div className="form-section-title">소개</div>
-                    <textarea className="form-textarea" value={form.overview ?? ''} onChange={(e) => set('overview', e.target.value)} placeholder="줄거리 또는 책 소개..." rows={4} />
+                  <div className="form-group">
+                    <label className="form-label">줄거리 / 소개</label>
+                    <textarea className="form-textarea" value={form.overview ?? ''} onChange={(e) => set('overview', e.target.value)} placeholder="간단한 소개..." rows={3} />
                   </div>
                 </div>
               )}
 
+              {/* ── 기록 탭 ── */}
               {activeTab === 'record' && (
                 <div className="add-tab-content">
-                  <div className="form-section">
-                    <div className="form-section-title">현재 상태</div>
+
+                  {/* 상태 */}
+                  <div className="form-group">
+                    <label className="form-label">상태</label>
                     <div className="status-btn-group">
                       {[
-                        { v: 'want',    label: isBook ? '읽고 싶다' : '볼 예정',    icon: '🔖' },
-                        { v: 'reading', label: isBook ? '읽는 중'   : '보는 중',    icon: '📖' },
-                        { v: 'done',    label: isBook ? '완독'       : '시청 완료',  icon: '✅' },
-                        { v: 'dropped', label: '중단',                               icon: '⏸' }
+                        { v: 'want',    label: isBook ? '읽고 싶다' : '볼 예정',   icon: '🔖' },
+                        { v: 'reading', label: isBook ? '읽는 중'   : '보는 중',   icon: '📖' },
+                        { v: 'done',    label: isBook ? '완독'       : '시청 완료', icon: '✅' },
+                        { v: 'dropped', label: '중단',                              icon: '⏸' }
                       ].map(({ v, label, icon }) => (
                         <button
                           key={v}
@@ -668,49 +505,57 @@ export default function AddItemModal() {
                     </div>
                   </div>
 
-                  <div className="form-section">
-                    <div className="form-section-title">날짜</div>
-                    <div className={isBook && form.status === 'reading' && form.page_count ? 'form-row' : ''}>
-                      <div className="form-group">
-                        <label className="form-label">{isBook ? '완독일' : '시청일'}</label>
-                        <input className="form-input" type="date" value={form.read_date ?? ''} onChange={(e) => set('read_date', e.target.value)} />
-                      </div>
-                      {isBook && form.status === 'reading' && form.page_count && (
-                        <div className="form-group">
-                          <label className="form-label">현재 페이지</label>
-                          <input className="form-input" type="number" value={form.current_page ?? 0} onChange={(e) => set('current_page', parseInt(e.target.value) || 0)} min={0} max={form.page_count} placeholder={`0 ~ ${form.page_count}`} />
-                        </div>
-                      )}
+                  <div className="form-section-divider" />
+
+                  {/* 날짜 + 페이지 */}
+                  <div className="form-row" style={{ alignItems: 'flex-end' }}>
+                    <div className="form-group">
+                      <label className="form-label">{isBook ? '완독일' : '시청일'}</label>
+                      <input className="form-input" type="date" value={form.read_date ?? ''} onChange={(e) => set('read_date', e.target.value)} />
                     </div>
                     {isBook && form.status === 'reading' && form.page_count && (
-                      <div className="reading-progress-preview">
-                        <div className="reading-progress-bar-bg">
-                          <div className="reading-progress-bar-fill" style={{ width: `${Math.min(100, Math.round(((form.current_page ?? 0) / form.page_count) * 100))}%` }} />
-                        </div>
-                        <span className="reading-progress-pct">
-                          {Math.min(100, Math.round(((form.current_page ?? 0) / form.page_count) * 100))}%
-                        </span>
+                      <div className="form-group">
+                        <label className="form-label">현재 페이지</label>
+                        <input className="form-input" type="number" value={form.current_page ?? 0} onChange={(e) => set('current_page', parseInt(e.target.value) || 0)} min={0} max={form.page_count} placeholder={`0 ~ ${form.page_count}`} />
                       </div>
                     )}
                   </div>
+                  {progress !== null && (
+                    <div className="reading-progress-preview">
+                      <div className="reading-progress-bar-bg">
+                        <div className="reading-progress-bar-fill" style={{ width: `${progress}%` }} />
+                      </div>
+                      <span className="reading-progress-pct">{progress}%</span>
+                    </div>
+                  )}
 
-                  <div className="form-section">
-                    <div className="form-section-title">별점</div>
+                  <div className="form-section-divider" />
+
+                  {/* 별점 */}
+                  <div className="form-group">
+                    <label className="form-label">별점</label>
                     <div className="rating-row">
-                      <StarRating value={form.rating} onChange={(v) => set('rating', v === form.rating ? null : v)} size={28} />
-                      {form.rating != null && <span className="rating-value">{form.rating}.0</span>}
-                      {form.rating != null && <button className="btn-text" style={{ marginLeft: 4 }} onClick={() => set('rating', null)}>초기화</button>}
+                      <StarRating value={form.rating} onChange={(v) => set('rating', v === form.rating ? null : v)} size={26} />
+                      {form.rating != null && (
+                        <>
+                          <span className="rating-value">{form.rating}.0</span>
+                          <button className="btn-text" style={{ marginLeft: 4 }} onClick={() => set('rating', null)}>초기화</button>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  <div className="form-section">
-                    <div className="form-section-title">{isBook ? '독후감' : '감상평'}</div>
+                  <div className="form-section-divider" />
+
+                  {/* 감상평 */}
+                  <div className="form-group">
+                    <label className="form-label">{isBook ? '독후감' : '감상평'}</label>
                     <textarea
                       className="form-textarea"
                       value={form.review ?? ''}
                       onChange={(e) => set('review', e.target.value)}
-                      placeholder={isBook ? '읽고 난 소감, 인상 깊은 점, 기억에 남는 장면...' : '본 소감, 기억하고 싶은 장면, 추천 여부...'}
-                      rows={7}
+                      placeholder={isBook ? '읽고 난 소감, 인상 깊은 점...' : '본 소감, 기억하고 싶은 장면...'}
+                      rows={6}
                       style={{ resize: 'vertical' }}
                     />
                   </div>
@@ -718,26 +563,19 @@ export default function AddItemModal() {
               )}
             </div>
 
+            {/* 푸터 */}
             <div className="add-modal-footer">
               {activeTab === 'info' ? (
                 <>
-                  <button className="btn-secondary" style={{ width: 80 }} onClick={closeAddModal}>취소</button>
+                  <button className="btn-secondary" onClick={closeAddModal}>취소</button>
                   <button className="btn-primary" onClick={() => setActiveTab('record')} disabled={!form.title.trim()}>
-                    다음: {isBook ? '독서 기록' : '시청 기록'}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                    </svg>
+                    {isBook ? '독서 기록' : '시청 기록'} →
                   </button>
                 </>
               ) : (
                 <>
-                  <button className="btn-secondary" onClick={() => setActiveTab('info')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
-                    </svg>
-                    기본 정보
-                  </button>
-                  <button className="btn-primary" style={{ minWidth: 90 }} onClick={handleSubmit} disabled={isSaving || !form.title.trim()}>
+                  <button className="btn-secondary" onClick={() => setActiveTab('info')}>← 기본 정보</button>
+                  <button className="btn-primary" onClick={handleSubmit} disabled={isSaving || !form.title.trim()}>
                     {isSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : (editingItem ? '저장하기' : '추가하기')}
                   </button>
                 </>
