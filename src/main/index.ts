@@ -17,7 +17,9 @@ function setupAutoUpdater(win: BrowserWindow) {
     win.webContents.send('updater:available', info.version)
   })
 
-  autoUpdater.on('update-not-available', () => { /* 조용히 무시 */ })
+  autoUpdater.on('update-not-available', () => {
+    win.webContents.send('updater:not-available')
+  })
 
   // 다운로드 진행률 → 렌더러로 전달
   autoUpdater.on('download-progress', (progress) => {
@@ -31,6 +33,12 @@ function setupAutoUpdater(win: BrowserWindow) {
 
   autoUpdater.on('error', (err) => {
     console.error('업데이트 오류:', err)
+    win.webContents.send('updater:error', err.message)
+  })
+
+  // 렌더러에서 업데이트 수동 확인 요청
+  ipcMain.handle('updater:check', () => {
+    autoUpdater.checkForUpdates()
   })
 
   // 렌더러에서 다운로드 시작 요청

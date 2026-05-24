@@ -4,6 +4,8 @@ import { useStore } from '../store/useStore'
 // 웹 환경인지 체크 (VITE_ 환경변수 존재 여부로 판단)
 const isWebEnv = typeof import.meta.env.VITE_SUPABASE_URL === 'string' && !!import.meta.env.VITE_SUPABASE_URL
 
+type UpdateCheckState = 'idle' | 'checking' | 'available' | 'not-available' | 'error'
+
 export default function SettingsModal() {
   const { isSettingsOpen, closeSettings } = useStore()
   const [tmdbKey, setTmdbKey] = useState('')
@@ -11,9 +13,21 @@ export default function SettingsModal() {
   const [saved, setSaved] = useState(false)
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
+  const [updateState, setUpdateState] = useState<UpdateCheckState>('idle')
+  const [updateVersion, setUpdateVersion] = useState('')
+
+  const isElectron = !!window.updaterBridge
 
   useEffect(() => {
     if (!isSettingsOpen) return
+    setUpdateState('idle')
+    setUpdateVersion('')
+    // updaterBridge 리스너 등록 (설정 모달이 열릴 때마다)
+    if (window.updaterBridge) {
+      window.updaterBridge.onAvailable((v) => { setUpdateVersion(v); setUpdateState('available') })
+      window.updaterBridge.onNotAvailable(() => setUpdateState('not-available'))
+      window.updaterBridge.onError(() => setUpdateState('error'))
+    }
     window.api.settings.get('tmdb_api_key').then(setTmdbKey).catch(() => {})
     window.api.settings.get('google_books_api_key').then(setGoogleKey).catch(() => {})
 
@@ -70,6 +84,16 @@ export default function SettingsModal() {
     if (!isSupabaseConfigured || !supabase) return
     await supabase.auth.signOut()
     window.location.reload()
+  }
+
+  const handleCheckUpdate = async () => {
+    setUpdateState('checking')
+    await window.updaterBridge?.checkForUpdates()
+    // 결과는 onAvailable / onNotAvailable / onError 콜백에서 처리
+    // 10초 타임아웃
+    setTimeout(() => {
+      setUpdateState((s) => s === 'checking' ? 'error' : s)
+    }, 10000)
   }
 
   const handleSignIn = async () => {
@@ -159,6 +183,33 @@ export default function SettingsModal() {
           </div>
 
           <div className="settings-divider" />
+
+          {/* 업데이트 확인 (Electron 전용) */}
+          {isElectron && (
+            <>
+              <div className="settings-actions-row">
+                <div>
+                  <div className="settings-group-label">업데이트 확인</div>
+                  <div className="settings-group-desc">
+                    {updateState === 'idle' && '최신 버전을 확인합니다'}
+                    {updateState === 'checking' && '확인 중...'}
+                    {updateState === 'available' && `🎉 새 버전 v${updateVersion} 이 있어요! 하단 토스트에서 업데이트하세요.`}
+                    {updateState === 'not-available' && '✅ 최신 버전이에요'}
+                    {updateState === 'error' && '⚠️ 확인 중 오류가 발생했어요'}
+                  </div>
+                </div>
+                <button
+                  className="btn-secondary"
+                  style={{ flexShrink: 0 }}
+                  onClick={handleCheckUpdate}
+                  disabled={updateState === 'checking'}
+                >
+                  {updateState === 'checking' ? '확인 중...' : '확인'}
+                </button>
+              </div>
+              <div className="settings-divider" />
+            </>
+          )}
 
           <div className="settings-actions-row">
             <div>

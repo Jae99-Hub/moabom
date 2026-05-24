@@ -52,6 +52,15 @@ const updaterBridge = {
     ipcRenderer.removeAllListeners('updater:downloaded')
     ipcRenderer.on('updater:downloaded', () => cb())
   },
+  onNotAvailable: (cb: () => void) => {
+    ipcRenderer.removeAllListeners('updater:not-available')
+    ipcRenderer.on('updater:not-available', () => cb())
+  },
+  onError: (cb: (msg: string) => void) => {
+    ipcRenderer.removeAllListeners('updater:error')
+    ipcRenderer.on('updater:error', (_e, msg: string) => cb(msg))
+  },
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
   startDownload: () => ipcRenderer.invoke('updater:startDownload'),
   install: () => ipcRenderer.invoke('updater:install'),
 }
