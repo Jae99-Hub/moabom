@@ -1,6 +1,7 @@
 import React from 'react'
 import { create } from 'zustand'
 import { Item, ItemFormData, FilterState, Quote, QuoteSearchResult, ItemType, ItemStatus } from '../types'
+import type { SyncStatus } from '../api/syncService'
 
 interface AppState {
   itemList: Item[]
@@ -43,6 +44,11 @@ interface AppState {
   deleteCheckedItems: () => Promise<void>
   toggleSidebar: () => void
   closeSidebar: () => void
+
+  // 동기화
+  syncStatus: SyncStatus
+  setSyncStatus: (s: SyncStatus) => void
+  triggerSync: () => Promise<void>
 }
 
 function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
@@ -121,6 +127,7 @@ export const useStore = create<AppState>((set, get) => ({
   selectionMode: false,
   checkedItems: [],
   isSidebarOpen: false,
+  syncStatus: 'idle' as SyncStatus,
 
   fetchAll: async () => {
     const list = await window.api.items.getAll()
@@ -188,6 +195,18 @@ export const useStore = create<AppState>((set, get) => ({
   exitSelectionMode: () => set({ selectionMode: false, checkedItems: [] }),
   toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
   closeSidebar: () => set({ isSidebarOpen: false }),
+
+  setSyncStatus: (s) => set({ syncStatus: s }),
+  triggerSync: async () => {
+    const { setSyncStatus, fetchAll } = get()
+    try {
+      const { runSync } = await import('../api/syncService')
+      await runSync(setSyncStatus)
+      await fetchAll() // 동기화 후 목록 새로고침
+    } catch {
+      // runSync already called setSyncStatus('error')
+    }
+  },
   toggleCheckedItem: (id) => set((s) => ({
     checkedItems: s.checkedItems.includes(id)
       ? s.checkedItems.filter((x) => x !== id)

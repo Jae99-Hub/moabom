@@ -120,6 +120,33 @@ declare global {
         backup: () => Promise<{ success: boolean; path?: string }>
         restore: () => Promise<{ success: boolean }>
       }
+      sync: {
+        getDirtyItems: () => Promise<Record<string, unknown>[]>
+        getDirtyQuotes: () => Promise<Record<string, unknown>[]>
+        markItemSynced: (localId: number, serverId: number) => Promise<void>
+        markQuoteSynced: (localId: number, serverId: number) => Promise<void>
+        hardDeleteItem: (localId: number) => Promise<void>
+        hardDeleteQuote: (localId: number) => Promise<void>
+        upsertItemFromCloud: (cloudItem: unknown) => Promise<void>
+        upsertQuoteFromCloud: (cloudQuote: unknown) => Promise<void>
+        getLastSyncAt: () => Promise<string>
+        setLastSyncAt: (ts: string) => Promise<void>
+        getItemById: (id: number) => Promise<unknown>
+      }
+    }
+    authBridge: {
+      openExternal: (url: string) => Promise<void>
+      onCallback: (callback: (url: string) => void) => void
+    }
+    updaterBridge: {
+      onAvailable: (cb: (version: string) => void) => void
+      onProgress: (cb: (pct: number) => void) => void
+      onDownloaded: (cb: () => void) => void
+      onNotAvailable: (cb: () => void) => void
+      onError: (cb: (msg: string) => void) => void
+      checkForUpdates: () => Promise<void>
+      startDownload: () => Promise<void>
+      install: () => Promise<void>
     }
   }
 }

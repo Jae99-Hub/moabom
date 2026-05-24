@@ -35,6 +35,23 @@ const api = {
   db: {
     backup: () => ipcRenderer.invoke('db:backup'),
     restore: () => ipcRenderer.invoke('db:restore')
+  },
+  sync: {
+    getDirtyItems: () => ipcRenderer.invoke('sync:getDirtyItems'),
+    getDirtyQuotes: () => ipcRenderer.invoke('sync:getDirtyQuotes'),
+    markItemSynced: (localId: number, serverId: number) =>
+      ipcRenderer.invoke('sync:markItemSynced', localId, serverId),
+    markQuoteSynced: (localId: number, serverId: number) =>
+      ipcRenderer.invoke('sync:markQuoteSynced', localId, serverId),
+    hardDeleteItem: (localId: number) => ipcRenderer.invoke('sync:hardDeleteItem', localId),
+    hardDeleteQuote: (localId: number) => ipcRenderer.invoke('sync:hardDeleteQuote', localId),
+    upsertItemFromCloud: (cloudItem: unknown) =>
+      ipcRenderer.invoke('sync:upsertItemFromCloud', cloudItem),
+    upsertQuoteFromCloud: (cloudQuote: unknown) =>
+      ipcRenderer.invoke('sync:upsertQuoteFromCloud', cloudQuote),
+    getLastSyncAt: () => ipcRenderer.invoke('sync:getLastSyncAt'),
+    setLastSyncAt: (ts: string) => ipcRenderer.invoke('sync:setLastSyncAt', ts),
+    getItemById: (id: number) => ipcRenderer.invoke('sync:getItemById', id),
   }
 }
 

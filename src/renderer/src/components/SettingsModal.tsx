@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
 
 // 웹 환경인지 체크 (VITE_ 환경변수 존재 여부로 판단)
@@ -7,7 +7,7 @@ const isWebEnv = typeof import.meta.env.VITE_SUPABASE_URL === 'string' && !!impo
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'not-available' | 'error'
 
 export default function SettingsModal() {
-  const { isSettingsOpen, closeSettings } = useStore()
+  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync } = useStore()
   const [tmdbKey, setTmdbKey] = useState('')
   const [googleKey, setGoogleKey] = useState('')
   const [saved, setSaved] = useState(false)
@@ -16,8 +16,15 @@ export default function SettingsModal() {
   const [updateState, setUpdateState] = useState<UpdateCheckState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
 
+  // Electron 로그인 상태
+  const [electronEmail, setElectronEmail] = useState('')
+  const [electronName, setElectronName] = useState('')
+  const [signingIn, setSigningIn] = useState(false)
+  const callbackRegistered = useRef(false)
+
   const isElectron = !!window.updaterBridge
 
+  // ── 모달 열릴 때마다 실행 ────────────────────────────────────────
   useEffect(() => {
     if (!isSettingsOpen) return
     setUpdateState('idle')
@@ -42,7 +49,45 @@ export default function SettingsModal() {
         })
       }).catch(() => {})
     }
+
+    // Electron: 기존 로그인 세션 확인
+    if (isElectron) {
+      import('../api/syncService').then(({ getElectronUser }) => {
+        getElectronUser().then((user) => {
+          setElectronEmail(user?.email ?? '')
+          setElectronName(user?.name ?? '')
+        }).catch(() => {})
+      })
+    }
   }, [isSettingsOpen])
+
+  // ── 마운트 시 한 번: Electron OAuth 콜백 리스너 등록 ─────────────
+  useEffect(() => {
+    if (!isElectron || !window.authBridge || callbackRegistered.current) return
+    callbackRegistered.current = true
+
+    window.authBridge.onCallback(async (callbackUrl: string) => {
+      try {
+        const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
+        if (!isSupabaseConfigured || !supabase) return
+        const code = new URL(callbackUrl.replace('moabom://', 'https://dummy.local/')).searchParams.get('code')
+        if (!code) return
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) { setSigningIn(false); return }
+        const { getElectronUser } = await import('../api/syncService')
+        const user = await getElectronUser()
+        setElectronEmail(user?.email ?? '')
+        setElectronName(user?.name ?? '')
+        setSigningIn(false)
+        // 로그인 직후 초기 동기화
+        triggerSync()
+      } catch (err) {
+        console.error('[Auth] 콜백 처리 오류:', err)
+        setSigningIn(false)
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSave = async () => {
     try {
@@ -105,6 +150,45 @@ export default function SettingsModal() {
     })
   }
 
+  const handleElectronSignIn = async () => {
+    const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
+    if (!isSupabaseConfigured || !supabase || !window.authBridge) return
+    setSigningIn(true)
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'moabom://auth/callback',
+        queryParams: { prompt: 'select_account' },
+        skipBrowserRedirect: true,
+      }
+    })
+    if (error || !data.url) { setSigningIn(false); return }
+    await window.authBridge.openExternal(data.url)
+    // 결과는 onCallback 리스너에서 처리됨
+  }
+
+  const handleElectronSignOut = async () => {
+    if (!window.confirm('로그아웃할까요?')) return
+    const { electronSignOut } = await import('../api/syncService')
+    await electronSignOut()
+    setElectronEmail('')
+    setElectronName('')
+    setSyncStatus('idle')
+  }
+
+  const handleSync = async () => {
+    await triggerSync()
+  }
+
+  const syncStatusText = () => {
+    switch (syncStatus) {
+      case 'syncing': return '동기화 중...'
+      case 'success': return '동기화 완료 ✓'
+      case 'error': return '동기화 오류 ⚠️'
+      default: return '클라우드와 데이터를 동기화합니다'
+    }
+  }
+
   if (!isSettingsOpen) return null
 
   return (
@@ -120,6 +204,60 @@ export default function SettingsModal() {
         </div>
 
         <div className="settings-modal-body">
+          {/* ── Electron 로그인 섹션 ── */}
+          {isElectron && !electronEmail && (
+            <>
+              <div className="settings-anon-row">
+                <div className="settings-anon-info">
+                  <div className="settings-group-label">비로그인 상태</div>
+                  <div className="settings-group-desc">
+                    {signingIn ? '브라우저에서 로그인 중...' : '로그인하면 클라우드에 데이터를 백업할 수 있어요'}
+                  </div>
+                </div>
+                <button
+                  className="btn-secondary settings-signout-btn"
+                  onClick={handleElectronSignIn}
+                  disabled={signingIn}
+                >
+                  {signingIn ? '대기 중...' : 'Google 로그인'}
+                </button>
+              </div>
+              <div className="settings-divider" />
+            </>
+          )}
+
+          {isElectron && electronEmail && (
+            <>
+              <div className="settings-user-row">
+                <div className="settings-user-avatar">
+                  {(electronName || electronEmail).slice(0, 1).toUpperCase()}
+                </div>
+                <div className="settings-user-info">
+                  {electronName && <div className="settings-user-name">{electronName}</div>}
+                  <div className="settings-user-email">{electronEmail}</div>
+                </div>
+                <button className="btn-secondary settings-signout-btn" onClick={handleElectronSignOut}>
+                  로그아웃
+                </button>
+              </div>
+              <div className="settings-actions-row" style={{ marginTop: 8 }}>
+                <div>
+                  <div className="settings-group-label">클라우드 동기화</div>
+                  <div className="settings-group-desc">{syncStatusText()}</div>
+                </div>
+                <button
+                  className="btn-secondary"
+                  style={{ flexShrink: 0 }}
+                  onClick={handleSync}
+                  disabled={syncStatus === 'syncing'}
+                >
+                  {syncStatus === 'syncing' ? '동기화 중...' : '지금 동기화'}
+                </button>
+              </div>
+              <div className="settings-divider" />
+            </>
+          )}
+
           {/* 비로그인 상태 (웹 전용) */}
           {isWebEnv && !userEmail && !userName && (
             <>

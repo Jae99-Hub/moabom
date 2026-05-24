@@ -6,6 +6,8 @@ import {
   getAllItems, getItemById, insertItem, updateItem, deleteItem,
   getQuotesByItemId, searchQuotes, insertQuote, updateQuote, deleteQuote,
   getSetting, setSetting, reloadDatabase,
+  getDirtyItems, getDirtyQuotes, markItemSynced, markQuoteSynced,
+  hardDeleteItem, hardDeleteQuote, upsertItemFromCloud, upsertQuoteFromCloud,
   ItemRow, QuoteRow
 } from './database'
 import { searchTmdb } from './tmdb'
@@ -107,4 +109,21 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     await reloadDatabase() // 기존 DB 닫고 새 파일로 재오픈
     return { success: true }
   })
+
+  // ── 동기화 핸들러 ──────────────────────────────────────────────────
+  ipcMain.handle('sync:getDirtyItems', () => getDirtyItems())
+  ipcMain.handle('sync:getDirtyQuotes', () => getDirtyQuotes())
+  ipcMain.handle('sync:markItemSynced', (_, localId: number, serverId: number) =>
+    markItemSynced(localId, serverId))
+  ipcMain.handle('sync:markQuoteSynced', (_, localId: number, serverId: number) =>
+    markQuoteSynced(localId, serverId))
+  ipcMain.handle('sync:hardDeleteItem', (_, localId: number) => hardDeleteItem(localId))
+  ipcMain.handle('sync:hardDeleteQuote', (_, localId: number) => hardDeleteQuote(localId))
+  ipcMain.handle('sync:upsertItemFromCloud', (_, cloudItem: Parameters<typeof upsertItemFromCloud>[0]) =>
+    upsertItemFromCloud(cloudItem))
+  ipcMain.handle('sync:upsertQuoteFromCloud', (_, cloudQuote: Parameters<typeof upsertQuoteFromCloud>[0]) =>
+    upsertQuoteFromCloud(cloudQuote))
+  ipcMain.handle('sync:getLastSyncAt', () => getSetting('last_sync_at'))
+  ipcMain.handle('sync:setLastSyncAt', (_, ts: string) => setSetting('last_sync_at', ts))
+  ipcMain.handle('sync:getItemById', (_, id: number) => getItemById(id))
 }
