@@ -23,6 +23,10 @@
     {
       from: "node_modules/sql.js/dist/sql-wasm.wasm",
       to: "sql-wasm.wasm"
+    },
+    {
+      from: "build/icon.ico",
+      to: "icon.ico"
     }
   ],
   win: {

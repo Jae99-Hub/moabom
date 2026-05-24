@@ -90,6 +90,10 @@ if (!gotTheLock) {
 }
 
 function createWindow(): void {
+  const iconPath = process.platform === 'win32'
+    ? join(process.resourcesPath, 'icon.ico')
+    : undefined
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 860,
@@ -97,6 +101,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
+    icon: iconPath,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
