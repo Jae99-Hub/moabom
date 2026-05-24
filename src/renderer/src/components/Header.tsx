@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 
 export default function Header() {
-  const { filters, setFilter, theme, toggleTheme, openAddModal, openSettings, searchQuotes, clearQuoteSearch, toggleSidebar } = useStore()
+  const { filters, setFilter, theme, toggleTheme, openAddModal, openSettings, openStats, searchQuotes, clearQuoteSearch, toggleSidebar } = useStore()
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const mobileInputRef = useRef<HTMLInputElement>(null)
 
@@ -145,6 +145,14 @@ export default function Header() {
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
             </svg>
           )}
+        </button>
+
+        <button className="btn-icon" onClick={openStats} title="통계">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
         </button>
 
         <button className="btn-icon header-settings-btn" onClick={openSettings} title="설정">

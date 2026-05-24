@@ -44,6 +44,9 @@ interface AppState {
   deleteCheckedItems: () => Promise<void>
   toggleSidebar: () => void
   closeSidebar: () => void
+  isStatsOpen: boolean
+  openStats: () => void
+  closeStats: () => void
 
   // 동기화
   syncStatus: SyncStatus
@@ -132,6 +135,7 @@ export const useStore = create<AppState>((set, get) => ({
   selectionMode: false,
   checkedItems: [],
   isSidebarOpen: false,
+  isStatsOpen: false,
   syncStatus: 'idle' as SyncStatus,
   syncConflicts: [] as SyncConflict[],
   syncAutoMerged: 0,
@@ -202,6 +206,8 @@ export const useStore = create<AppState>((set, get) => ({
   exitSelectionMode: () => set({ selectionMode: false, checkedItems: [] }),
   toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
   closeSidebar: () => set({ isSidebarOpen: false }),
+  openStats: () => set({ isStatsOpen: true }),
+  closeStats: () => set({ isStatsOpen: false }),
 
   setSyncStatus: (s) => set({ syncStatus: s }),
   setSyncResult: (conflicts, autoMerged) => set({ syncConflicts: conflicts, syncAutoMerged: autoMerged }),

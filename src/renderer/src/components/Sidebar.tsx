@@ -95,7 +95,7 @@ function GenreNodes({
 }
 
 export default function Sidebar() {
-  const { itemList, filters, setFilter, isSidebarOpen, closeSidebar, openSettings } = useStore()
+  const { itemList, filters, setFilter, isSidebarOpen, closeSidebar, openSettings, openStats } = useStore()
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['book', 'movie', 'drama']))
 
   const forests = useMemo(() => ({
@@ -250,8 +250,18 @@ export default function Sidebar() {
         )
       })}
 
-      {/* 설정 버튼 (데스크탑 + 모바일 공통) */}
+      {/* 통계 + 설정 버튼 (데스크탑 + 모바일 공통) */}
       <div className="sidebar-footer">
+        <button className="sidebar-nav-item" onClick={() => { openStats(); closeSidebar() }}>
+          <span className="sidebar-type-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          </span>
+          통계
+        </button>
         <button className="sidebar-nav-item sidebar-settings-btn" onClick={() => { openSettings(); closeSidebar() }}>
           <span className="sidebar-type-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
