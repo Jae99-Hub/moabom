@@ -1,0 +1,239 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background -->
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFF9F4"/>
+      <stop offset="100%" stop-color="#F5EDE3"/>
+    </linearGradient>
+
+    <!-- Box front face -->
+    <linearGradient id="boxFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E2D52"/>
+      <stop offset="100%" stop-color="#111A35"/>
+    </linearGradient>
+
+    <!-- Box top face (lighter) -->
+    <linearGradient id="boxTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2E4278"/>
+      <stop offset="100%" stop-color="#1E2D52"/>
+    </linearGradient>
+
+    <!-- Box right face (darker) -->
+    <linearGradient id="boxRight" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0F1829"/>
+      <stop offset="100%" stop-color="#0A1020"/>
+    </linearGradient>
+
+    <!-- Box interior glow -->
+    <radialGradient id="interior" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#A855F7"/>
+      <stop offset="40%" stop-color="#6D28D9"/>
+      <stop offset="100%" stop-color="#0F0A20"/>
+    </radialGradient>
+
+    <!-- Purple glow around opening -->
+    <radialGradient id="openingGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C084FC" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#7C3AED" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Book gradient -->
+    <linearGradient id="bookG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+
+    <!-- Movie gradient -->
+    <linearGradient id="movieG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C084FC"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+
+    <!-- Drama gradient -->
+    <linearGradient id="dramaG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F87171"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+
+    <!-- Drop shadow -->
+    <filter id="cardShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#00000028"/>
+    </filter>
+
+    <!-- Rim glow -->
+    <filter id="rimGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Motion blur for closest item -->
+    <filter id="motionBlur" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="1.5 0.5"/>
+    </filter>
+
+    <!-- Clip rounded corners -->
+    <clipPath id="round">
+      <rect width="256" height="256" rx="44" ry="44"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <!-- ── Background ── -->
+    <rect width="256" height="256" fill="url(#bg)"/>
+
+    <!-- ── Cherry blossoms (corners) ── -->
+    <!-- Top-left blossom -->
+    <g transform="translate(28,26)" opacity="0.75">
+      <ellipse cx="-7" cy="-4" rx="8" ry="5.5" fill="#FFB3C1" transform="rotate(0)"/>
+      <ellipse cx="4" cy="-7" rx="8" ry="5.5" fill="#FFB3C1" transform="rotate(72)"/>
+      <ellipse cx="8" cy="3" rx="8" ry="5.5" fill="#FFB3C1" transform="rotate(144)"/>
+      <ellipse cx="1" cy="8" rx="8" ry="5.5" fill="#FFB3C1" transform="rotate(216)"/>
+      <ellipse cx="-7" cy="4" rx="8" ry="5.5" fill="#FFB3C1" transform="rotate(288)"/>
+      <circle cx="0" cy="0" r="3" fill="#FF8FA3"/>
+    </g>
+    <!-- Top-right blossom -->
+    <g transform="translate(226,34)" opacity="0.65">
+      <ellipse cx="-6" cy="-3.5" rx="7" ry="4.5" fill="#FFB3C1" transform="rotate(18)"/>
+      <ellipse cx="3.5" cy="-6" rx="7" ry="4.5" fill="#FFB3C1" transform="rotate(90)"/>
+      <ellipse cx="7" cy="2.5" rx="7" ry="4.5" fill="#FFB3C1" transform="rotate(162)"/>
+      <ellipse cx="0.5" cy="7" rx="7" ry="4.5" fill="#FFB3C1" transform="rotate(234)"/>
+      <ellipse cx="-6" cy="3" rx="7" ry="4.5" fill="#FFB3C1" transform="rotate(306)"/>
+      <circle cx="0" cy="0" r="2.5" fill="#FF8FA3"/>
+    </g>
+    <!-- Bottom-left small -->
+    <g transform="translate(22,210)" opacity="0.55">
+      <ellipse cx="-5" cy="-3" rx="6" ry="4" fill="#FFC0CB" transform="rotate(36)"/>
+      <ellipse cx="3" cy="-5" rx="6" ry="4" fill="#FFC0CB" transform="rotate(108)"/>
+      <ellipse cx="6" cy="2" rx="6" ry="4" fill="#FFC0CB" transform="rotate(180)"/>
+      <ellipse cx="0" cy="6" rx="6" ry="4" fill="#FFC0CB" transform="rotate(252)"/>
+      <ellipse cx="-5" cy="2.5" rx="6" ry="4" fill="#FFC0CB" transform="rotate(324)"/>
+      <circle cx="0" cy="0" r="2" fill="#FF8FA3"/>
+    </g>
+
+    <!-- ── Motion trail arcs (items being pulled toward box opening) ── -->
+    <!-- Trail from book card toward opening center (~128, 168) -->
+    <path d="M 68,105 Q 90,148 122,166" stroke="#60A5FA" stroke-width="1.5"
+          fill="none" stroke-dasharray="3,5" stroke-opacity="0.45" stroke-linecap="round"/>
+    <!-- Trail dots -->
+    <circle cx="80" cy="126" r="2" fill="#60A5FA" opacity="0.3"/>
+    <circle cx="96" cy="143" r="1.5" fill="#60A5FA" opacity="0.2"/>
+    <circle cx="110" cy="157" r="1" fill="#60A5FA" opacity="0.15"/>
+
+    <!-- Trail from movie card toward opening -->
+    <path d="M 186,88 Q 168,132 136,164" stroke="#C084FC" stroke-width="1.5"
+          fill="none" stroke-dasharray="3,5" stroke-opacity="0.45" stroke-linecap="round"/>
+    <circle cx="176" cy="112" r="2" fill="#C084FC" opacity="0.3"/>
+    <circle cx="160" cy="136" r="1.5" fill="#C084FC" opacity="0.2"/>
+    <circle cx="146" cy="153" r="1" fill="#C084FC" opacity="0.15"/>
+
+    <!-- Trail from drama (close item) -->
+    <path d="M 148,148 Q 140,158 130,166" stroke="#F87171" stroke-width="1"
+          fill="none" stroke-dasharray="2,4" stroke-opacity="0.35" stroke-linecap="round"/>
+
+    <!-- ── BOOK card (far – upper left, large, slight tilt) ── -->
+    <g transform="translate(58,85) rotate(-12)" filter="url(#cardShadow)">
+      <rect x="0" y="0" width="46" height="62" rx="7" fill="url(#bookG)"/>
+      <!-- Book icon: two pages -->
+      <rect x="6" y="10" width="15" height="20" rx="2" fill="white" opacity="0.9"/>
+      <rect x="25" y="10" width="15" height="20" rx="2" fill="white" opacity="0.9"/>
+      <!-- Lines on pages -->
+      <rect x="8" y="14" width="11" height="1.5" rx="1" fill="#2563EB" opacity="0.5"/>
+      <rect x="8" y="17.5" width="11" height="1.5" rx="1" fill="#2563EB" opacity="0.5"/>
+      <rect x="8" y="21" width="8" height="1.5" rx="1" fill="#2563EB" opacity="0.5"/>
+      <rect x="27" y="14" width="11" height="1.5" rx="1" fill="#2563EB" opacity="0.5"/>
+      <rect x="27" y="17.5" width="11" height="1.5" rx="1" fill="#2563EB" opacity="0.5"/>
+      <rect x="27" y="21" width="8" height="1.5" rx="1" fill="#2563EB" opacity="0.5"/>
+      <!-- Spine -->
+      <rect x="21.5" y="9" width="3" height="22" rx="1" fill="white" opacity="0.5"/>
+      <!-- Label strip at bottom -->
+      <rect x="0" y="50" width="46" height="12" rx="0" fill="#1D4ED8" opacity="0.4"/>
+      <rect x="0" y="50" width="46" height="12" rx="0 0 7 7" fill="#1D4ED8" opacity="0.25"/>
+      <!-- Shine -->
+      <rect x="0" y="0" width="46" height="20" rx="7" fill="white" opacity="0.08"/>
+    </g>
+
+    <!-- ── MOVIE card (medium distance – upper right, medium size, tilted) ── -->
+    <g transform="translate(175,68) rotate(18)" filter="url(#cardShadow)">
+      <rect x="0" y="0" width="40" height="54" rx="7" fill="url(#movieG)"/>
+      <!-- Film reel circle -->
+      <circle cx="20" cy="24" r="13" fill="white" opacity="0.15"/>
+      <circle cx="20" cy="24" r="9" fill="white" opacity="0.9"/>
+      <!-- Play triangle -->
+      <polygon points="17,20 17,28 25,24" fill="#7C3AED" opacity="0.9"/>
+      <!-- Film strip lines at top -->
+      <rect x="4" y="4" width="6" height="5" rx="1" fill="white" opacity="0.4"/>
+      <rect x="12" y="4" width="6" height="5" rx="1" fill="white" opacity="0.4"/>
+      <rect x="20" y="4" width="6" height="5" rx="1" fill="white" opacity="0.4"/>
+      <rect x="28" y="4" width="8" height="5" rx="1" fill="white" opacity="0.4"/>
+      <!-- Shine -->
+      <rect x="0" y="0" width="40" height="18" rx="7" fill="white" opacity="0.08"/>
+    </g>
+
+    <!-- ── DRAMA card (close to box – small, more rotated, slight blur) ── -->
+    <g transform="translate(146,136) rotate(30)" filter="url(#cardShadow)">
+      <rect x="0" y="0" width="28" height="38" rx="5" fill="url(#dramaG)"/>
+      <!-- TV screen -->
+      <rect x="4" y="5" width="20" height="14" rx="2" fill="white" opacity="0.9"/>
+      <!-- Screen content lines -->
+      <rect x="6" y="8" width="10" height="1.5" rx="1" fill="#DC2626" opacity="0.5"/>
+      <rect x="6" y="11" width="7" height="1.5" rx="1" fill="#DC2626" opacity="0.5"/>
+      <!-- Antenna -->
+      <line x1="10" y1="5" x2="7" y2="1" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+      <line x1="18" y1="5" x2="21" y2="1" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+      <!-- Stand -->
+      <rect x="10" y="19" width="8" height="2" rx="1" fill="white" opacity="0.5"/>
+      <rect x="7" y="21" width="14" height="2" rx="1" fill="white" opacity="0.5"/>
+      <!-- Shine -->
+      <rect x="0" y="0" width="28" height="12" rx="5" fill="white" opacity="0.10"/>
+    </g>
+
+    <!-- ── BOX (isometric, open top, glowing interior) ── -->
+
+    <!-- Opening glow halo (behind box top rim) -->
+    <ellipse cx="128" cy="168" rx="62" ry="18" fill="url(#openingGlow)" filter="url(#rimGlow)"/>
+
+    <!-- Interior visible through opening (parallelogram) -->
+    <polygon points="78,168 178,168 198,152 58,152" fill="url(#interior)"/>
+
+    <!-- Interior sparkles -->
+    <circle cx="110" cy="158" r="1.5" fill="white" opacity="0.6"/>
+    <circle cx="128" cy="155" r="2" fill="white" opacity="0.5"/>
+    <circle cx="148" cy="160" r="1.5" fill="white" opacity="0.55"/>
+    <circle cx="162" cy="157" r="1" fill="white" opacity="0.4"/>
+    <circle cx="96" cy="162" r="1" fill="white" opacity="0.4"/>
+
+    <!-- Box front face -->
+    <polygon points="78,168 178,168 178,218 78,218" fill="url(#boxFront)"/>
+
+    <!-- Front face subtle horizontal grain -->
+    <line x1="78" y1="183" x2="178" y2="183" stroke="white" stroke-width="0.5" stroke-opacity="0.05"/>
+    <line x1="78" y1="198" x2="178" y2="198" stroke="white" stroke-width="0.5" stroke-opacity="0.05"/>
+    <line x1="78" y1="213" x2="178" y2="213" stroke="white" stroke-width="0.5" stroke-opacity="0.05"/>
+    <!-- Subtle left-side sheen -->
+    <polygon points="78,168 98,168 98,218 78,218" fill="white" opacity="0.04"/>
+
+    <!-- Box right face -->
+    <polygon points="178,168 198,152 198,202 178,218" fill="url(#boxRight)"/>
+
+    <!-- Box top face (rim around opening) -->
+    <!-- Left edge of opening -->
+    <polygon points="58,152 78,168 78,175 58,159" fill="#253660"/>
+    <!-- Right edge of opening (narrow rim) -->
+    <polygon points="178,168 198,152 205,155 185,171" fill="#1A2540"/>
+    <!-- Back left -->
+    <polygon points="58,152 198,152 205,155 65,155" fill="#2A3D6E"/>
+
+    <!-- Opening rim highlight (bright edge) -->
+    <line x1="58" y1="152" x2="198" y2="152" stroke="#6B9FFF" stroke-width="2" stroke-opacity="0.7"/>
+    <line x1="58" y1="152" x2="78" y2="168" stroke="#4D7FCC" stroke-width="1.5" stroke-opacity="0.5"/>
+    <line x1="198" y1="152" x2="178" y2="168" stroke="#4D7FCC" stroke-width="1.5" stroke-opacity="0.5"/>
+
+    <!-- Box outlines -->
+    <polygon points="78,168 178,168 178,218 78,218" fill="none" stroke="#0A1428" stroke-width="1.2"/>
+    <polygon points="78,168 198,152 198,202 178,218" fill="none" stroke="#0A1428" stroke-width="1"/>
+    <polygon points="58,152 198,152 178,168 78,168" fill="none" stroke="#0A1428" stroke-width="1"/>
+
+    <!-- Bottom edge shadow -->
+    <line x1="78" y1="218" x2="178" y2="218" stroke="#060E1E" stroke-width="1.5" opacity="0.8"/>
+  </g>
+</svg>

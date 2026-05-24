@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>* { margin:0; padding:0; } html,body { width:256px; height:256px; overflow:hidden; background:transparent; }</style>
+</head>
+<body>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <!-- Warm spring gradient background -->
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#FFF1F5"/>
+    <stop offset="100%" stop-color="#EDE0FF"/>
+  </linearGradient>
+
+  <!-- Tray / inbox shape gradient -->
+  <linearGradient id="trayGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#6C3FD4"/>
+    <stop offset="100%" stop-color="#4A1FA8"/>
+  </linearGradient>
+  <linearGradient id="trayTop" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#8B5CF6"/>
+    <stop offset="100%" stop-color="#6C3FD4"/>
+  </linearGradient>
+  <linearGradient id="trayRight" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%"   stop-color="#3B1888"/>
+    <stop offset="100%" stop-color="#2A1060"/>
+  </linearGradient>
+  <radialGradient id="trayGlow" cx="50%" cy="0%" r="80%">
+    <stop offset="0%"   stop-color="#C084FC" stop-opacity="0.5"/>
+    <stop offset="100%" stop-color="#7C3AED" stop-opacity="0"/>
+  </radialGradient>
+
+  <!-- Card colors -->
+  <linearGradient id="blueCard" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#67C3F3"/>
+    <stop offset="100%" stop-color="#3B9FE8"/>
+  </linearGradient>
+  <linearGradient id="purpleCard" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#B57BEE"/>
+    <stop offset="100%" stop-color="#8B5CF6"/>
+  </linearGradient>
+  <linearGradient id="pinkCard" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#FC8CA8"/>
+    <stop offset="100%" stop-color="#F43F72"/>
+  </linearGradient>
+
+  <!-- Drop shadow -->
+  <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#00000022"/>
+  </filter>
+  <filter id="shSm" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0000001A"/>
+  </filter>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+    <feGaussianBlur stdDeviation="5" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+
+  <clipPath id="rnd">
+    <rect width="256" height="256" rx="52" ry="52"/>
+  </clipPath>
+</defs>
+
+<g clip-path="url(#rnd)">
+
+<!-- ── Background ── -->
+<rect width="256" height="256" fill="url(#bg)"/>
+
+<!-- Soft spotlight from top -->
+<radialGradient id="spotlight" cx="50%" cy="0%" r="70%">
+  <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.45"/>
+  <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+</radialGradient>
+<rect width="256" height="256" fill="url(#spotlight)"/>
+
+<!-- ── Cherry blossoms — small, tasteful ── -->
+<!-- Top-left -->
+<g transform="translate(32,30)" opacity="0.70">
+  <g transform="rotate(0)"><ellipse cx="0" cy="-9" rx="7.5" ry="5" fill="#F9A8C4"/></g>
+  <g transform="rotate(72)"><ellipse cx="0" cy="-9" rx="7.5" ry="5" fill="#F9A8C4"/></g>
+  <g transform="rotate(144)"><ellipse cx="0" cy="-9" rx="7.5" ry="5" fill="#F9A8C4"/></g>
+  <g transform="rotate(216)"><ellipse cx="0" cy="-9" rx="7.5" ry="5" fill="#F9A8C4"/></g>
+  <g transform="rotate(288)"><ellipse cx="0" cy="-9" rx="7.5" ry="5" fill="#F9A8C4"/></g>
+  <circle r="3" fill="#FB7EB0"/>
+</g>
+<!-- Top-right -->
+<g transform="translate(224,38)" opacity="0.60">
+  <g transform="rotate(15)"><ellipse cx="0" cy="-8" rx="6.5" ry="4.2" fill="#F9A8C4"/></g>
+  <g transform="rotate(87)"><ellipse cx="0" cy="-8" rx="6.5" ry="4.2" fill="#F9A8C4"/></g>
+  <g transform="rotate(159)"><ellipse cx="0" cy="-8" rx="6.5" ry="4.2" fill="#F9A8C4"/></g>
+  <g transform="rotate(231)"><ellipse cx="0" cy="-8" rx="6.5" ry="4.2" fill="#F9A8C4"/></g>
+  <g transform="rotate(303)"><ellipse cx="0" cy="-8" rx="6.5" ry="4.2" fill="#F9A8C4"/></g>
+  <circle r="2.5" fill="#FB7EB0"/>
+</g>
+<!-- Bottom corners — tiny -->
+<g transform="translate(22,218)" opacity="0.45">
+  <g transform="rotate(0)"><ellipse cx="0" cy="-6.5" rx="5.5" ry="3.5" fill="#FBCFE8"/></g>
+  <g transform="rotate(72)"><ellipse cx="0" cy="-6.5" rx="5.5" ry="3.5" fill="#FBCFE8"/></g>
+  <g transform="rotate(144)"><ellipse cx="0" cy="-6.5" rx="5.5" ry="3.5" fill="#FBCFE8"/></g>
+  <g transform="rotate(216)"><ellipse cx="0" cy="-6.5" rx="5.5" ry="3.5" fill="#FBCFE8"/></g>
+  <g transform="rotate(288)"><ellipse cx="0" cy="-6.5" rx="5.5" ry="3.5" fill="#FBCFE8"/></g>
+  <circle r="2" fill="#FB7EB0"/>
+</g>
+<g transform="translate(234,212)" opacity="0.40">
+  <g transform="rotate(30)"><ellipse cx="0" cy="-5.5" rx="4.5" ry="3" fill="#FBCFE8"/></g>
+  <g transform="rotate(102)"><ellipse cx="0" cy="-5.5" rx="4.5" ry="3" fill="#FBCFE8"/></g>
+  <g transform="rotate(174)"><ellipse cx="0" cy="-5.5" rx="4.5" ry="3" fill="#FBCFE8"/></g>
+  <g transform="rotate(246)"><ellipse cx="0" cy="-5.5" rx="4.5" ry="3" fill="#FBCFE8"/></g>
+  <g transform="rotate(318)"><ellipse cx="0" cy="-5.5" rx="4.5" ry="3" fill="#FBCFE8"/></g>
+  <circle r="1.8" fill="#FB7EB0"/>
+</g>
+
+<!-- ── 3 Cards flowing into the tray ── -->
+
+<!-- BOOK card — left, slightly tilted, floating high -->
+<g transform="translate(44,58) rotate(-10)" filter="url(#sh)">
+  <rect width="62" height="80" rx="12" fill="url(#blueCard)"/>
+  <!-- Gloss top -->
+  <rect width="62" height="28" rx="12" fill="white" opacity="0.12"/>
+  <!-- Open book icon -->
+  <rect x="8"  y="16" width="20" height="26" rx="3" fill="white" opacity="0.93"/>
+  <rect x="34" y="16" width="20" height="26" rx="3" fill="white" opacity="0.93"/>
+  <rect x="28" y="14" width="6"  height="30" rx="3" fill="white" opacity="0.60"/>
+  <!-- Lines on left page -->
+  <rect x="10" y="21" width="15" height="2" rx="1" fill="#3B9FE8" opacity="0.40"/>
+  <rect x="10" y="26" width="15" height="2" rx="1" fill="#3B9FE8" opacity="0.40"/>
+  <rect x="10" y="31" width="11" height="2" rx="1" fill="#3B9FE8" opacity="0.40"/>
+  <!-- Lines on right page -->
+  <rect x="36" y="21" width="15" height="2" rx="1" fill="#3B9FE8" opacity="0.40"/>
+  <rect x="36" y="26" width="15" height="2" rx="1" fill="#3B9FE8" opacity="0.40"/>
+  <rect x="36" y="31" width="11" height="2" rx="1" fill="#3B9FE8" opacity="0.40"/>
+  <!-- Bottom label -->
+  <rect x="0" y="66" width="62" height="14" rx="0 0 12 12" fill="#1D6FB8" opacity="0.30"/>
+</g>
+
+<!-- MOVIE card — right, tilted other way -->
+<g transform="translate(162,52) rotate(12)" filter="url(#sh)">
+  <rect width="56" height="72" rx="12" fill="url(#purpleCard)"/>
+  <!-- Gloss -->
+  <rect width="56" height="25" rx="12" fill="white" opacity="0.12"/>
+  <!-- Film strip top -->
+  <rect x="5"  y="6" width="8"  height="9" rx="2" fill="white" opacity="0.38"/>
+  <rect x="17" y="6" width="8"  height="9" rx="2" fill="white" opacity="0.38"/>
+  <rect x="29" y="6" width="8"  height="9" rx="2" fill="white" opacity="0.38"/>
+  <rect x="41" y="6" width="10" height="9" rx="2" fill="white" opacity="0.38"/>
+  <!-- Play button -->
+  <circle cx="28" cy="42" r="14" fill="white" opacity="0.20"/>
+  <circle cx="28" cy="42" r="11" fill="white" opacity="0.90"/>
+  <polygon points="25,37 25,47 34,42" fill="#7C3AED" opacity="0.90"/>
+  <!-- Bottom label -->
+  <rect x="0" y="60" width="56" height="12" rx="0 0 12 12" fill="#4C1D95" opacity="0.30"/>
+</g>
+
+<!-- DRAMA card — center, slightly behind, smaller, angled -->
+<g transform="translate(108,100) rotate(5)" filter="url(#shSm)">
+  <rect width="44" height="56" rx="10" fill="url(#pinkCard)"/>
+  <!-- Gloss -->
+  <rect width="44" height="19" rx="10" fill="white" opacity="0.12"/>
+  <!-- TV icon -->
+  <rect x="5" y="10" width="34" height="22" rx="4" fill="white" opacity="0.92"/>
+  <!-- Screen -->
+  <rect x="8" y="13" width="28" height="16" rx="2.5" fill="#F43F72" opacity="0.25"/>
+  <!-- Play in screen -->
+  <polygon points="20,19 20,27 27,23" fill="white" opacity="0.80"/>
+  <!-- Antenna -->
+  <line x1="17" y1="10" x2="13" y2="4" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.82"/>
+  <line x1="27" y1="10" x2="31" y2="4" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.82"/>
+  <circle cx="13" cy="4" r="2" fill="white" opacity="0.75"/>
+  <circle cx="31" cy="4" r="2" fill="white" opacity="0.75"/>
+  <!-- Stand -->
+  <rect x="16" y="32" width="12" height="3"  rx="1.5" fill="white" opacity="0.55"/>
+  <rect x="12" y="35" width="20" height="3"  rx="1.5" fill="white" opacity="0.50"/>
+  <!-- Bottom label -->
+  <rect x="0" y="46" width="44" height="10" rx="0 0 10 10" fill="#9B1239" opacity="0.30"/>
+</g>
+
+<!-- ── Motion dots — subtle trail into tray ── -->
+<circle cx="90"  cy="150" r="3"   fill="#67C3F3" opacity="0.30"/>
+<circle cx="100" cy="158" r="2.2" fill="#67C3F3" opacity="0.20"/>
+<circle cx="110" cy="165" r="1.5" fill="#67C3F3" opacity="0.14"/>
+<circle cx="172" cy="144" r="3"   fill="#B57BEE" opacity="0.28"/>
+<circle cx="164" cy="154" r="2.2" fill="#B57BEE" opacity="0.18"/>
+<circle cx="154" cy="163" r="1.5" fill="#B57BEE" opacity="0.13"/>
+
+<!-- ── Tray / inbox (open, receiving) ── -->
+
+<!-- Glow above opening -->
+<ellipse cx="128" cy="173" rx="68" ry="16" fill="url(#trayGlow)" filter="url(#glow)"/>
+
+<!-- Open interior (parallelogram: the "inside" of the tray) -->
+<polygon points="68,173 188,173 210,154 46,154" fill="#2D1576"/>
+<!-- Interior glow gradient overlay -->
+<radialGradient id="intGlow" cx="50%" cy="40%" r="60%">
+  <stop offset="0%"   stop-color="#A855F7" stop-opacity="0.70"/>
+  <stop offset="100%" stop-color="#1E0A50" stop-opacity="0"/>
+</radialGradient>
+<polygon points="68,173 188,173 210,154 46,154" fill="url(#intGlow)"/>
+<!-- Interior sparkles -->
+<circle cx="100" cy="162" r="2"   fill="white" opacity="0.50"/>
+<circle cx="128" cy="158" r="2.5" fill="white" opacity="0.55"/>
+<circle cx="158" cy="163" r="2"   fill="white" opacity="0.48"/>
+<circle cx="80"  cy="166" r="1.5" fill="white" opacity="0.38"/>
+<circle cx="176" cy="160" r="1.5" fill="white" opacity="0.38"/>
+
+<!-- Front face -->
+<rect x="68" y="173" width="120" height="52" rx="0" fill="url(#trayGrad)"/>
+<!-- Front sheen -->
+<linearGradient id="frontSheen" x1="0" y1="0" x2="1" y2="0">
+  <stop offset="0%"   stop-color="white" stop-opacity="0.09"/>
+  <stop offset="50%"  stop-color="white" stop-opacity="0.02"/>
+  <stop offset="100%" stop-color="white" stop-opacity="0"/>
+</linearGradient>
+<rect x="68" y="173" width="120" height="52" fill="url(#frontSheen)"/>
+
+<!-- Right face -->
+<polygon points="188,173 210,154 210,206 188,225" fill="url(#trayRight)"/>
+
+<!-- Bottom face (rounded) -->
+<rect x="68" y="221" width="120" height="4" rx="2" fill="#2A1080"/>
+
+<!-- Rim highlight — top edge of opening, bright -->
+<line x1="46"  y1="154" x2="210" y2="154" stroke="#A78BFA" stroke-width="2.5" opacity="0.85" stroke-linecap="round"/>
+<line x1="46"  y1="154" x2="68"  y2="173" stroke="#7C5CE8" stroke-width="1.8" opacity="0.60" stroke-linecap="round"/>
+<line x1="210" y1="154" x2="188" y2="173" stroke="#7C5CE8" stroke-width="1.8" opacity="0.60" stroke-linecap="round"/>
+
+<!-- Front top edge -->
+<line x1="68" y1="173" x2="188" y2="173" stroke="#A78BFA" stroke-width="1.5" opacity="0.50"/>
+<!-- Front bottom edge -->
+<line x1="68" y1="225" x2="188" y2="225" stroke="#1E0A50" stroke-width="1.5" opacity="0.70"/>
+
+</g>
+</svg>
+</body>
+</html>

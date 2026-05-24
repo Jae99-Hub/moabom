@@ -188,7 +188,7 @@ export default function Sidebar() {
             <div className="sidebar-type-row">
               <button
                 className={`sidebar-nav-item sidebar-type-item${isTypeActive ? ' active' : ''}`}
-                onClick={() => handleSelectType(t.value)}
+                onClick={() => { handleSelectType(t.value); if (forest.size > 0) toggle(t.value) }}
                 style={{ flex: 1 }}
               >
                 <span className="sidebar-type-icon" style={{ color: t.color }}>
