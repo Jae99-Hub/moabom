@@ -5,7 +5,7 @@ const isWebEnv =
   typeof import.meta.env.VITE_SUPABASE_URL === 'string' &&
   !!import.meta.env.VITE_SUPABASE_URL
 
-type UpdateCheckState = 'idle' | 'checking' | 'available' | 'not-available' | 'error'
+type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
 type Tab = 'account' | 'api' | 'data'
 
 export default function SettingsModal() {
@@ -29,6 +29,7 @@ export default function SettingsModal() {
   // 업데이트
   const [updateState, setUpdateState]     = useState<UpdateCheckState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
+  const [updateProgress, setUpdateProgress] = useState(0)
 
   const isElectron = !!window.updaterBridge
 
@@ -40,9 +41,11 @@ export default function SettingsModal() {
     setUpdateVersion('')
 
     if (window.updaterBridge) {
-      window.updaterBridge.onAvailable((v) => { setUpdateVersion(v); setUpdateState('available') })
-      window.updaterBridge.onNotAvailable(() => setUpdateState('not-available'))
-      window.updaterBridge.onError(() => setUpdateState('error'))
+      window.updaterBridge.onAvailable((v)   => { setUpdateVersion(v); setUpdateState('available') })
+      window.updaterBridge.onNotAvailable(()  => setUpdateState('not-available'))
+      window.updaterBridge.onError(()         => setUpdateState('error'))
+      window.updaterBridge.onProgress((pct)   => { setUpdateProgress(pct); setUpdateState('downloading') })
+      window.updaterBridge.onDownloaded(()    => setUpdateState('downloaded'))
     }
 
     window.api.settings.get('tmdb_api_key').then(setTmdbKey).catch(() => {})
@@ -351,25 +354,75 @@ export default function SettingsModal() {
             <>
               {isElectron && (
                 <>
-                  <div className="settings-actions-row">
-                    <div>
-                      <div className="settings-group-label">업데이트 확인</div>
-                      <div className="settings-group-desc">
-                        {updateState === 'idle'          && '최신 버전을 확인합니다'}
-                        {updateState === 'checking'      && '확인 중...'}
-                        {updateState === 'available'     && `🎉 새 버전 v${updateVersion} 이 있어요!`}
-                        {updateState === 'not-available' && '✅ 최신 버전이에요'}
-                        {updateState === 'error'         && '⚠️ 확인 중 오류가 발생했어요'}
+                  <div className="settings-update-block">
+                    <div className="settings-update-top">
+                      <div>
+                        <div className="settings-group-label">업데이트 확인</div>
+                        <div className="settings-group-desc">
+                          {updateState === 'idle'          && '최신 버전을 확인합니다'}
+                          {updateState === 'checking'      && '서버에서 확인 중...'}
+                          {updateState === 'available'     && `🎉 새 버전 v${updateVersion} 이 있어요!`}
+                          {updateState === 'downloading'   && `다운로드 중... ${updateProgress}%`}
+                          {updateState === 'downloaded'    && '✅ 다운로드 완료! 재시작하면 적용돼요'}
+                          {updateState === 'not-available' && '✅ 최신 버전이에요'}
+                          {updateState === 'error'         && '⚠️ 확인 중 오류가 발생했어요'}
+                        </div>
                       </div>
+
+                      {/* 상태별 버튼 */}
+                      {(updateState === 'idle' || updateState === 'not-available' || updateState === 'error') && (
+                        <button
+                          className="btn-secondary"
+                          style={{ flexShrink: 0 }}
+                          onClick={handleCheckUpdate}
+                          disabled={updateState === 'checking'}
+                        >
+                          확인
+                        </button>
+                      )}
+                      {updateState === 'checking' && (
+                        <button className="btn-secondary" style={{ flexShrink: 0 }} disabled>
+                          확인 중...
+                        </button>
+                      )}
+                      {updateState === 'available' && (
+                        <button
+                          className="btn-primary"
+                          style={{ flexShrink: 0 }}
+                          onClick={async () => {
+                            setUpdateState('downloading')
+                            setUpdateProgress(0)
+                            await window.updaterBridge?.startDownload()
+                          }}
+                        >
+                          다운로드
+                        </button>
+                      )}
+                      {updateState === 'downloading' && (
+                        <button className="btn-secondary" style={{ flexShrink: 0 }} disabled>
+                          다운로드 중
+                        </button>
+                      )}
+                      {updateState === 'downloaded' && (
+                        <button
+                          className="btn-primary"
+                          style={{ flexShrink: 0, background: 'linear-gradient(135deg,#10b981,#059669)' }}
+                          onClick={() => window.updaterBridge?.install()}
+                        >
+                          지금 재시작
+                        </button>
+                      )}
                     </div>
-                    <button
-                      className="btn-secondary"
-                      style={{ flexShrink: 0 }}
-                      onClick={handleCheckUpdate}
-                      disabled={updateState === 'checking'}
-                    >
-                      {updateState === 'checking' ? '확인 중...' : '확인'}
-                    </button>
+
+                    {/* 다운로드 진행바 */}
+                    {updateState === 'downloading' && (
+                      <div className="settings-update-progress">
+                        <div
+                          className="settings-update-progress-fill"
+                          style={{ width: `${updateProgress}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="settings-divider" />
                 </>
