@@ -1,7 +1,7 @@
 import React from 'react'
 import { create } from 'zustand'
 import { Item, ItemFormData, FilterState, Quote, QuoteSearchResult, ItemType, ItemStatus } from '../types'
-import type { SyncStatus } from '../api/syncService'
+import type { SyncStatus, SyncConflict } from '../api/syncService'
 
 interface AppState {
   itemList: Item[]
@@ -49,6 +49,11 @@ interface AppState {
   syncStatus: SyncStatus
   setSyncStatus: (s: SyncStatus) => void
   triggerSync: () => Promise<void>
+  syncConflicts: SyncConflict[]
+  syncAutoMerged: number
+  setSyncResult: (conflicts: SyncConflict[], autoMerged: number) => void
+  removeSyncConflict: (localId: number) => void
+  clearSyncResult: () => void
 }
 
 function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
@@ -128,6 +133,8 @@ export const useStore = create<AppState>((set, get) => ({
   checkedItems: [],
   isSidebarOpen: false,
   syncStatus: 'idle' as SyncStatus,
+  syncConflicts: [] as SyncConflict[],
+  syncAutoMerged: 0,
 
   fetchAll: async () => {
     const list = await window.api.items.getAll()
@@ -197,12 +204,19 @@ export const useStore = create<AppState>((set, get) => ({
   closeSidebar: () => set({ isSidebarOpen: false }),
 
   setSyncStatus: (s) => set({ syncStatus: s }),
+  setSyncResult: (conflicts, autoMerged) => set({ syncConflicts: conflicts, syncAutoMerged: autoMerged }),
+  removeSyncConflict: (localId) =>
+    set((s) => ({ syncConflicts: s.syncConflicts.filter((c) => c.localId !== localId) })),
+  clearSyncResult: () => set({ syncConflicts: [], syncAutoMerged: 0 }),
   triggerSync: async () => {
-    const { setSyncStatus, fetchAll } = get()
+    const { setSyncStatus, fetchAll, setSyncResult } = get()
     try {
       const { runSync } = await import('../api/syncService')
-      await runSync(setSyncStatus)
-      await fetchAll() // 동기화 후 목록 새로고침
+      const result = await runSync(setSyncStatus)
+      await fetchAll()
+      if (result.conflicts.length > 0 || result.autoMerged > 0) {
+        setSyncResult(result.conflicts, result.autoMerged)
+      }
     } catch {
       // runSync already called setSyncStatus('error')
     }

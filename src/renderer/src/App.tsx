@@ -11,6 +11,7 @@ import SettingsModal from './components/SettingsModal'
 import SelectionBar from './components/SelectionBar'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import UpdaterToast from './components/UpdaterToast'
+import SyncConflictModal from './components/SyncConflictModal'
 
 export default function App() {
   const { fetchAll, theme } = useStore()
@@ -44,6 +45,7 @@ export default function App() {
         <QuotesModal />
         <SettingsModal />
         <UpdaterToast />
+        <SyncConflictModal />
       </div>
     </ErrorBoundary>
   )
