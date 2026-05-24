@@ -1607,6 +1607,83 @@ body {
 }
 .genre-chip-remove:hover { opacity: 1; }
 
+/* ── GenreTagInput (새 태그 입력 방식) ── */
+.genre-tag-input-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  cursor: text;
+  transition: border-color 0.15s;
+}
+.genre-tag-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* 확정된 태그 */
+.genre-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-focus);
+  color: var(--text-accent);
+  font-size: 12px;
+  padding: 2px 6px 2px 8px;
+  border-radius: 99px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.genre-tag-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-accent);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 0 0 1px;
+  opacity: 0.55;
+  display: flex;
+  align-items: center;
+}
+.genre-tag-remove:hover { opacity: 1; }
+
+/* 입력 행 (breadcrumb + 텍스트 커서) */
+.genre-tag-input-row {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 80px;
+}
+.genre-tag-breadcrumb {
+  font-size: 12px;
+  color: var(--text-accent);
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0.80;
+}
+.genre-tag-inner-input {
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 40px;
+  width: auto;
+  font-family: inherit;
+  padding: 2px 0;
+}
+.genre-tag-inner-input::placeholder {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .genre-add-btn {
   background: none;
   border: 1px dashed var(--border);

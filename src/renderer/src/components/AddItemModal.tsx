@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { ItemFormData, ItemType, ItemStatus, GoogleBookResult, TmdbResult } from '../types'
 import StarRating from './StarRating'
 import ImageCropModal from './ImageCropModal'
+import GenreTagInput from './GenreTagInput'
 
 const DEFAULT_FORM: ItemFormData = {
   title: '', original_title: '', item_type: 'book',
@@ -455,17 +456,12 @@ export default function AddItemModal() {
                       <input className="form-input" type="number" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="2024" min={1900} max={2100} />
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">장르 <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>쉼표로 구분</span></label>
-                      <input className="form-input" value={form.genre ?? ''} onChange={(e) => set('genre', e.target.value)} placeholder="SF, 스릴러, 액션..." />
-                      {genreSuggestions.length > 0 && (
-                        <div className="genre-chips" style={{ marginTop: 6 }}>
-                          {genreSuggestions.map((g) => (
-                            <button key={g} className="genre-recent-chip" onClick={() => addGenreChip(g)}>
-                              + {g}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <label className="form-label">장르</label>
+                      <GenreTagInput
+                        value={form.genre ?? ''}
+                        onChange={(v) => set('genre', v)}
+                        suggestions={genreSuggestions}
+                      />
                     </div>
                   </div>
 
