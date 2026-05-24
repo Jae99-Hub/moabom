@@ -147,6 +147,7 @@ declare global {
       checkForUpdates: () => Promise<void>
       startDownload: () => Promise<void>
       install: () => Promise<void>
+      getVersion: () => Promise<string>
     }
   }
 }

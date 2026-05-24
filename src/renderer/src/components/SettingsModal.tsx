@@ -30,6 +30,7 @@ export default function SettingsModal() {
   const [updateState, setUpdateState]     = useState<UpdateCheckState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
   const [updateProgress, setUpdateProgress] = useState(0)
+  const [currentVersion, setCurrentVersion] = useState('')
 
   const isElectron = !!window.updaterBridge
 
@@ -46,6 +47,7 @@ export default function SettingsModal() {
       window.updaterBridge.onError(()         => setUpdateState('error'))
       window.updaterBridge.onProgress((pct)   => { setUpdateProgress(pct); setUpdateState('downloading') })
       window.updaterBridge.onDownloaded(()    => setUpdateState('downloaded'))
+      window.updaterBridge.getVersion().then(setCurrentVersion).catch(() => {})
     }
 
     window.api.settings.get('tmdb_api_key').then(setTmdbKey).catch(() => {})
@@ -357,14 +359,21 @@ export default function SettingsModal() {
                   <div className="settings-update-block">
                     <div className="settings-update-top">
                       <div>
-                        <div className="settings-group-label">업데이트 확인</div>
+                        <div className="settings-group-label">
+                          업데이트 확인
+                          {currentVersion && (
+                            <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                              현재 v{currentVersion}
+                            </span>
+                          )}
+                        </div>
                         <div className="settings-group-desc">
                           {updateState === 'idle'          && '최신 버전을 확인합니다'}
                           {updateState === 'checking'      && '서버에서 확인 중...'}
                           {updateState === 'available'     && `🎉 새 버전 v${updateVersion} 이 있어요!`}
                           {updateState === 'downloading'   && `다운로드 중... ${updateProgress}%`}
                           {updateState === 'downloaded'    && '✅ 다운로드 완료! 재시작하면 적용돼요'}
-                          {updateState === 'not-available' && '✅ 최신 버전이에요'}
+                          {updateState === 'not-available' && `✅ 최신 버전이에요 (v${currentVersion})`}
                           {updateState === 'error'         && '⚠️ 확인 중 오류가 발생했어요'}
                         </div>
                       </div>

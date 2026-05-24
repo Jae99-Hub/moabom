@@ -126,4 +126,5 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('sync:getLastSyncAt', () => getSetting('last_sync_at'))
   ipcMain.handle('sync:setLastSyncAt', (_, ts: string) => setSetting('last_sync_at', ts))
   ipcMain.handle('sync:getItemById', (_, id: number) => getItemById(id))
+  ipcMain.handle('app:getVersion', () => app.getVersion())
 }

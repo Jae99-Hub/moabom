@@ -80,6 +80,7 @@ const updaterBridge = {
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
   startDownload: () => ipcRenderer.invoke('updater:startDownload'),
   install: () => ipcRenderer.invoke('updater:install'),
+  getVersion: () => ipcRenderer.invoke('app:getVersion'),
 }
 
 // ── Google OAuth 브릿지 (Electron 전용) ───────────────────────────
