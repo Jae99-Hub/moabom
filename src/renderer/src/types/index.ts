@@ -35,6 +35,7 @@ export interface Quote {
   item_id: number
   text: string
   page_number: number | null
+  episode_number: number | null
   note: string | null
   created_at: string
 }
@@ -98,7 +99,7 @@ declare global {
         getByItemId: (itemId: number) => Promise<Quote[]>
         search: (query: string) => Promise<QuoteSearchResult[]>
         insert: (data: Omit<Quote, 'id' | 'created_at'>) => Promise<Quote>
-        update: (id: number, data: Partial<Pick<Quote, 'text' | 'page_number' | 'note'>>) => Promise<Quote | undefined>
+        update: (id: number, data: Partial<Pick<Quote, 'text' | 'page_number' | 'episode_number' | 'note'>>) => Promise<Quote | undefined>
         delete: (id: number) => Promise<void>
       }
       settings: {

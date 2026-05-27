@@ -60,6 +60,7 @@ export async function initDatabase(): Promise<void> {
       item_id INTEGER NOT NULL,
       text TEXT NOT NULL,
       page_number INTEGER,
+      episode_number INTEGER,
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
@@ -80,6 +81,7 @@ export async function initDatabase(): Promise<void> {
     "ALTER TABLE quotes ADD COLUMN server_id INTEGER",
     "ALTER TABLE quotes ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE quotes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE quotes ADD COLUMN episode_number INTEGER",
   ]
   for (const sql of migrations) {
     try { db.run(sql) } catch { /* 이미 존재하면 무시 */ }
@@ -156,6 +158,7 @@ export type QuoteRow = {
   item_id: number
   text: string
   page_number: number | null
+  episode_number: number | null
   note: string | null
   created_at: string
   updated_at: string
@@ -203,6 +206,7 @@ function rowToQuote(row: Record<string, unknown>): QuoteRow {
     item_id: row.item_id as number,
     text: row.text as string,
     page_number: row.page_number != null ? Number(row.page_number) : null,
+    episode_number: row.episode_number != null ? Number(row.episode_number) : null,
     note: (row.note as string) || null,
     created_at: row.created_at as string,
     updated_at: (row.updated_at as string) || (row.created_at as string),
@@ -305,7 +309,8 @@ export function deleteItem(id: number): void {
 
 export function getQuotesByItemId(itemId: number): QuoteRow[] {
   return queryAll(
-    'SELECT * FROM quotes WHERE item_id = :id AND is_deleted = 0 ORDER BY page_number ASC, created_at ASC',
+    `SELECT * FROM quotes WHERE item_id = :id AND is_deleted = 0
+     ORDER BY COALESCE(page_number, episode_number, 999999) ASC, created_at ASC`,
     { ':id': itemId }
   ).map(rowToQuote)
 }
@@ -329,11 +334,13 @@ export function searchQuotes(query: string): (QuoteRow & { item_title: string; i
 
 export function insertQuote(data: Omit<QuoteRow, 'id' | 'created_at' | 'updated_at' | 'server_id' | 'is_dirty' | 'is_deleted'>): QuoteRow {
   db.run(
-    `INSERT INTO quotes (item_id, text, page_number, note, is_dirty) VALUES (:item_id, :text, :page_number, :note, 1)`,
+    `INSERT INTO quotes (item_id, text, page_number, episode_number, note, is_dirty)
+     VALUES (:item_id, :text, :page_number, :episode_number, :note, 1)`,
     {
       ':item_id': data.item_id,
       ':text': data.text,
       ':page_number': data.page_number ?? null,
+      ':episode_number': data.episode_number ?? null,
       ':note': data.note ?? null
     }
   )
@@ -342,11 +349,12 @@ export function insertQuote(data: Omit<QuoteRow, 'id' | 'created_at' | 'updated_
   return getQuotesByItemId(data.item_id).find((q) => q.id === id)!
 }
 
-export function updateQuote(id: number, data: Partial<Pick<QuoteRow, 'text' | 'page_number' | 'note'>>): QuoteRow | undefined {
+export function updateQuote(id: number, data: Partial<Pick<QuoteRow, 'text' | 'page_number' | 'episode_number' | 'note'>>): QuoteRow | undefined {
   const parts: string[] = []
   const params: Record<string, unknown> = { ':id': id }
   if (data.text !== undefined) { parts.push('text = :text'); params[':text'] = data.text }
   if (data.page_number !== undefined) { parts.push('page_number = :page_number'); params[':page_number'] = data.page_number ?? null }
+  if (data.episode_number !== undefined) { parts.push('episode_number = :episode_number'); params[':episode_number'] = data.episode_number ?? null }
   if (data.note !== undefined) { parts.push('note = :note'); params[':note'] = data.note ?? null }
   if (!parts.length) return undefined
   db.run(
@@ -497,7 +505,7 @@ export function upsertItemFromCloud(cloudItem: {
 /** 클라우드에서 내려온 명문장을 로컬에 upsert (item의 server_id → 로컬 item_id 변환 필요) */
 export function upsertQuoteFromCloud(cloudQuote: {
   id: number; item_id: number; user_id: string; text: string
-  page_number?: number | null; note?: string | null; created_at: string; updated_at?: string | null
+  page_number?: number | null; episode_number?: number | null; note?: string | null; created_at: string; updated_at?: string | null
 }): void {
   // cloud item_id(=server_id)로 로컬 item 찾기
   const localItem = queryOne('SELECT id FROM items WHERE server_id = :sid', { ':sid': cloudQuote.item_id })
@@ -511,15 +519,17 @@ export function upsertQuoteFromCloud(cloudQuote: {
     const localUpdated = (existing.updated_at as string) || ''
     if (parseDateMs(localUpdated) >= parseDateMs(updatedAt)) return
     db.run(
-      `UPDATE quotes SET text=:text, page_number=:pn, note=:note, updated_at=:ua, is_dirty=0 WHERE server_id=:sid`,
+      `UPDATE quotes SET text=:text, page_number=:pn, episode_number=:en, note=:note, updated_at=:ua, is_dirty=0 WHERE server_id=:sid`,
       { ':text': cloudQuote.text, ':pn': cloudQuote.page_number ?? null,
+        ':en': cloudQuote.episode_number ?? null,
         ':note': cloudQuote.note ?? null, ':ua': updatedAt, ':sid': cloudQuote.id }
     )
   } else {
     db.run(
-      `INSERT INTO quotes (item_id, text, page_number, note, created_at, updated_at, server_id, is_dirty, is_deleted)
-       VALUES (:item_id, :text, :pn, :note, :ca, :ua, :sid, 0, 0)`,
+      `INSERT INTO quotes (item_id, text, page_number, episode_number, note, created_at, updated_at, server_id, is_dirty, is_deleted)
+       VALUES (:item_id, :text, :pn, :en, :note, :ca, :ua, :sid, 0, 0)`,
       { ':item_id': localItemId, ':text': cloudQuote.text, ':pn': cloudQuote.page_number ?? null,
+        ':en': cloudQuote.episode_number ?? null,
         ':note': cloudQuote.note ?? null, ':ca': cloudQuote.created_at, ':ua': updatedAt, ':sid': cloudQuote.id }
     )
   }

@@ -10,9 +10,11 @@ export default function QuotesModal() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const [editPage, setEditPage] = useState('')
+  const [editEpisode, setEditEpisode] = useState('')
   const [editNote, setEditNote] = useState('')
   const [newText, setNewText] = useState('')
   const [newPage, setNewPage] = useState('')
+  const [newEpisode, setNewEpisode] = useState('')
   const [newNote, setNewNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [mutError, setMutError] = useState<string | null>(null)
@@ -38,6 +40,8 @@ export default function QuotesModal() {
     } catch { /* 조용히 무시 */ }
   }
 
+  const itemType = item?.item_type ?? 'book'
+
   const handleAdd = async () => {
     if (!newText.trim() || !selectedId) return
     setIsSaving(true)
@@ -47,10 +51,12 @@ export default function QuotesModal() {
         item_id: selectedId,
         text: newText.trim(),
         page_number: newPage ? parseInt(newPage) : null,
+        episode_number: newEpisode ? parseInt(newEpisode) : null,
         note: newNote.trim() || null
       })
       setNewText('')
       setNewPage('')
+      setNewEpisode('')
       setNewNote('')
       await reload()
     } catch {
@@ -64,6 +70,7 @@ export default function QuotesModal() {
     setEditingId(q.id)
     setEditText(q.text)
     setEditPage(q.page_number ? String(q.page_number) : '')
+    setEditEpisode(q.episode_number ? String(q.episode_number) : '')
     setEditNote(q.note ?? '')
     setMutError(null)
   }
@@ -75,6 +82,7 @@ export default function QuotesModal() {
       await window.api.quotes.update(id, {
         text: editText.trim(),
         page_number: editPage ? parseInt(editPage) : null,
+        episode_number: editEpisode ? parseInt(editEpisode) : null,
         note: editNote.trim() || null
       })
       setEditingId(null)
@@ -107,7 +115,7 @@ export default function QuotesModal() {
       <div className="modal modal-lg">
         <div className="modal-header">
           <span className="modal-title">
-            {item ? `"${item.title}" 명문장` : '명문장'}
+            {item ? `"${item.title}" ${itemType === 'book' ? '명문장' : '명대사'}` : '명대사'}
           </span>
           <button className="btn-icon" onClick={closeQuotesModal}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -122,38 +130,53 @@ export default function QuotesModal() {
               {mutError}
             </div>
           )}
-          {/* 새 명문장 추가 */}
+          {/* 새 명문장/명대사 추가 */}
           <div className="add-quote-form">
             <div className="form-group">
-              <label className="form-label">새 명문장 추가</label>
+              <label className="form-label">{itemType === 'book' ? '새 명문장 추가' : '새 명대사 추가'}</label>
               <textarea
                 className="form-textarea"
                 value={newText}
                 onChange={(e) => setNewText(e.target.value)}
-                placeholder="기억하고 싶은 문장을 입력하세요..."
+                placeholder={itemType === 'book' ? '기억하고 싶은 문장을 입력하세요...' : '기억하고 싶은 대사를 입력하세요...'}
                 rows={3}
                 style={{ minHeight: 70 }}
               />
             </div>
             <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">페이지 번호 (선택)</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  value={newPage}
-                  onChange={(e) => setNewPage(e.target.value)}
-                  placeholder="p."
-                  min={1}
-                />
-              </div>
+              {itemType === 'book' && (
+                <div className="form-group">
+                  <label className="form-label">페이지 번호 (선택)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={newPage}
+                    onChange={(e) => setNewPage(e.target.value)}
+                    placeholder="p."
+                    min={1}
+                  />
+                </div>
+              )}
+              {itemType === 'drama' && (
+                <div className="form-group">
+                  <label className="form-label">에피소드 (선택)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={newEpisode}
+                    onChange={(e) => setNewEpisode(e.target.value)}
+                    placeholder="화"
+                    min={1}
+                  />
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">메모 (선택)</label>
                 <input
                   className="form-input"
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="이 문장에 대한 생각..."
+                  placeholder="이 대사에 대한 생각..."
                 />
               </div>
             </div>
@@ -172,7 +195,7 @@ export default function QuotesModal() {
           {/* 기존 명문장 목록 */}
           {quotes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              아직 기록된 명문장이 없습니다
+              {itemType === 'book' ? '아직 기록된 명문장이 없습니다' : '아직 기록된 명대사가 없습니다'}
             </div>
           ) : (
             <div className="quotes-list">
@@ -191,10 +214,18 @@ export default function QuotesModal() {
                         style={{ minHeight: 60 }}
                       />
                       <div className="form-row">
-                        <div className="form-group">
-                          <label className="form-label">페이지</label>
-                          <input className="form-input" type="number" value={editPage} onChange={(e) => setEditPage(e.target.value)} placeholder="p." min={1} />
-                        </div>
+                        {itemType === 'book' && (
+                          <div className="form-group">
+                            <label className="form-label">페이지</label>
+                            <input className="form-input" type="number" value={editPage} onChange={(e) => setEditPage(e.target.value)} placeholder="p." min={1} />
+                          </div>
+                        )}
+                        {itemType === 'drama' && (
+                          <div className="form-group">
+                            <label className="form-label">에피소드</label>
+                            <input className="form-input" type="number" value={editEpisode} onChange={(e) => setEditEpisode(e.target.value)} placeholder="화" min={1} />
+                          </div>
+                        )}
                         <div className="form-group">
                           <label className="form-label">메모</label>
                           <input className="form-input" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="메모..." />
@@ -210,10 +241,11 @@ export default function QuotesModal() {
                       <div className="quote-edit-row">
                         <div style={{ flex: 1 }}>
                           <div className="quote-edit-text">"{q.text}"</div>
-                          {(q.page_number || q.note) && (
+                          {(q.page_number || q.episode_number || q.note) && (
                             <div className="quote-edit-meta" style={{ marginTop: 6 }}>
                               {q.page_number ? <span style={{ fontWeight: 600 }}>p.{q.page_number}</span> : null}
-                              {q.page_number && q.note ? ' · ' : ''}
+                              {q.episode_number ? <span style={{ fontWeight: 600 }}>E{String(q.episode_number).padStart(2, '0')}</span> : null}
+                              {(q.page_number || q.episode_number) && q.note ? ' · ' : ''}
                               {q.note ? <span style={{ fontStyle: 'italic' }}>{q.note}</span> : null}
                             </div>
                           )}

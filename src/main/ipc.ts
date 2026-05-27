@@ -35,7 +35,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('quotes:getByItemId', (_, itemId: number) => getQuotesByItemId(itemId))
   ipcMain.handle('quotes:search', (_, query: string) => searchQuotes(query))
   ipcMain.handle('quotes:insert', (_, data: Omit<QuoteRow, 'id' | 'created_at'>) => insertQuote(data))
-  ipcMain.handle('quotes:update', (_, id: number, data: Partial<Pick<QuoteRow, 'text' | 'page_number' | 'note'>>) => updateQuote(id, data))
+  ipcMain.handle('quotes:update', (_, id: number, data: Partial<Pick<QuoteRow, 'text' | 'page_number' | 'episode_number' | 'note'>>) => updateQuote(id, data))
   ipcMain.handle('quotes:delete', (_, id: number) => deleteQuote(id))
 
   ipcMain.handle('settings:get', (_, key: string) => getSetting(key))
