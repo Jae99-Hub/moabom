@@ -15,6 +15,33 @@ const DEFAULT_FORM: ItemFormData = {
   rating: null, status: 'want', review: '', read_date: ''
 }
 
+// editingItem → ItemFormData 변환 (useState 초기화 & useEffect 공용)
+function buildEditForm(item: NonNullable<ReturnType<typeof useStore>['editingItem']>): ItemFormData {
+  return {
+    title: item.title,
+    original_title: item.original_title ?? '',
+    item_type: item.item_type as ItemType,
+    cover_path: item.cover_path,
+    backdrop_path: item.backdrop_path,
+    author: item.author ?? '',
+    publisher: item.publisher ?? '',
+    isbn: item.isbn ?? '',
+    page_count: item.page_count,
+    current_page: item.current_page ?? 0,
+    director: item.director ?? '',
+    platform: item.platform ?? '',
+    tmdb_id: item.tmdb_id,
+    google_books_id: item.google_books_id,
+    genre: item.genre ?? '',
+    year: item.year,
+    overview: item.overview ?? '',
+    rating: item.rating,
+    status: item.status as ItemStatus,
+    review: item.review ?? '',
+    read_date: item.read_date ?? ''
+  }
+}
+
 // 최근 사용 장르 추천
 function useRecentGenres(): string[] {
   const { itemList } = useStore()
@@ -34,7 +61,10 @@ function useRecentGenres(): string[] {
 export default function AddItemModal() {
   const { isAddModalOpen, editingItem, closeAddModal, addItem, updateItem, selectItem, filters, itemList } = useStore()
 
-  const [form, setForm] = useState<ItemFormData>(DEFAULT_FORM)
+  // editingItem이 있으면 첫 렌더부터 올바른 값으로 시작 (중간 빈 렌더 방지)
+  const [form, setForm] = useState<ItemFormData>(() =>
+    editingItem ? buildEditForm(editingItem) : DEFAULT_FORM
+  )
   const [activeTab, setActiveTab] = useState<'info' | 'record'>('info')
   const [searchQuery, setSearchQuery] = useState('')
   const [bookResults, setBookResults] = useState<GoogleBookResult[]>([])
@@ -57,29 +87,7 @@ export default function AddItemModal() {
     setSearchError('')
     setSuggestedGenres([])
     if (editingItem) {
-      setForm({
-        title: editingItem.title,
-        original_title: editingItem.original_title ?? '',
-        item_type: editingItem.item_type as ItemType,
-        cover_path: editingItem.cover_path,
-        backdrop_path: editingItem.backdrop_path,
-        author: editingItem.author ?? '',
-        publisher: editingItem.publisher ?? '',
-        isbn: editingItem.isbn ?? '',
-        page_count: editingItem.page_count,
-        current_page: editingItem.current_page ?? 0,
-        director: editingItem.director ?? '',
-        platform: editingItem.platform ?? '',
-        tmdb_id: editingItem.tmdb_id,
-        google_books_id: editingItem.google_books_id,
-        genre: editingItem.genre ?? '',
-        year: editingItem.year,
-        overview: editingItem.overview ?? '',
-        rating: editingItem.rating,
-        status: editingItem.status as ItemStatus,
-        review: editingItem.review ?? '',
-        read_date: editingItem.read_date ?? ''
-      })
+      setForm(buildEditForm(editingItem))
     } else {
       const defaultType: ItemType =
         filters.type !== 'all'
