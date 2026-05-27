@@ -23,9 +23,10 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
   )
 }
 
-function QuotesList({ itemId }: { itemId: number }) {
+function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) {
   const [quotes, setQuotes] = useState<Quote[]>([])
   const { openQuotesModal, quotesVersion } = useStore()
+  const label = itemType === 'book' ? '명문장' : '명대사'
 
   useEffect(() => {
     window.api.quotes.getByItemId(itemId).then(setQuotes).catch(() => {})
@@ -34,19 +35,20 @@ function QuotesList({ itemId }: { itemId: number }) {
   return (
     <div className="detail-section">
       <div className="detail-section-title">
-        <span>명문장 {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
+        <span>{label} {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
         <button className="btn-text" onClick={openQuotesModal}>관리</button>
       </div>
       {quotes.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록된 명문장이 없습니다</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록된 {label}이 없습니다</div>
       ) : (
         quotes.slice(0, 3).map((q) => (
           <div key={q.id} className="quote-item">
             <div className="quote-item-text">"{q.text}"</div>
-            {(q.page_number || q.note) && (
+            {(q.page_number || q.episode_number || q.note) && (
               <div className="quote-item-meta">
                 {q.page_number ? `p.${q.page_number}` : ''}
-                {q.page_number && q.note ? ' · ' : ''}
+                {q.episode_number ? `E${String(q.episode_number).padStart(2, '0')}` : ''}
+                {(q.page_number || q.episode_number) && q.note ? ' · ' : ''}
                 {q.note}
               </div>
             )}
@@ -209,19 +211,17 @@ function DetailContent({ item }: { item: Item }) {
           </div>
         )}
 
-        {isBook && <QuotesList itemId={item.id} />}
+        <QuotesList itemId={item.id} itemType={item.item_type} />
       </div>
 
       {/* 하단 액션 */}
       <div className="dm-footer">
-        {isBook && (
-          <button className="btn-secondary" onClick={openQuotesModal}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            명문장
-          </button>
-        )}
+        <button className="btn-secondary" onClick={openQuotesModal}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {isBook ? '명문장' : '명대사'}
+        </button>
         <div style={{ flex: 1 }} />
         <button className="btn-secondary" onClick={() => openAddModal(item)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
