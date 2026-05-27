@@ -1,4 +1,4 @@
-import React, { useState, useRef, KeyboardEvent } from 'react'
+import React, { useState, useRef, useEffect, KeyboardEvent } from 'react'
 
 interface Props {
   value: string          // 현재 장르 문자열 (쉼표 구분, "SF, 애니>2025년")
@@ -16,6 +16,12 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
   const [inputText, setInputText] = useState('')
   const [segments, setSegments] = useState<string[]>([]) // Tab으로 쌓인 상위 경로
   const inputRef = useRef<HTMLInputElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // 부모가 value를 외부에서 바꿀 때 (예: 검색 초기화) 내부 tags도 동기화
+  useEffect(() => {
+    setTags(toTags(value))
+  }, [value])
 
   // 내부 tags → 부모에게 전달
   const pushTags = (next: string[]) => {
@@ -79,7 +85,7 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
   const breadcrumb = segments.join(' › ')
 
   return (
-    <div className="genre-tag-input-wrap" onClick={() => inputRef.current?.focus()}>
+    <div ref={wrapRef} className="genre-tag-input-wrap" onClick={() => inputRef.current?.focus()}>
       {/* 저장된 태그들 */}
       {tags.map((tag, i) => (
         <span key={i} className="genre-tag">
@@ -104,8 +110,10 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
           value={inputText}
           onChange={e => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={() => {
-            // 포커스 잃을 때 내용 있으면 자동 커밋
+          onBlur={(e) => {
+            // 포커스가 컴포넌트 내부(태그 삭제 버튼 등)로 이동한 경우 커밋 안 함
+            const movingTo = e.relatedTarget as Node | null
+            if (wrapRef.current && movingTo && wrapRef.current.contains(movingTo)) return
             if (inputText.trim() || segments.length > 0) commitTag()
           }}
           placeholder={tags.length === 0 && segments.length === 0

@@ -105,7 +105,6 @@ export default function AddItemModal() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setIsSearching(true)
     setBookResults([])
     setTmdbResults([])
