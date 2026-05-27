@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useStore, useFilteredItems } from '../store/useStore'
 import { Item, ItemType, ItemStatus, Quote } from '../types'
 import StarRating from './StarRating'
@@ -65,10 +65,30 @@ function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) 
 }
 
 function DetailContent({ item }: { item: Item }) {
-  const { deleteItem, openAddModal, openQuotesModal, selectItem } = useStore()
+  const { deleteItem, openAddModal, openQuotesModal, selectItem, updateItem } = useStore()
   const [isbnOpen, setIsbnOpen] = useState(false)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const statusMenuRef = useRef<HTMLDivElement>(null)
   const isBook = item.item_type === 'book'
   const statusMap = isBook ? STATUS_LABEL : STATUS_LABEL_MEDIA
+
+  // 외부 클릭 시 드롭다운 닫기
+  useEffect(() => {
+    if (!showStatusMenu) return
+    const handler = (e: MouseEvent) => {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) {
+        setShowStatusMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showStatusMenu])
+
+  const handleStatusChange = async (newStatus: ItemStatus) => {
+    setShowStatusMenu(false)
+    if (newStatus === item.status) return
+    await updateItem(item.id, { status: newStatus })
+  }
 
   const coverSrc = item.cover_path
     ? (item.cover_path.startsWith('http') || item.cover_path.startsWith('data:')) ? item.cover_path : `file://${item.cover_path}`
@@ -128,9 +148,32 @@ function DetailContent({ item }: { item: Item }) {
           <div className="dm-tags">
             <span className="tag">{TYPE_LABEL[item.item_type as ItemType]}</span>
             {item.year && <span className="tag">{item.year}</span>}
-            <span className={`tag media-card-status status-${item.status}`} style={{ position: 'static', fontSize: 10 }}>
-              {statusMap[item.status]}
-            </span>
+            <div ref={statusMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
+              <button
+                className={`status-tag-btn status-${item.status}`}
+                onClick={() => setShowStatusMenu((v) => !v)}
+                title="상태 변경"
+              >
+                {statusMap[item.status]}
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ opacity: 0.7 }}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {showStatusMenu && (
+                <div className="status-dropdown">
+                  {(Object.keys(statusMap) as ItemStatus[]).map((s) => (
+                    <button
+                      key={s}
+                      className={`status-dropdown-item${s === item.status ? ' current' : ''}`}
+                      onClick={() => handleStatusChange(s)}
+                    >
+                      <span className={`dot dot-${s}`} />
+                      {statusMap[s]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           {item.rating != null && (
             <div style={{ marginTop: 8 }}>
