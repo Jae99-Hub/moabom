@@ -6,7 +6,7 @@ import asyncio, io, struct, pathlib
 from PIL import Image
 from playwright.async_api import async_playwright
 
-HTML_PATH = pathlib.Path(r"C:\Users\Jae\Desktop\Book\scripts\icon_v3.html").as_uri()
+HTML_PATH = pathlib.Path(r"C:\Users\Jae\Desktop\Book\scripts\icon_v4.html").as_uri()
 ICO_PATH  = r"C:\Users\Jae\Desktop\Book\build\icon.ico"
 PNG_DIR   = pathlib.Path(r"C:\Users\Jae\Desktop\Book\build")
 PREVIEW   = r"C:\Users\Jae\AppData\Local\Temp\icon_v3_preview.png"
@@ -16,27 +16,38 @@ async def render_all():
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
         page    = await browser.new_page()
+
+        # 항상 256×256으로 렌더링 후 PIL로 다운샘플링
+        # (뷰포트를 각 크기로 설정하면 SVG의 좌상단만 잘려서 내용이 사라짐)
+        print(f"  Rendering 256×256 (master)…")
+        await page.set_viewport_size({"width": 256, "height": 256})
+        await page.goto(HTML_PATH)
+        await page.wait_for_load_state("networkidle")
+        data_256 = await page.screenshot(
+            type="png",
+            clip={"x": 0, "y": 0, "width": 256, "height": 256},
+            omit_background=True,
+        )
+        await browser.close()
+
+        img_master = Image.open(io.BytesIO(data_256)).convert("RGBA")
         pngs = {}
         for sz in SIZES:
-            print(f"  Rendering {sz}×{sz}…")
-            await page.set_viewport_size({"width": sz, "height": sz})
-            await page.goto(HTML_PATH)
-            await page.wait_for_load_state("networkidle")
-            data = await page.screenshot(
-                type="png",
-                clip={"x": 0, "y": 0, "width": sz, "height": sz},
-                omit_background=True,
-            )
-            pngs[sz] = data
-            # Save individual PNGs for reference
-            out_png = PNG_DIR / f"icon_{sz}.png"
-            out_png.write_bytes(data)
-            print(f"    saved {out_png}")
             if sz == 256:
+                pngs[sz] = data_256
+                out_png = PNG_DIR / f"icon_{sz}.png"
+                out_png.write_bytes(data_256)
                 with open(PREVIEW, "wb") as f:
-                    f.write(data)
-                print(f"    preview → {PREVIEW}")
-        await browser.close()
+                    f.write(data_256)
+                print(f"  {sz}×{sz} → saved (master)")
+            else:
+                img_small = img_master.resize((sz, sz), Image.LANCZOS)
+                buf = io.BytesIO()
+                img_small.save(buf, format="PNG")
+                pngs[sz] = buf.getvalue()
+                out_png = PNG_DIR / f"icon_{sz}.png"
+                out_png.write_bytes(pngs[sz])
+                print(f"  {sz}×{sz} → saved (downsampled)")
         return pngs
 
 def make_bmp_dib(img: Image.Image) -> bytes:

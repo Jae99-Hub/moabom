@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>* { margin:0; padding:0; } html,body { width:256px; height:256px; overflow:hidden; background:transparent; }</style>
+</head>
+<body>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#A78BFA"/>
+    <stop offset="100%" stop-color="#F472B6"/>
+  </linearGradient>
+
+  <linearGradient id="card1" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#67E8F9"/>
+    <stop offset="100%" stop-color="#0EA5E9"/>
+  </linearGradient>
+  <linearGradient id="card2" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#D8B4FE"/>
+    <stop offset="100%" stop-color="#9333EA"/>
+  </linearGradient>
+  <linearGradient id="card3" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#FCA5A5"/>
+    <stop offset="100%" stop-color="#EF4444"/>
+  </linearGradient>
+
+  <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#00000030"/>
+  </filter>
+
+  <clipPath id="rnd">
+    <rect width="256" height="256" rx="48" ry="48"/>
+  </clipPath>
+</defs>
+
+<g clip-path="url(#rnd)">
+
+<!-- Background -->
+<rect width="256" height="256" fill="url(#bg)"/>
+<!-- Soft top glow -->
+<radialGradient id="tg" cx="50%" cy="0%" r="70%">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.45"/>
+  <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+</radialGradient>
+<rect width="256" height="256" fill="url(#tg)"/>
+
+<!-- ── 3 Fanned cards — 더 크고 중앙에 ── -->
+
+<!-- Left card (Book) -->
+<g transform="translate(98, 130) rotate(-20)" filter="url(#sh)">
+  <rect x="-36" y="-62" width="72" height="124" rx="14" fill="url(#card1)"/>
+  <rect x="-36" y="-62" width="72" height="40" rx="14" fill="white" opacity="0.18"/>
+  <!-- Book: two pages -->
+  <rect x="-27" y="-44" width="20" height="28" rx="4" fill="white" opacity="0.90"/>
+  <rect x=" -3" y="-44" width="20" height="28" rx="4" fill="white" opacity="0.90"/>
+  <rect x="-13" y="-47" width=" 7" height="34" rx="3" fill="white" opacity="0.50"/>
+  <!-- lines -->
+  <rect x="-25" y="-38" width="14" height="2.5" rx="1" fill="#0EA5E9" opacity="0.4"/>
+  <rect x="-25" y="-33" width="14" height="2.5" rx="1" fill="#0EA5E9" opacity="0.4"/>
+  <rect x="-25" y="-28" width="10" height="2.5" rx="1" fill="#0EA5E9" opacity="0.4"/>
+  <rect x=" -1" y="-38" width="14" height="2.5" rx="1" fill="#0EA5E9" opacity="0.4"/>
+  <rect x=" -1" y="-33" width="14" height="2.5" rx="1" fill="#0EA5E9" opacity="0.4"/>
+  <rect x=" -1" y="-28" width="10" height="2.5" rx="1" fill="#0EA5E9" opacity="0.4"/>
+</g>
+
+<!-- Right card (Drama/TV) -->
+<g transform="translate(158, 130) rotate(20)" filter="url(#sh)">
+  <rect x="-36" y="-62" width="72" height="124" rx="14" fill="url(#card3)"/>
+  <rect x="-36" y="-62" width="72" height="40" rx="14" fill="white" opacity="0.18"/>
+  <!-- TV screen -->
+  <rect x="-26" y="-44" width="52" height="34" rx="5" fill="white" opacity="0.90"/>
+  <rect x="-22" y="-40" width="44" height="26" rx="3" fill="#EF4444" opacity="0.20"/>
+  <!-- Play triangle -->
+  <polygon points="-6,-28 -6,-14 8,-21" fill="white" opacity="0.88"/>
+  <!-- Antenna -->
+  <line x1="-10" y1="-44" x2="-16" y2="-54" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.80"/>
+  <line x1=" 10" y1="-44" x2=" 16" y2="-54" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.80"/>
+  <circle cx="-16" cy="-54" r="3" fill="white" opacity="0.72"/>
+  <circle cx=" 16" cy="-54" r="3" fill="white" opacity="0.72"/>
+  <!-- Stand -->
+  <rect x="-8" y="-9" width="16" height="4" rx="2" fill="white" opacity="0.52"/>
+  <rect x="-14" y="-5" width="28" height="4" rx="2" fill="white" opacity="0.44"/>
+</g>
+
+<!-- Center card (Movie) — front, biggest -->
+<g transform="translate(128, 122)" filter="url(#sh)">
+  <rect x="-46" y="-74" width="92" height="148" rx="18" fill="url(#card2)"/>
+  <rect x="-46" y="-74" width="92" height="48" rx="18" fill="white" opacity="0.18"/>
+  <!-- Film strip top -->
+  <rect x="-38" y="-64" width="12" height="14" rx="3" fill="white" opacity="0.42"/>
+  <rect x="-22" y="-64" width="12" height="14" rx="3" fill="white" opacity="0.42"/>
+  <rect x=" -6" y="-64" width="12" height="14" rx="3" fill="white" opacity="0.42"/>
+  <rect x=" 10" y="-64" width="12" height="14" rx="3" fill="white" opacity="0.42"/>
+  <rect x=" 26" y="-64" width="12" height="14" rx="3" fill="white" opacity="0.42"/>
+  <!-- Play circle -->
+  <circle cx="0" cy="-8" r="30" fill="white" opacity="0.18"/>
+  <circle cx="0" cy="-8" r="22" fill="white" opacity="0.92"/>
+  <polygon points="-6,-20 -6,4  16,-8" fill="#9333EA" opacity="0.88"/>
+</g>
+
+</g>
+</svg>
+</body>
+</html>
