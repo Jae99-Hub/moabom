@@ -15,11 +15,11 @@ export default function AuthScreen({ onContinueAnonymous, isElectron }: Props) {
     setError('')
 
     if (isElectron) {
-      // Electron: 웹 URL로 받아서 web→moabom:// 릴레이 방식 사용
+      // Electron: Supabase Site URL(localhost:3000)에서 로컬 서버가 moabom://으로 릴레이
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'https://moabom-app.vercel.app?from=electron',
+          redirectTo: 'http://localhost:3000',
           skipBrowserRedirect: true,
           queryParams: { prompt: 'select_account' }
         }
