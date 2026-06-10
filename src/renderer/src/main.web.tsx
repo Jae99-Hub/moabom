@@ -110,23 +110,38 @@ async function bootstrap() {
     await setupWebApi()
 
     // ── Electron OAuth 릴레이 모드 ──────────────────────────────
-    // ?from=electron 감지: Supabase가 PKCE code를 자동 교환하도록 기다린 후
-    // 세션이 생기면 moabom://auth-callback 으로 토큰 전달
+    // implicit flow: Supabase가 토큰을 URL 해시로 직접 전달
+    // (#access_token=...&refresh_token=...)
     if (isElectronRelay()) {
       root.render(<ElectronRelayScreen />)
 
-      // Supabase가 URL의 ?code= 를 자동으로 세션으로 교환함
-      // getSession()을 먼저 시도하고, 없으면 onAuthStateChange 로 대기
+      function redirectToApp(session: { access_token: string; refresh_token: string }) {
+        window.location.href = `moabom://auth-callback#access_token=${session.access_token}&refresh_token=${session.refresh_token}`
+      }
+
+      // 1) 해시에서 직접 토큰 확인 (implicit flow — 가장 빠른 경로)
+      const hash = window.location.hash.slice(1)
+      if (hash) {
+        const p = new URLSearchParams(hash)
+        const at = p.get('access_token')
+        const rt = p.get('refresh_token')
+        if (at && rt) {
+          redirectToApp({ access_token: at, refresh_token: rt })
+          return
+        }
+      }
+
+      // 2) Supabase 클라이언트가 해시를 처리한 후 세션 확인
       const { data: { session: existing } } = await supabase.auth.getSession()
       if (existing) {
-        window.location.href = `moabom://auth-callback#access_token=${existing.access_token}&refresh_token=${existing.refresh_token}`
+        redirectToApp(existing)
         return
       }
 
-      // code 교환이 아직 안 된 경우 → 상태 변화 대기
+      // 3) 아직 처리 중이면 상태 변화 대기
       supabase.auth.onAuthStateChange((event, session) => {
         if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-          window.location.href = `moabom://auth-callback#access_token=${session.access_token}&refresh_token=${session.refresh_token}`
+          redirectToApp(session)
         }
       })
       return
