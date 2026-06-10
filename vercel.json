@@ -1,5 +1,5 @@
 {
-  "buildCommand": null,
+  "buildCommand": "echo 'Pre-built locally'",
   "outputDirectory": "dist/web",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
