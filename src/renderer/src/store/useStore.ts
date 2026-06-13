@@ -59,6 +59,13 @@ interface AppState {
   clearSyncResult: () => void
 }
 
+// 아이템 변경 후 3초 디바운스 자동 sync
+let _syncTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleSync(triggerSync: () => Promise<void>) {
+  if (_syncTimer) clearTimeout(_syncTimer)
+  _syncTimer = setTimeout(() => { triggerSync() }, 3000)
+}
+
 function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
   let result = [...list]
 
@@ -148,12 +155,14 @@ export const useStore = create<AppState>((set, get) => ({
   addItem: async (data) => {
     const item = await window.api.items.insert(data)
     await get().fetchAll()
+    scheduleSync(get().triggerSync)
     return item
   },
 
   updateItem: async (id, data) => {
     await window.api.items.update(id, data)
     await get().fetchAll()
+    scheduleSync(get().triggerSync)
   },
 
   deleteItem: async (id) => {
@@ -162,6 +171,7 @@ export const useStore = create<AppState>((set, get) => ({
       itemList: s.itemList.filter((m) => m.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId
     }))
+    scheduleSync(get().triggerSync)
   },
 
   selectItem: (id) => set({ selectedId: id }),

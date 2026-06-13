@@ -31,61 +31,17 @@ function renderError(msg: string) {
   )
 }
 
-// ── 로컬 SQLite → Supabase 마이그레이션 ─────────────────────────
-async function loginAndSwitch() {
-  // 1. Supabase 전환 전에 로컬 데이터 스냅샷
-  let localItems: Record<string, unknown>[] = []
-  const localQuoteMap = new Map<number, Record<string, unknown>[]>()
+// ── 로그인 후 처리 ────────────────────────────────────────────────
+async function loginAndSync() {
+  // 웹 환경에서는 window.api를 Supabase로 전환
+  // Electron에서는 contextBridge가 읽기전용이라 실패해도 무시
+  try { await setupWebApi() } catch { /* Electron에서는 정상 */ }
+
+  // 로그인 시 자동 동기화: 로컬 dirty 항목 push + 클라우드 데이터 pull
   try {
-    localItems = (await window.api.items.getAll()) as Record<string, unknown>[]
-    for (const item of localItems) {
-      const quotes = (await window.api.quotes.getByItemId(item.id as number)) as Record<string, unknown>[]
-      if (quotes.length > 0) localQuoteMap.set(item.id as number, quotes)
-    }
-  } catch { /* IPC 실패 시 무시 */ }
-
-  // 2. Supabase API로 전환
-  // Electron: contextBridge가 window.api를 읽기전용으로 만들므로
-  // setupWebApi()의 window.api 재할당을 건너뜀 (SQLite IPC 유지)
-  try { await setupWebApi() } catch { /* Electron에서는 정상 - SQLite 계속 사용 */ }
-
-  // 3. Supabase가 비어있고 로컬 데이터가 있으면 이전 제안
-  if (localItems.length === 0) return
-  try {
-    const supaItems = (await window.api.items.getAll()) as unknown[]
-    if (supaItems.length > 0) return // 이미 Supabase에 데이터 있음
-
-    const ok = window.confirm(
-      `로컬에 저장된 작품 ${localItems.length}개를 클라우드에 업로드할까요?\n` +
-      `(처음 로그인 시 한 번만 물어봅니다)`
-    )
-    if (!ok) return
-
-    // 4. 아이템 이전 (old id → new Supabase id 매핑)
-    const idMap = new Map<number, number>()
-    for (const item of localItems) {
-      try {
-        const oldId = item.id as number
-        const newItem = (await window.api.items.insert(item)) as Record<string, unknown>
-        if (newItem?.id) idMap.set(oldId, newItem.id as number)
-      } catch { /* 개별 실패 무시 */ }
-    }
-
-    // 5. 명언 이전
-    for (const [oldItemId, quotes] of localQuoteMap.entries()) {
-      const newItemId = idMap.get(oldItemId)
-      if (!newItemId) continue
-      for (const q of quotes) {
-        try {
-          await window.api.quotes.insert({ ...q, item_id: newItemId })
-        } catch { /* 개별 실패 무시 */ }
-      }
-    }
-
-    alert(`✓ ${idMap.size}개 작품을 클라우드에 업로드했습니다.`)
-  } catch (e) {
-    console.error('마이그레이션 실패:', e)
-  }
+    const { runSync } = await import('./api/syncService')
+    await runSync()
+  } catch { /* 오프라인이어도 앱 실행 */ }
 }
 
 async function bootstrap() {
@@ -101,7 +57,7 @@ async function bootstrap() {
   if (sessionError) throw sessionError
 
   if (session) {
-    await loginAndSwitch()
+    await loginAndSync()
     renderApp()
   } else {
     renderAuth()
@@ -120,7 +76,7 @@ async function bootstrap() {
       if (access_token && refresh_token) {
         const { data: { session }, error } = await supabase.auth.setSession({ access_token, refresh_token })
         if (error) { alert(`로그인 실패: ${error.message}`); return }
-        if (session) { await loginAndSwitch(); renderApp() }
+        if (session) { await loginAndSync(); renderApp() }
         return
       }
 
@@ -129,11 +85,11 @@ async function bootstrap() {
       if (code) {
         const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
         if (error) { alert(`로그인 실패: ${error.message}`); return }
-        if (session) { await loginAndSwitch(); renderApp() }
+        if (session) { await loginAndSync(); renderApp() }
         return
       }
 
-      alert(`[디버그] 콜백 URL: ${url}\n\naccess_token: ${urlObj.searchParams.get('access_token') ? '있음' : '없음'}\ncode: ${urlObj.searchParams.get('code') ? '있음' : '없음'}\nhash: ${urlObj.hash || '없음'}`)
+      console.warn('[auth] 콜백 URL에 인증 정보 없음:', url)
     } catch (e) {
       console.error('Auth callback 처리 실패:', e)
       alert(`로그인 오류: ${e instanceof Error ? e.message : String(e)}`)
@@ -143,7 +99,7 @@ async function bootstrap() {
   // 인증 상태 변화 감지
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
-      await loginAndSwitch()
+      await loginAndSync()
       renderApp()
     } else if (event === 'SIGNED_OUT') {
       renderAuth()
