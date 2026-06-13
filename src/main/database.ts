@@ -8,6 +8,11 @@ let db: Database
 let dbPath: string
 let sqlInstance: initSqlJs.SqlJsStatic
 
+// 현재 로그인한 유저 ID (로그아웃 시 null)
+let currentUserId: string | null = null
+export function setCurrentUserId(id: string | null): void { currentUserId = id }
+export function getCurrentUserId(): string | null { return currentUserId }
+
 function getWasmPath(): string {
   if (is.dev) {
     return join(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm')
@@ -77,6 +82,7 @@ export async function initDatabase(): Promise<void> {
     "ALTER TABLE items ADD COLUMN server_id INTEGER",
     "ALTER TABLE items ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE items ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE items ADD COLUMN user_id TEXT",
     "ALTER TABLE quotes ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
     "ALTER TABLE quotes ADD COLUMN server_id INTEGER",
     "ALTER TABLE quotes ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
@@ -219,7 +225,16 @@ function rowToQuote(row: Record<string, unknown>): QuoteRow {
 // ── 기본 CRUD ───────────────────────────────────────────────────────
 
 export function getAllItems(): ItemRow[] {
-  return queryAll('SELECT * FROM items WHERE is_deleted = 0 ORDER BY created_at DESC').map(rowToItem)
+  if (currentUserId) {
+    return queryAll(
+      'SELECT * FROM items WHERE is_deleted = 0 AND user_id = :uid ORDER BY created_at DESC',
+      { ':uid': currentUserId }
+    ).map(rowToItem)
+  }
+  // 비로그인: user_id가 없는 아이템만
+  return queryAll(
+    'SELECT * FROM items WHERE is_deleted = 0 AND user_id IS NULL ORDER BY created_at DESC'
+  ).map(rowToItem)
 }
 
 export function getItemById(id: number): ItemRow | undefined {
@@ -231,10 +246,10 @@ export function insertItem(data: Omit<ItemRow, 'id' | 'created_at' | 'updated_at
   db.run(
     `INSERT INTO items (title, original_title, item_type, cover_path, backdrop_path, author, publisher,
       isbn, page_count, current_page, director, platform, tmdb_id, google_books_id, genre, year,
-      overview, rating, status, review, read_date, is_dirty)
+      overview, rating, status, review, read_date, user_id, is_dirty)
      VALUES (:title, :original_title, :item_type, :cover_path, :backdrop_path, :author, :publisher,
       :isbn, :page_count, :current_page, :director, :platform, :tmdb_id, :google_books_id, :genre, :year,
-      :overview, :rating, :status, :review, :read_date, 1)`,
+      :overview, :rating, :status, :review, :read_date, :user_id, 1)`,
     {
       ':title': data.title,
       ':original_title': data.original_title ?? null,
@@ -256,7 +271,8 @@ export function insertItem(data: Omit<ItemRow, 'id' | 'created_at' | 'updated_at
       ':rating': data.rating ?? null,
       ':status': data.status,
       ':review': data.review ?? null,
-      ':read_date': data.read_date ?? null
+      ':read_date': data.read_date ?? null,
+      ':user_id': currentUserId ?? null
     }
   )
   const id = (queryOne('SELECT last_insert_rowid() as id') as { id: number }).id
@@ -478,11 +494,11 @@ export function upsertItemFromCloud(cloudItem: {
       `INSERT INTO items
         (title, original_title, item_type, cover_path, backdrop_path, author, publisher, isbn,
          page_count, current_page, director, platform, tmdb_id, google_books_id, genre, year,
-         overview, rating, status, review, read_date, created_at, updated_at, server_id, is_dirty, is_deleted)
+         overview, rating, status, review, read_date, created_at, updated_at, server_id, user_id, is_dirty, is_deleted)
        VALUES
         (:title, :original_title, :item_type, :cover_path, :backdrop_path, :author, :publisher, :isbn,
          :page_count, :current_page, :director, :platform, :tmdb_id, :google_books_id, :genre, :year,
-         :overview, :rating, :status, :review, :read_date, :created_at, :updated_at, :sid, 0, 0)`,
+         :overview, :rating, :status, :review, :read_date, :created_at, :updated_at, :sid, :uid, 0, 0)`,
       {
         ':title': cloudItem.title, ':original_title': cloudItem.original_title ?? null,
         ':item_type': cloudItem.item_type, ':cover_path': cloudItem.cover_path ?? null,
@@ -496,6 +512,7 @@ export function upsertItemFromCloud(cloudItem: {
         ':status': cloudItem.status, ':review': cloudItem.review ?? null,
         ':read_date': cloudItem.read_date ?? null, ':created_at': cloudItem.created_at,
         ':updated_at': cloudItem.updated_at, ':sid': cloudItem.id,
+        ':uid': cloudItem.user_id,
       }
     )
   }

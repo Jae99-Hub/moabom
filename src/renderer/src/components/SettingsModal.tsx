@@ -98,6 +98,10 @@ export default function SettingsModal() {
         }
         const { getElectronUser } = await import('../api/syncService')
         const user = await getElectronUser()
+        // 현재 유저 ID를 main process에 전달
+        const { supabase: sb } = await import('../api/supabaseClient')
+        const { data: { user: sbUser } } = await sb.auth.getUser()
+        window.authBridge?.setCurrentUser(sbUser?.id ?? null)
         setElectronEmail(user?.email ?? '')
         setElectronName(user?.name ?? '')
         setSigningIn(false)
@@ -167,6 +171,7 @@ export default function SettingsModal() {
     if (!window.confirm('로그아웃할까요?')) return
     const { electronSignOut } = await import('../api/syncService')
     await electronSignOut()
+    window.authBridge?.setCurrentUser(null)
     setElectronEmail(''); setElectronName(''); setSyncStatus('idle')
   }
 

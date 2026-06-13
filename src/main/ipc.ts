@@ -8,6 +8,7 @@ import {
   getSetting, setSetting, reloadDatabase,
   getDirtyItems, getDirtyQuotes, markItemSynced, markQuoteSynced,
   hardDeleteItem, hardDeleteQuote, upsertItemFromCloud, upsertQuoteFromCloud,
+  setCurrentUserId,
   ItemRow, QuoteRow
 } from './database'
 import { searchTmdb } from './tmdb'
@@ -125,6 +126,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     upsertQuoteFromCloud(cloudQuote))
   ipcMain.handle('sync:getLastSyncAt', () => getSetting('last_sync_at'))
   ipcMain.handle('sync:setLastSyncAt', (_, ts: string) => setSetting('last_sync_at', ts))
-  ipcMain.handle('sync:getItemById', (_, id: number) => getItemById(id))
+  ipcMain.handle('sync:getItemById', (_, id: number) => getItemByIdFn(id))
+  ipcMain.handle('auth:setCurrentUser', (_, userId: string | null) => setCurrentUserId(userId))
   ipcMain.handle('app:getVersion', () => app.getVersion())
 }

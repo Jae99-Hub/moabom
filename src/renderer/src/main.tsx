@@ -37,6 +37,13 @@ async function loginAndSync() {
   // Electron에서는 contextBridge가 읽기전용이라 실패해도 무시
   try { await setupWebApi() } catch { /* Electron에서는 정상 */ }
 
+  // 현재 유저 ID를 main process에 전달 (SQLite 필터링용)
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => void } }).authBridge
+    bridge?.setCurrentUser(user?.id ?? null)
+  } catch { /* ignore */ }
+
   // 로그인 시 자동 동기화: 로컬 dirty 항목 push + 클라우드 데이터 pull
   try {
     const { runSync } = await import('./api/syncService')
@@ -102,6 +109,8 @@ async function bootstrap() {
       await loginAndSync()
       renderApp()
     } else if (event === 'SIGNED_OUT') {
+      const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => void } }).authBridge
+      bridge?.setCurrentUser(null)
       renderAuth()
     }
   })

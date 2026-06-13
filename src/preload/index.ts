@@ -89,7 +89,8 @@ const authBridge = {
   onCallback: (callback: (url: string) => void) => {
     ipcRenderer.removeAllListeners('auth:callback')
     ipcRenderer.on('auth:callback', (_event, url: string) => callback(url))
-  }
+  },
+  setCurrentUser: (userId: string | null) => ipcRenderer.invoke('auth:setCurrentUser', userId),
 }
 
 if (process.contextIsolated) {
