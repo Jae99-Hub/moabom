@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
-import { ItemFormData, ItemType, ItemStatus, GoogleBookResult, TmdbResult } from '../types'
+import { Item, ItemFormData, ItemType, ItemStatus, GoogleBookResult, TmdbResult } from '../types'
 import StarRating from './StarRating'
 import ImageCropModal from './ImageCropModal'
 import GenreTagInput from './GenreTagInput'
@@ -16,7 +16,7 @@ const DEFAULT_FORM: ItemFormData = {
 }
 
 // editingItem → ItemFormData 변환 (useState 초기화 & useEffect 공용)
-function buildEditForm(item: NonNullable<ReturnType<typeof useStore>['editingItem']>): ItemFormData {
+function buildEditForm(item: Item): ItemFormData {
   return {
     title: item.title,
     original_title: item.original_title ?? '',

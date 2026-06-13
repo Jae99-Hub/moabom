@@ -23,7 +23,7 @@ function ItemSide({
   return (
     <div className={`conflict-side ${highlight ? `conflict-side--${highlight}` : ''}`}>
       <div className="conflict-side-label">{label}</div>
-      {item.cover_path && (
+      {!!item.cover_path && (
         <img
           className="conflict-side-cover"
           src={String(item.cover_path)}
@@ -34,8 +34,8 @@ function ItemSide({
       <div className="conflict-side-title">{String(item.title ?? '')}</div>
       <div className="conflict-side-meta">
         <span>{TYPE_LABEL[String(item.item_type)] ?? item.item_type as string}</span>
-        {item.year && <span>· {String(item.year)}</span>}
-        {(item.author || item.director) && (
+        {!!item.year && <span>· {String(item.year)}</span>}
+        {!!(item.author || item.director) && (
           <span>· {String(item.author ?? item.director ?? '')}</span>
         )}
       </div>
@@ -56,13 +56,13 @@ function ItemSide({
             <span className="conflict-row-val">{String(item.current_page)}p</span>
           </div>
         )}
-        {item.read_date && (
+        {!!item.read_date && (
           <div className="conflict-row">
             <span className="conflict-row-key">완료일</span>
             <span className="conflict-row-val">{String(item.read_date)}</span>
           </div>
         )}
-        {item.review && (
+        {!!item.review && (
           <div className="conflict-row">
             <span className="conflict-row-key">리뷰</span>
             <span className="conflict-row-val conflict-row-val--review">{excerpt(item.review)}</span>

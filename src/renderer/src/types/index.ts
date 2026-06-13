@@ -26,9 +26,16 @@ export interface Item {
   read_date: string | null
   created_at: string
   updated_at: string
+  deleted_at?: string | null
 }
 
-export type ItemFormData = Omit<Item, 'id' | 'created_at' | 'updated_at'>
+export type ItemFormData = Omit<Item, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>
+
+/** 휴지통 항목 — 동기화 식별자 포함 (클라우드 영구삭제용) */
+export interface TrashItem extends Item {
+  server_id: number | null
+  deleted_at: string | null
+}
 
 export interface Quote {
   id: number
@@ -133,13 +140,22 @@ declare global {
         getLastSyncAt: () => Promise<string>
         setLastSyncAt: (ts: string) => Promise<void>
         getItemById: (id: number) => Promise<unknown>
+        clearItemDirty: (localId: number) => Promise<void>
+        clearQuoteDirty: (localId: number) => Promise<void>
+      }
+      trash: {
+        getAll: () => Promise<TrashItem[]>
+        restore: (id: number) => Promise<void>
+        purge: (id: number) => Promise<void>
+        purgeExpired: (days: number) => Promise<void>
       }
     }
-    authBridge: {
+    authBridge?: {
       openExternal: (url: string) => Promise<void>
       onCallback: (callback: (url: string) => void) => void
+      setCurrentUser: (userId: string | null) => Promise<void>
     }
-    updaterBridge: {
+    updaterBridge?: {
       onAvailable: (cb: (version: string) => void) => void
       onProgress: (cb: (pct: number) => void) => void
       onDownloaded: (cb: () => void) => void

@@ -8,7 +8,9 @@ import {
   getSetting, setSetting, reloadDatabase,
   getDirtyItems, getDirtyQuotes, markItemSynced, markQuoteSynced,
   hardDeleteItem, hardDeleteQuote, upsertItemFromCloud, upsertQuoteFromCloud,
-  setCurrentUserId,
+  setCurrentUserId, getCurrentUserId,
+  getTrashedItems, restoreItem, purgeItem, purgeExpiredTrash,
+  clearItemDirty, clearQuoteDirty,
   ItemRow, QuoteRow
 } from './database'
 import { searchTmdb } from './tmdb'
@@ -124,9 +126,18 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     upsertItemFromCloud(cloudItem))
   ipcMain.handle('sync:upsertQuoteFromCloud', (_, cloudQuote: Parameters<typeof upsertQuoteFromCloud>[0]) =>
     upsertQuoteFromCloud(cloudQuote))
-  ipcMain.handle('sync:getLastSyncAt', () => getSetting('last_sync_at'))
-  ipcMain.handle('sync:setLastSyncAt', (_, ts: string) => setSetting('last_sync_at', ts))
-  ipcMain.handle('sync:getItemById', (_, id: number) => getItemByIdFn(id))
+  // last_sync_at은 계정별로 분리 저장 (계정 전환 시 새 계정의 클라우드 데이터를 전부 pull)
+  ipcMain.handle('sync:getLastSyncAt', () => getSetting('last_sync_at_' + (getCurrentUserId() ?? 'anon')))
+  ipcMain.handle('sync:setLastSyncAt', (_, ts: string) => setSetting('last_sync_at_' + (getCurrentUserId() ?? 'anon'), ts))
+  ipcMain.handle('sync:getItemById', (_, id: number) => getItemById(id))
+  ipcMain.handle('sync:clearItemDirty', (_, localId: number) => clearItemDirty(localId))
+  ipcMain.handle('sync:clearQuoteDirty', (_, localId: number) => clearQuoteDirty(localId))
   ipcMain.handle('auth:setCurrentUser', (_, userId: string | null) => setCurrentUserId(userId))
   ipcMain.handle('app:getVersion', () => app.getVersion())
+
+  // ── 휴지통 핸들러 ─────────────────────────────────────────────────
+  ipcMain.handle('trash:getAll', () => getTrashedItems())
+  ipcMain.handle('trash:restore', (_, id: number) => restoreItem(id))
+  ipcMain.handle('trash:purge', (_, id: number) => purgeItem(id))
+  ipcMain.handle('trash:purgeExpired', (_, days: number) => purgeExpiredTrash(days ?? 15, false))
 }

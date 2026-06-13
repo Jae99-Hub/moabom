@@ -83,11 +83,13 @@ export async function initDatabase(): Promise<void> {
     "ALTER TABLE items ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE items ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE items ADD COLUMN user_id TEXT",
+    "ALTER TABLE items ADD COLUMN deleted_at TEXT",
     "ALTER TABLE quotes ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
     "ALTER TABLE quotes ADD COLUMN server_id INTEGER",
     "ALTER TABLE quotes ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE quotes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE quotes ADD COLUMN episode_number INTEGER",
+    "ALTER TABLE quotes ADD COLUMN deleted_at TEXT",
   ]
   for (const sql of migrations) {
     try { db.run(sql) } catch { /* 이미 존재하면 무시 */ }
@@ -95,6 +97,8 @@ export async function initDatabase(): Promise<void> {
 
   runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('tmdb_api_key', '')")
   runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('last_sync_at', '')")
+  // 시작 시 비로그인/미동기화 휴지통 중 15일 경과분 영구삭제 (로그인분은 동기화에서 처리)
+  purgeExpiredTrash(15, true)
   save()
 }
 
@@ -157,6 +161,7 @@ export type ItemRow = {
   server_id: number | null
   is_dirty: number
   is_deleted: number
+  deleted_at: string | null
 }
 
 export type QuoteRow = {
@@ -172,6 +177,7 @@ export type QuoteRow = {
   server_id: number | null
   is_dirty: number
   is_deleted: number
+  deleted_at: string | null
 }
 
 function rowToItem(row: Record<string, unknown>): ItemRow {
@@ -203,6 +209,7 @@ function rowToItem(row: Record<string, unknown>): ItemRow {
     server_id: row.server_id != null ? Number(row.server_id) : null,
     is_dirty: row.is_dirty != null ? Number(row.is_dirty) : 1,
     is_deleted: row.is_deleted != null ? Number(row.is_deleted) : 0,
+    deleted_at: (row.deleted_at as string) || null,
   }
 }
 
@@ -219,6 +226,7 @@ function rowToQuote(row: Record<string, unknown>): QuoteRow {
     server_id: row.server_id != null ? Number(row.server_id) : null,
     is_dirty: row.is_dirty != null ? Number(row.is_dirty) : 1,
     is_deleted: row.is_deleted != null ? Number(row.is_deleted) : 0,
+    deleted_at: (row.deleted_at as string) || null,
   }
 }
 
@@ -308,15 +316,71 @@ export function updateItem(id: number, data: Partial<Omit<ItemRow, 'id' | 'creat
 }
 
 export function deleteItem(id: number): void {
-  const item = getItemById(id)
-  if (item?.server_id) {
-    // 클라우드에 있는 항목은 소프트 삭제 (동기화 후 실제 삭제)
-    db.run('UPDATE items SET is_deleted = 1, is_dirty = 1, updated_at = datetime(\'now\') WHERE id = :id', { ':id': id })
-    db.run('UPDATE quotes SET is_deleted = 1, is_dirty = 1 WHERE item_id = :id', { ':id': id })
-  } else {
-    // 로컬에만 있는 항목은 즉시 하드 삭제
-    db.run('DELETE FROM quotes WHERE item_id = :id', { ':id': id })
-    db.run('DELETE FROM items WHERE id = :id', { ':id': id })
+  // 항상 소프트 삭제(휴지통). deleted_at 기록 → 15일 후 자동 영구삭제.
+  // 클라우드 동기화 시 tombstone(is_deleted=true)으로 올려 다른 기기에도 삭제 전파.
+  db.run(
+    "UPDATE items SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = :id",
+    { ':id': id }
+  )
+  db.run(
+    "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = datetime('now') WHERE item_id = :id AND is_deleted = 0",
+    { ':id': id }
+  )
+  save()
+}
+
+// ── 휴지통 ───────────────────────────────────────────────────────────
+
+/** 휴지통(소프트 삭제) 아이템 목록 — 현재 계정 소유분만, 삭제일 최신순 */
+export function getTrashedItems(): ItemRow[] {
+  if (currentUserId) {
+    return queryAll(
+      'SELECT * FROM items WHERE is_deleted = 1 AND user_id = :uid ORDER BY deleted_at DESC',
+      { ':uid': currentUserId }
+    ).map(rowToItem)
+  }
+  return queryAll(
+    'SELECT * FROM items WHERE is_deleted = 1 AND user_id IS NULL ORDER BY deleted_at DESC'
+  ).map(rowToItem)
+}
+
+/** 휴지통에서 복원 (dirty 마킹 → 다음 동기화 시 클라우드도 복원) */
+export function restoreItem(id: number): void {
+  db.run(
+    "UPDATE items SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = datetime('now') WHERE id = :id",
+    { ':id': id }
+  )
+  db.run(
+    "UPDATE quotes SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = datetime('now') WHERE item_id = :id AND is_deleted = 1",
+    { ':id': id }
+  )
+  save()
+}
+
+/** 휴지통에서 즉시 영구삭제 (로컬 하드 삭제). 클라우드 삭제는 호출측에서 처리. */
+export function purgeItem(id: number): void {
+  db.run('DELETE FROM quotes WHERE item_id = :id', { ':id': id })
+  db.run('DELETE FROM items WHERE id = :id', { ':id': id })
+  save()
+}
+
+/** 만료된 휴지통 항목 로컬 영구삭제 (deleted_at이 days일 이전).
+ *  onlyLocalOnly=true면 클라우드에 올라간 적 없는(server_id IS NULL) 항목만 — 시작 시 비로그인 정리용 */
+export function purgeExpiredTrash(days = 15, onlyLocalOnly = false): void {
+  const cutoff = `datetime('now', '-${days} days')`
+  const cond = onlyLocalOnly ? 'AND server_id IS NULL' : ''
+  // datetime(deleted_at): 로컬('YYYY-MM-DD HH:MM:SS')과 클라우드 pull(ISO+TZ) 포맷을 모두 UTC로 정규화
+  db.run(
+    `DELETE FROM quotes WHERE item_id IN (
+       SELECT id FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}
+     )`
+  )
+  db.run(
+    `DELETE FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}`
+  )
+  // 개별 삭제된 명문장(부모는 살아있음)도 만료 시 정리
+  if (!onlyLocalOnly) {
+    db.run(`DELETE FROM quotes WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff}`)
   }
   save()
 }
@@ -394,14 +458,25 @@ export function deleteQuote(id: number): void {
 
 // ── 동기화 헬퍼 함수 ─────────────────────────────────────────────────
 
-/** 클라우드에 올려야 할 dirty 아이템 목록 (삭제 포함) */
+/** 클라우드에 올려야 할 dirty 아이템 목록 (삭제 포함)
+ *  현재 계정 소유 항목만 — 비로그인(user_id=NULL) 항목은 클라우드에 올리지 않음 */
 export function getDirtyItems(): ItemRow[] {
-  return queryAll('SELECT * FROM items WHERE is_dirty = 1').map(rowToItem)
+  if (!currentUserId) return []
+  return queryAll(
+    'SELECT * FROM items WHERE is_dirty = 1 AND user_id = :uid',
+    { ':uid': currentUserId }
+  ).map(rowToItem)
 }
 
-/** 클라우드에 올려야 할 dirty 명문장 목록 (삭제 포함) */
+/** 클라우드에 올려야 할 dirty 명문장 목록 (삭제 포함)
+ *  현재 계정 소유 아이템에 속한 명문장만 (quotes에는 user_id가 없어 items와 조인) */
 export function getDirtyQuotes(): QuoteRow[] {
-  return queryAll('SELECT * FROM quotes WHERE is_dirty = 1').map(rowToQuote)
+  if (!currentUserId) return []
+  return queryAll(
+    `SELECT q.* FROM quotes q JOIN items i ON q.item_id = i.id
+     WHERE q.is_dirty = 1 AND i.user_id = :uid`,
+    { ':uid': currentUserId }
+  ).map(rowToQuote)
 }
 
 /** 동기화 완료 후 아이템 clean 마킹 */
@@ -419,6 +494,17 @@ export function markQuoteSynced(localId: number, serverId: number): void {
     'UPDATE quotes SET server_id = :sid, is_dirty = 0 WHERE id = :id',
     { ':sid': serverId, ':id': localId }
   )
+  save()
+}
+
+/** server_id 없이 dirty만 해제 (클라우드에 올린 적 없는 휴지통 항목 정리용) */
+export function clearItemDirty(localId: number): void {
+  db.run('UPDATE items SET is_dirty = 0 WHERE id = :id', { ':id': localId })
+  save()
+}
+
+export function clearQuoteDirty(localId: number): void {
+  db.run('UPDATE quotes SET is_dirty = 0 WHERE id = :id', { ':id': localId })
   save()
 }
 
@@ -455,12 +541,18 @@ export function upsertItemFromCloud(cloudItem: {
   genre?: string | null; year?: number | null; overview?: string | null
   rating?: number | null; status: string; review?: string | null
   read_date?: string | null; created_at: string; updated_at: string
+  is_deleted?: boolean | null; deleted_at?: string | null
 }): void {
+  const cloudDeleted = cloudItem.is_deleted ? 1 : 0
+  const cloudDeletedAt = cloudItem.deleted_at ?? null
   const existing = queryOne('SELECT id, updated_at FROM items WHERE server_id = :sid', { ':sid': cloudItem.id })
   if (existing) {
-    // 로컬이 더 최신이면 덮어쓰지 않음 (로컬 변경사항 보호)
+    // 소유자 백필: 구버전에서 동기화된 항목은 user_id가 NULL일 수 있어
+    // 로그인 후 계정 필터(getAllItems)에 안 잡히는 문제 방지
+    db.run('UPDATE items SET user_id = :uid WHERE server_id = :sid', { ':uid': cloudItem.user_id, ':sid': cloudItem.id })
+    // 로컬이 더 최신이면 나머지 필드는 덮어쓰지 않음 (로컬 변경사항 보호)
     const localUpdated = existing.updated_at as string
-    if (parseDateMs(localUpdated) >= parseDateMs(cloudItem.updated_at)) return
+    if (parseDateMs(localUpdated) >= parseDateMs(cloudItem.updated_at)) { save(); return }
 
     db.run(
       `UPDATE items SET
@@ -472,7 +564,8 @@ export function upsertItemFromCloud(cloudItem: {
         google_books_id=:google_books_id, genre=:genre, year=:year,
         overview=:overview, rating=:rating, status=:status,
         review=:review, read_date=:read_date,
-        updated_at=:updated_at, is_dirty=0
+        updated_at=:updated_at, is_dirty=0,
+        is_deleted=:is_deleted, deleted_at=:deleted_at
        WHERE server_id=:sid`,
       {
         ':title': cloudItem.title, ':original_title': cloudItem.original_title ?? null,
@@ -487,9 +580,12 @@ export function upsertItemFromCloud(cloudItem: {
         ':status': cloudItem.status, ':review': cloudItem.review ?? null,
         ':read_date': cloudItem.read_date ?? null, ':updated_at': cloudItem.updated_at,
         ':sid': cloudItem.id,
+        ':is_deleted': cloudDeleted, ':deleted_at': cloudDeletedAt,
       }
     )
   } else {
+    // 이 기기가 가진 적 없는 항목이 이미 삭제됨 → 휴지통에 새로 만들 필요 없음
+    if (cloudDeleted) { return }
     db.run(
       `INSERT INTO items
         (title, original_title, item_type, cover_path, backdrop_path, author, publisher, isbn,
@@ -523,6 +619,7 @@ export function upsertItemFromCloud(cloudItem: {
 export function upsertQuoteFromCloud(cloudQuote: {
   id: number; item_id: number; user_id: string; text: string
   page_number?: number | null; episode_number?: number | null; note?: string | null; created_at: string; updated_at?: string | null
+  is_deleted?: boolean | null; deleted_at?: string | null
 }): void {
   // cloud item_id(=server_id)로 로컬 item 찾기
   const localItem = queryOne('SELECT id FROM items WHERE server_id = :sid', { ':sid': cloudQuote.item_id })
@@ -530,18 +627,24 @@ export function upsertQuoteFromCloud(cloudQuote: {
 
   const localItemId = localItem.id as number
   const updatedAt = cloudQuote.updated_at ?? cloudQuote.created_at
+  const cloudDeleted = cloudQuote.is_deleted ? 1 : 0
+  const cloudDeletedAt = cloudQuote.deleted_at ?? null
   const existing = queryOne('SELECT id, updated_at FROM quotes WHERE server_id = :sid', { ':sid': cloudQuote.id })
 
   if (existing) {
     const localUpdated = (existing.updated_at as string) || ''
     if (parseDateMs(localUpdated) >= parseDateMs(updatedAt)) return
     db.run(
-      `UPDATE quotes SET text=:text, page_number=:pn, episode_number=:en, note=:note, updated_at=:ua, is_dirty=0 WHERE server_id=:sid`,
+      `UPDATE quotes SET text=:text, page_number=:pn, episode_number=:en, note=:note, updated_at=:ua, is_dirty=0,
+        is_deleted=:del, deleted_at=:da WHERE server_id=:sid`,
       { ':text': cloudQuote.text, ':pn': cloudQuote.page_number ?? null,
         ':en': cloudQuote.episode_number ?? null,
-        ':note': cloudQuote.note ?? null, ':ua': updatedAt, ':sid': cloudQuote.id }
+        ':note': cloudQuote.note ?? null, ':ua': updatedAt, ':sid': cloudQuote.id,
+        ':del': cloudDeleted, ':da': cloudDeletedAt }
     )
   } else {
+    // 이 기기가 가진 적 없는 명문장이 이미 삭제됨 → 새로 만들 필요 없음
+    if (cloudDeleted) { return }
     db.run(
       `INSERT INTO quotes (item_id, text, page_number, episode_number, note, created_at, updated_at, server_id, is_dirty, is_deleted)
        VALUES (:item_id, :text, :pn, :en, :note, :ca, :ua, :sid, 0, 0)`,

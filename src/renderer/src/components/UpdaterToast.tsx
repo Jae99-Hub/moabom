@@ -2,18 +2,6 @@ import React, { useEffect, useState } from 'react'
 
 type Phase = 'idle' | 'available' | 'downloading' | 'downloaded'
 
-interface UpdaterBridge {
-  onAvailable: (cb: (version: string) => void) => void
-  onProgress:  (cb: (pct: number) => void) => void
-  onDownloaded: (cb: () => void) => void
-  startDownload: () => Promise<void>
-  install: () => Promise<void>
-}
-
-declare global {
-  interface Window { updaterBridge?: UpdaterBridge }
-}
-
 export default function UpdaterToast() {
   const [phase, setPhase] = useState<Phase>('idle')
   const [version, setVersion] = useState('')

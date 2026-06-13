@@ -52,6 +52,14 @@ const api = {
     getLastSyncAt: () => ipcRenderer.invoke('sync:getLastSyncAt'),
     setLastSyncAt: (ts: string) => ipcRenderer.invoke('sync:setLastSyncAt', ts),
     getItemById: (id: number) => ipcRenderer.invoke('sync:getItemById', id),
+    clearItemDirty: (localId: number) => ipcRenderer.invoke('sync:clearItemDirty', localId),
+    clearQuoteDirty: (localId: number) => ipcRenderer.invoke('sync:clearQuoteDirty', localId),
+  },
+  trash: {
+    getAll: () => ipcRenderer.invoke('trash:getAll'),
+    restore: (id: number) => ipcRenderer.invoke('trash:restore', id),
+    purge: (id: number) => ipcRenderer.invoke('trash:purge', id),
+    purgeExpired: (days: number) => ipcRenderer.invoke('trash:purgeExpired', days),
   }
 }
 

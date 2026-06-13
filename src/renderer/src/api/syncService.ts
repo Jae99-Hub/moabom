@@ -122,6 +122,8 @@ function buildItemPayload(item: CloudRow, userId: string): CloudRow {
     read_date: item.read_date ?? null,
     created_at: item.created_at,
     updated_at: item.updated_at,
+    is_deleted: !!item.is_deleted,
+    deleted_at: item.deleted_at ?? null,
   }
 }
 
@@ -135,10 +137,19 @@ async function pushDirtyItems(
 
   for (const item of dirtyItems) {
     if (item.is_deleted) {
+      // 휴지통(소프트 삭제): 클라우드에 tombstone(is_deleted=true)으로 반영 → 다른 기기도 휴지통으로 이동.
+      // 15일 후 purgeExpiredTrash가 클라우드/로컬에서 영구삭제.
       if (item.server_id) {
-        await supabase.from('items').delete().eq('id', item.server_id).eq('user_id', userId)
+        const { error } = await supabase
+          .from('items')
+          .update(buildItemPayload(item, userId))
+          .eq('id', item.server_id)
+          .eq('user_id', userId)
+        if (!error) await window.api.sync.markItemSynced(item.id as number, item.server_id as number)
+      } else {
+        // 클라우드에 올린 적 없는 항목 → 로컬 휴지통에만 보관, dirty 해제
+        await window.api.sync.clearItemDirty(item.id as number)
       }
-      await window.api.sync.hardDeleteItem(item.id as number)
       continue
     }
 
@@ -213,10 +224,17 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
 
   for (const quote of dirtyQuotes) {
     if (quote.is_deleted) {
+      // 휴지통(tombstone)으로 반영 — 15일 후 purgeExpiredTrash가 영구삭제
       if (quote.server_id) {
-        await supabase.from('quotes').delete().eq('id', quote.server_id).eq('user_id', userId)
+        const { error } = await supabase
+          .from('quotes')
+          .update({ is_deleted: true, deleted_at: quote.deleted_at ?? null, updated_at: quote.updated_at })
+          .eq('id', quote.server_id)
+          .eq('user_id', userId)
+        if (!error) await window.api.sync.markQuoteSynced(quote.id as number, quote.server_id as number)
+      } else {
+        await window.api.sync.clearQuoteDirty(quote.id as number)
       }
-      await window.api.sync.hardDeleteQuote(quote.id as number)
       continue
     }
 
@@ -230,9 +248,12 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       item_id: parentItem.server_id as number,
       text: quote.text,
       page_number: quote.page_number ?? null,
+      episode_number: quote.episode_number ?? null,
       note: quote.note ?? null,
       created_at: quote.created_at,
       updated_at: quote.updated_at,
+      is_deleted: false,
+      deleted_at: null,
     }
 
     if (quote.server_id) {
@@ -294,6 +315,18 @@ async function pullCloudQuotes(userId: string): Promise<void> {
   }
 }
 
+// ── 휴지통 만료 정리 (15일 경과분 영구삭제) ──────────────────────────
+const TRASH_RETENTION_DAYS = 15
+
+async function purgeExpiredTrash(userId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  // 클라우드: 만료된 휴지통 영구삭제 (명문장 먼저 → 아이템)
+  await supabase.from('quotes').delete().eq('user_id', userId).eq('is_deleted', true).lt('deleted_at', cutoff)
+  await supabase.from('items').delete().eq('user_id', userId).eq('is_deleted', true).lt('deleted_at', cutoff)
+  // 로컬: 만료된 휴지통 영구삭제
+  await window.api.trash.purgeExpired(TRASH_RETENTION_DAYS)
+}
+
 // ── 메인 동기화 함수 ─────────────────────────────────────────────────
 export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<SyncResult> {
   if (!isSupabaseConfigured || !supabase) return { autoMerged: 0, conflicts: [] }
@@ -310,6 +343,7 @@ export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<
     await pushDirtyQuotes(user.id)
     await pullCloudItems(user.id)
     await pullCloudQuotes(user.id)
+    await purgeExpiredTrash(user.id)
     await window.api.sync.setLastSyncAt(new Date().toISOString())
     onStatus?.('success')
     return { autoMerged, conflicts }

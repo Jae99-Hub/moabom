@@ -38,10 +38,11 @@ async function loginAndSync() {
   try { await setupWebApi() } catch { /* Electron에서는 정상 */ }
 
   // 현재 유저 ID를 main process에 전달 (SQLite 필터링용)
+  // runSync보다 먼저 완료되어야 getAllItems/last_sync_at이 올바른 계정으로 동작함
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => void } }).authBridge
-    bridge?.setCurrentUser(user?.id ?? null)
+    const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
+    await bridge?.setCurrentUser(user?.id ?? null)
   } catch { /* ignore */ }
 
   // 로그인 시 자동 동기화: 로컬 dirty 항목 push + 클라우드 데이터 pull

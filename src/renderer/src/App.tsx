@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import UpdaterToast from './components/UpdaterToast'
 import SyncConflictModal from './components/SyncConflictModal'
 import StatsModal from './components/StatsModal'
+import TrashModal from './components/TrashModal'
 
 export default function App() {
   const { fetchAll, theme } = useStore()
@@ -48,6 +49,7 @@ export default function App() {
         <UpdaterToast />
         <SyncConflictModal />
         <StatsModal />
+        <TrashModal />
       </div>
     </ErrorBoundary>
   )

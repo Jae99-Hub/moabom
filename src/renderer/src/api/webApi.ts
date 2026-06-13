@@ -603,6 +603,9 @@ export async function setupWebApi(): Promise<void> {
           input.onchange = async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0]
             if (!file) { resolve({ success: false }); return }
+            // 롤백용: catch 블록에서도 접근 가능하도록 try 밖에서 선언
+            let oldItems: Record<string, unknown>[] | null = null
+            let oldQuotes: Record<string, unknown>[] | null = null
             try {
               const text = await file.text()
               const { items, quotes } = JSON.parse(text) as {
@@ -629,10 +632,12 @@ export async function setupWebApi(): Promise<void> {
               const userId = await getUserId()
 
               // 삭제 전 현재 데이터 백업 (복원 실패 시 롤백용)
-              const [{ data: oldItems }, { data: oldQuotes }] = await Promise.all([
+              const [itemsRes, quotesRes] = await Promise.all([
                 supabase.from('items').select('*').eq('user_id', userId),
                 supabase.from('quotes').select('*').eq('user_id', userId)
               ])
+              oldItems = itemsRes.data
+              oldQuotes = quotesRes.data
 
               await supabase.from('quotes').delete().eq('user_id', userId)
               await supabase.from('items').delete().eq('user_id', userId)

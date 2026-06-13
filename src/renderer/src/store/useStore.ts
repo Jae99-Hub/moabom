@@ -47,6 +47,9 @@ interface AppState {
   isStatsOpen: boolean
   openStats: () => void
   closeStats: () => void
+  isTrashOpen: boolean
+  openTrash: () => void
+  closeTrash: () => void
 
   // 동기화
   syncStatus: SyncStatus
@@ -143,6 +146,7 @@ export const useStore = create<AppState>((set, get) => ({
   checkedItems: [],
   isSidebarOpen: false,
   isStatsOpen: false,
+  isTrashOpen: false,
   syncStatus: 'idle' as SyncStatus,
   syncConflicts: [] as SyncConflict[],
   syncAutoMerged: 0,
@@ -218,6 +222,8 @@ export const useStore = create<AppState>((set, get) => ({
   closeSidebar: () => set({ isSidebarOpen: false }),
   openStats: () => set({ isStatsOpen: true }),
   closeStats: () => set({ isStatsOpen: false }),
+  openTrash: () => set({ isTrashOpen: true }),
+  closeTrash: () => set({ isTrashOpen: false }),
 
   setSyncStatus: (s) => set({ syncStatus: s }),
   setSyncResult: (conflicts, autoMerged) => set({ syncConflicts: conflicts, syncAutoMerged: autoMerged }),
