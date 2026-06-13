@@ -113,18 +113,30 @@ async function bootstrap() {
     try {
       const fake = url.replace('moabom://', 'https://x/')
       const urlObj = new URL(fake)
-      const params = new URLSearchParams(urlObj.hash.slice(1) || urlObj.search.slice(1))
-      const access_token = params.get('access_token')
-      const refresh_token = params.get('refresh_token')
+
+      // Implicit flow: 로컬 서버에서 해시→쿼리 변환 후 ?access_token=... 로 도착
+      const access_token = urlObj.searchParams.get('access_token')
+      const refresh_token = urlObj.searchParams.get('refresh_token')
       if (access_token && refresh_token) {
-        const { data: { session } } = await supabase.auth.setSession({ access_token, refresh_token })
-        if (session) {
-          await loginAndSwitch()
-          renderApp()
-        }
+        const { data: { session }, error } = await supabase.auth.setSession({ access_token, refresh_token })
+        if (error) { alert(`로그인 실패: ${error.message}`); return }
+        if (session) { await loginAndSwitch(); renderApp() }
+        return
       }
+
+      // PKCE flow: ?code=...
+      const code = urlObj.searchParams.get('code')
+      if (code) {
+        const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) { alert(`로그인 실패: ${error.message}`); return }
+        if (session) { await loginAndSwitch(); renderApp() }
+        return
+      }
+
+      alert(`[디버그] 콜백 URL: ${url}\n\naccess_token: ${urlObj.searchParams.get('access_token') ? '있음' : '없음'}\ncode: ${urlObj.searchParams.get('code') ? '있음' : '없음'}\nhash: ${urlObj.hash || '없음'}`)
     } catch (e) {
       console.error('Auth callback 처리 실패:', e)
+      alert(`로그인 오류: ${e instanceof Error ? e.message : String(e)}`)
     }
   })
 

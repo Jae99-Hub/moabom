@@ -58,10 +58,9 @@ function setupAutoUpdater(win: BrowserWindow) {
 
 // ── 로컬 OAuth 수신 서버 (localhost:3000) ─────────────────────────
 // Supabase Site URL이 localhost:3000으로 설정되어 있어
-// 외부 redirectTo가 whitelist에 없으면 여기로 리다이렉트됨.
-// implicit flow이므로 토큰이 URL 해시(#access_token=...)로 옴.
-// 브라우저는 해시를 서버에 보내지 않으므로,
-// HTML 페이지에서 JS로 해시를 읽어 moabom:// 스킴으로 전달.
+// redirectTo: 'http://localhost:3000'으로 OAuth 콜백을 받음.
+// PKCE flow: ?code=...가 쿼리로 옴 → moabom://auth-callback?code=...로 전달
+// Implicit flow(fallback): #access_token=...가 해시로 옴 → 해시째 전달
 function startLocalAuthServer() {
   const HTML = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -69,12 +68,18 @@ function startLocalAuthServer() {
 </head><body>
 <p>로그인 처리 중... 앱으로 돌아갑니다.</p>
 <script>
+var s = window.location.search;
 var h = window.location.hash;
-if (h && h.includes('access_token')) {
-  window.location.href = 'moabom://auth-callback' + h;
+if (s && s.includes('code=')) {
+  // PKCE: ?code=... → 쿼리 파라미터 그대로 전달
+  window.location.href = 'moabom://auth-callback' + s;
+  setTimeout(function(){ window.close(); }, 2000);
+} else if (h && h.includes('access_token')) {
+  // Implicit: #access_token=... → 해시는 커스텀 프로토콜에서 잘리므로 쿼리 파라미터로 변환
+  window.location.href = 'moabom://auth-callback?' + h.slice(1);
   setTimeout(function(){ window.close(); }, 2000);
 } else {
-  document.querySelector('p').textContent = '토큰을 찾을 수 없습니다. 다시 시도해주세요.';
+  document.querySelector('p').textContent = '인증 정보를 찾을 수 없습니다. 다시 시도해주세요.';
 }
 </script>
 </body></html>`

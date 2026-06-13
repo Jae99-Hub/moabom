@@ -84,10 +84,18 @@ export default function SettingsModal() {
       try {
         const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
         if (!isSupabaseConfigured || !supabase) return
-        const code = new URL(callbackUrl.replace('moabom://', 'https://dummy.local/')).searchParams.get('code')
-        if (!code) return
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) { setSigningIn(false); return }
+        const parsed = new URL(callbackUrl.replace('moabom://', 'https://dummy.local/'))
+        const access_token = parsed.searchParams.get('access_token')
+        const refresh_token = parsed.searchParams.get('refresh_token')
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+          if (error) { setSigningIn(false); return }
+        } else {
+          const code = parsed.searchParams.get('code')
+          if (!code) { setSigningIn(false); return }
+          const { error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) { setSigningIn(false); return }
+        }
         const { getElectronUser } = await import('../api/syncService')
         const user = await getElectronUser()
         setElectronEmail(user?.email ?? '')
@@ -146,7 +154,7 @@ export default function SettingsModal() {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'moabom://auth/callback',
+        redirectTo: 'http://localhost:3000',
         queryParams: { prompt: 'select_account' },
         skipBrowserRedirect: true,
       }
