@@ -36,69 +36,58 @@ function renderError(msg: string) {
   )
 }
 
-// ── 로그인 후 처리 ────────────────────────────────────────────────
+// ── 앱 시작 시 초기 로그인 처리 (세션 복원 + 동기화) ────────────────
 async function loginAndSync() {
-  // 웹 환경에서는 window.api를 Supabase로 전환
-  // Electron에서는 contextBridge가 읽기전용이라 실패해도 무시
   try { await setupWebApi() } catch { /* Electron에서는 정상 */ }
-
-  // 현재 유저 ID를 main process에 전달 (SQLite 필터링용)
-  // runSync보다 먼저 완료되어야 getAllItems/last_sync_at이 올바른 계정으로 동작함
   try {
     const { data: { user } } = await supabase.auth.getUser()
     const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
     await bridge?.setCurrentUser(user?.id ?? null)
   } catch { /* ignore */ }
-
-  // 로그인 시 자동 동기화: 로컬 dirty 항목 push + 클라우드 데이터 pull
   try {
     const { runSync } = await import('./api/syncService')
     await runSync()
   } catch { /* 오프라인이어도 앱 실행 */ }
 }
 
-async function bootstrap() {
+// ── OAuth 코드 교환 후 백그라운드 동기화 ─────────────────────────────
+// onAuthStateChange SIGNED_IN에서 renderApp() 직후 호출 (await 없이)
+async function bgSync() {
+  try { await setupWebApi() } catch { }
   try {
-  // Supabase 환경변수 없으면 그냥 로컬 SQLite로 실행
-  if (!isSupabaseConfigured) {
-    renderApp()
-    return
-  }
+    const { runSync } = await import('./api/syncService')
+    await runSync()
+    // sync 완료 후 아이템 목록 갱신
+    const { useStore } = await import('./store/useStore')
+    await useStore.getState().fetchAll()
+  } catch { }
+}
 
-  // 저장된 세션 확인
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-  if (sessionError) throw sessionError
+// ── OAuth 콜백 URL 처리 (main process → renderer) ────────────────────
+// 로그아웃 후 재로그인에도 동작하도록 함수로 분리해 재등록 가능하게 함
+type AuthBridgeType = { onCallback: (cb: (url: string) => void) => void }
+let authBridgeRef: AuthBridgeType | undefined
 
-  if (session) {
-    await loginAndSync()
-    renderApp()
-  } else {
-    renderAuth()
-  }
-
-  // OAuth 콜백 처리 (main process → renderer)
-  const authBridge = (window as unknown as { authBridge?: { onCallback: (cb: (url: string) => void) => void } }).authBridge
-  authBridge?.onCallback(async (url: string) => {
+function registerAuthCallback() {
+  authBridgeRef?.onCallback(async (url: string) => {
     try {
       const fake = url.replace('moabom://', 'https://x/')
       const urlObj = new URL(fake)
 
-      // Implicit flow: 로컬 서버에서 해시→쿼리 변환 후 ?access_token=... 로 도착
       const access_token = urlObj.searchParams.get('access_token')
       const refresh_token = urlObj.searchParams.get('refresh_token')
       if (access_token && refresh_token) {
-        const { data: { session }, error } = await supabase.auth.setSession({ access_token, refresh_token })
-        if (error) { alert(`로그인 실패: ${error.message}`); return }
-        if (session) { await loginAndSync(); renderApp() }
+        const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+        if (error) alert(`로그인 실패: ${error.message}`)
+        // renderApp()은 onAuthStateChange SIGNED_IN이 처리
         return
       }
 
-      // PKCE flow: ?code=...
       const code = urlObj.searchParams.get('code')
       if (code) {
-        const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) { alert(`로그인 실패: ${error.message}`); return }
-        if (session) { await loginAndSync(); renderApp() }
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) alert(`로그인 실패: ${error.message}`)
+        // renderApp()은 onAuthStateChange SIGNED_IN이 처리
         return
       }
 
@@ -108,18 +97,53 @@ async function bootstrap() {
       alert(`로그인 오류: ${e instanceof Error ? e.message : String(e)}`)
     }
   })
+}
 
-  // 인증 상태 변화 감지
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
+async function bootstrap() {
+  try {
+    if (!isSupabaseConfigured) {
+      renderApp()
+      return
+    }
+
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError) throw sessionError
+
+    if (session) {
       await loginAndSync()
       renderApp()
-    } else if (event === 'SIGNED_OUT') {
-      const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => void } }).authBridge
-      bridge?.setCurrentUser(null)
+    } else {
       renderAuth()
     }
-  })
+
+    // OAuth 콜백 핸들러 등록
+    authBridgeRef = (window as unknown as { authBridge?: AuthBridgeType }).authBridge
+    registerAuthCallback()
+
+    // 인증 상태 변화 감지
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        // currentUserId 먼저 설정 (SQLite 필터링이 즉시 정확하게 동작)
+        try {
+          const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
+          await bridge?.setCurrentUser(session.user.id)
+        } catch { }
+        // 화면을 즉시 전환 — sync는 백그라운드에서 처리
+        renderApp()
+        bgSync()
+      } else if (event === 'SIGNED_OUT') {
+        const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => void } }).authBridge
+        bridge?.setCurrentUser(null)
+        // 설정 모달이 열린 채로 로그아웃 시 재로그인 후 자동 열리는 것 방지
+        try {
+          const { useStore } = await import('./store/useStore')
+          useStore.getState().closeSettings()
+        } catch { }
+        // 로그아웃 후 재로그인을 위해 OAuth 콜백 핸들러 재등록
+        registerAuthCallback()
+        renderAuth()
+      }
+    })
 
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)

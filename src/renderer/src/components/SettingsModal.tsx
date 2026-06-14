@@ -77,6 +77,7 @@ export default function SettingsModal() {
   }, [isSettingsOpen])
 
   // ── 마운트 시 한 번: OAuth 콜백 리스너 ─────────────────────────────
+  // 코드 교환만 담당. renderApp / setCurrentUser / sync는 main.tsx onAuthStateChange가 처리.
   useEffect(() => {
     if (!isElectron || !window.authBridge || callbackRegistered.current) return
     callbackRegistered.current = true
@@ -96,16 +97,8 @@ export default function SettingsModal() {
           const { error } = await supabase.auth.exchangeCodeForSession(code)
           if (error) { setSigningIn(false); return }
         }
-        const { getElectronUser } = await import('../api/syncService')
-        const user = await getElectronUser()
-        // 현재 유저 ID를 main process에 전달
-        const { supabase: sb } = await import('../api/supabaseClient')
-        const { data: { user: sbUser } } = await sb.auth.getUser()
-        await window.authBridge?.setCurrentUser(sbUser?.id ?? null)
-        setElectronEmail(user?.email ?? '')
-        setElectronName(user?.name ?? '')
-        setSigningIn(false)
-        triggerSync()
+        // 성공: onAuthStateChange SIGNED_IN이 renderApp()을 처리하므로
+        // 이 컴포넌트는 곧 언마운트됨 — 여기서 state 업데이트 불필요
       } catch {
         setSigningIn(false)
       }
@@ -171,7 +164,7 @@ export default function SettingsModal() {
     if (!window.confirm('로그아웃할까요?')) return
     const { electronSignOut } = await import('../api/syncService')
     await electronSignOut()
-    window.authBridge?.setCurrentUser(null)
+    // setCurrentUser(null), renderAuth()는 onAuthStateChange SIGNED_OUT이 처리
     setElectronEmail(''); setElectronName(''); setSyncStatus('idle')
   }
 
