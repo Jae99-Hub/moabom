@@ -137,7 +137,7 @@ export default function Sidebar() {
       {isSidebarOpen && (
         <div className="sidebar-overlay" onClick={closeSidebar} />
       )}
-    <div className={`sidebar${isSidebarOpen ? ' sidebar-open' : ''}`}>
+    <div className={`sidebar${isSidebarOpen ? ' sidebar-open' : ''}`} data-tour="sidebar">
 
       {/* Stats row */}
       <div className="sidebar-stats">
@@ -262,7 +262,7 @@ export default function Sidebar() {
           </span>
           통계
         </button>
-        <button className="sidebar-nav-item" onClick={() => { openTrash(); closeSidebar() }}>
+        <button className="sidebar-nav-item" onClick={() => { openTrash(); closeSidebar() }} data-tour="trash">
           <span className="sidebar-type-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="3 6 5 6 21 6" />

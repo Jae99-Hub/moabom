@@ -50,6 +50,9 @@ interface AppState {
   isTrashOpen: boolean
   openTrash: () => void
   closeTrash: () => void
+  isTourOpen: boolean
+  openTour: () => void
+  closeTour: () => void
 
   // 동기화
   syncStatus: SyncStatus
@@ -133,7 +136,7 @@ export const useStore = create<AppState>((set, get) => ({
     search: '',
     searchMode: 'title'
   },
-  theme: (() => { try { return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark' } catch { return 'dark' } })(),
+  theme: (() => { try { return (localStorage.getItem('theme') as 'light' | 'dark') || 'light' } catch { return 'light' } })(),
   isAddModalOpen: false,
   isSettingsOpen: false,
   isQuotesModalOpen: false,
@@ -147,6 +150,7 @@ export const useStore = create<AppState>((set, get) => ({
   isSidebarOpen: false,
   isStatsOpen: false,
   isTrashOpen: false,
+  isTourOpen: false,
   syncStatus: 'idle' as SyncStatus,
   syncConflicts: [] as SyncConflict[],
   syncAutoMerged: 0,
@@ -224,6 +228,11 @@ export const useStore = create<AppState>((set, get) => ({
   closeStats: () => set({ isStatsOpen: false }),
   openTrash: () => set({ isTrashOpen: true }),
   closeTrash: () => set({ isTrashOpen: false }),
+  openTour: () => set({ isTourOpen: true }),
+  closeTour: () => {
+    try { localStorage.setItem('onboarding_done', '1') } catch { /* ignore */ }
+    set({ isTourOpen: false })
+  },
 
   setSyncStatus: (s) => set({ syncStatus: s }),
   setSyncResult: (conflicts, autoMerged) => set({ syncConflicts: conflicts, syncAutoMerged: autoMerged }),

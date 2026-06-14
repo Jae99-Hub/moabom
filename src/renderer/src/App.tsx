@@ -14,9 +14,10 @@ import UpdaterToast from './components/UpdaterToast'
 import SyncConflictModal from './components/SyncConflictModal'
 import StatsModal from './components/StatsModal'
 import TrashModal from './components/TrashModal'
+import OnboardingTour from './components/OnboardingTour'
 
 export default function App() {
-  const { fetchAll, theme } = useStore()
+  const { fetchAll, theme, openTour } = useStore()
 
   // 테마는 변경될 때마다 즉시 반영
   useEffect(() => {
@@ -26,6 +27,15 @@ export default function App() {
   // 앱 마운트 시 데이터 로드
   useEffect(() => {
     fetchAll()
+  }, [])
+
+  // 첫 실행 시 사용법 투어 자동 시작 (레이아웃 안정화 후)
+  useEffect(() => {
+    let done = true
+    try { done = localStorage.getItem('onboarding_done') === '1' } catch { /* ignore */ }
+    if (done) return
+    const t = setTimeout(() => openTour(), 600)
+    return () => clearTimeout(t)
   }, [])
 
   return (
@@ -50,6 +60,7 @@ export default function App() {
         <SyncConflictModal />
         <StatsModal />
         <TrashModal />
+        <OnboardingTour />
       </div>
     </ErrorBoundary>
   )

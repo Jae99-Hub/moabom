@@ -6,6 +6,11 @@ import { isSupabaseConfigured, supabase } from './api/supabaseClient'
 import { setupWebApi } from './api/webApi'
 import AuthScreen from './components/AuthScreen'
 
+// 초기 테마 적용 (저장값 없으면 라이트) — React 렌더 전에 적용해 다크 플래시 방지
+try {
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light')
+} catch { document.documentElement.setAttribute('data-theme', 'light') }
+
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
 const renderApp = () => root.render(<React.StrictMode><App /></React.StrictMode>)

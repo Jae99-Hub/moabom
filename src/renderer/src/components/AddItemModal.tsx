@@ -463,7 +463,12 @@ export default function AddItemModal() {
                       <input className="form-input" type="number" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="2024" min={1900} max={2100} />
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">장르</label>
+                      <label className="form-label">
+                        장르
+                        <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                          Tab으로 하위장르 · Enter로 저장
+                        </span>
+                      </label>
                       <GenreTagInput
                         value={form.genre ?? ''}
                         onChange={(v) => set('genre', v)}
@@ -566,23 +571,31 @@ export default function AddItemModal() {
               )}
             </div>
 
-            {/* 푸터 */}
+            {/* 푸터 — 저장(추가하기)은 어느 탭에서나 가능, 탭 이동은 보조 버튼/상단 탭으로 */}
             <div className="add-modal-footer">
+              <button className="btn-secondary" style={{ flex: 'none', minWidth: 84 }} onClick={closeAddModal}>취소</button>
+              <div style={{ flex: 1 }} />
               {activeTab === 'info' ? (
-                <>
-                  <button className="btn-secondary" onClick={closeAddModal}>취소</button>
-                  <button className="btn-primary" onClick={() => setActiveTab('record')} disabled={!form.title.trim()}>
-                    {isBook ? '독서 기록' : '시청 기록'} →
-                  </button>
-                </>
+                <button
+                  className="btn-secondary"
+                  style={{ flex: 'none', minWidth: 112 }}
+                  onClick={() => setActiveTab('record')}
+                  disabled={!form.title.trim()}
+                >
+                  {isBook ? '독서 기록' : '시청 기록'} →
+                </button>
               ) : (
-                <>
-                  <button className="btn-secondary" onClick={() => setActiveTab('info')}>← 기본 정보</button>
-                  <button className="btn-primary" onClick={handleSubmit} disabled={isSaving || !form.title.trim()}>
-                    {isSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : (editingItem ? '저장하기' : '추가하기')}
-                  </button>
-                </>
+                <button
+                  className="btn-secondary"
+                  style={{ flex: 'none', minWidth: 112 }}
+                  onClick={() => setActiveTab('info')}
+                >
+                  ← 기본 정보
+                </button>
               )}
+              <button className="btn-primary" onClick={handleSubmit} disabled={isSaving || !form.title.trim()}>
+                {isSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : (editingItem ? '저장하기' : '추가하기')}
+              </button>
             </div>
           </div>
         </div>

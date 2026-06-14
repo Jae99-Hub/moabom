@@ -6,10 +6,10 @@ const isWebEnv =
   !!import.meta.env.VITE_SUPABASE_URL
 
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
-type Tab = 'account' | 'api' | 'data'
+type Tab = 'account' | 'general' | 'api' | 'data'
 
 export default function SettingsModal() {
-  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync } = useStore()
+  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour } = useStore()
 
   const [activeTab, setActiveTab] = useState<Tab>('account')
   const [tmdbKey, setTmdbKey]       = useState('')
@@ -203,6 +203,7 @@ export default function SettingsModal() {
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'account', label: '계정' },
+    { key: 'general', label: '일반' },
     { key: 'api',     label: 'API' },
     { key: 'data',    label: '데이터' },
   ]
@@ -364,8 +365,8 @@ export default function SettingsModal() {
             </>
           )}
 
-          {/* ────────── 데이터 탭 ────────── */}
-          {activeTab === 'data' && (
+          {/* ────────── 일반 탭 ────────── */}
+          {activeTab === 'general' && (
             <>
               {isElectron && (
                 <>
@@ -450,8 +451,27 @@ export default function SettingsModal() {
               )}
               <div className="settings-actions-row">
                 <div>
+                  <div className="settings-group-label">사용법 다시 보기</div>
+                  <div className="settings-group-desc">주요 기능 안내 투어를 다시 봐요</div>
+                </div>
+                <button
+                  className="btn-secondary"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => { closeSettings(); setTimeout(() => openTour(), 200) }}
+                >
+                  안내 보기
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ────────── 데이터 탭 ────────── */}
+          {activeTab === 'data' && (
+            <>
+              <div className="settings-actions-row">
+                <div>
                   <div className="settings-group-label">데이터 백업</div>
-                  <div className="settings-group-desc">전체 데이터를 JSON 파일로 내보내기</div>
+                  <div className="settings-group-desc">전체 데이터를 파일로 내보내기</div>
                 </div>
                 <button className="btn-secondary" style={{ flexShrink: 0 }} onClick={handleBackup}>
                   백업

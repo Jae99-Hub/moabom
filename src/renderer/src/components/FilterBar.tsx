@@ -38,7 +38,7 @@ export default function FilterBar() {
   }
 
   return (
-    <div className="filter-bar">
+    <div className="filter-bar" data-tour="filter">
       {STATUS_OPTIONS.map((s) => (
         <button
           key={s.value}

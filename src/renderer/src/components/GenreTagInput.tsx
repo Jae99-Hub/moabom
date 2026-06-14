@@ -117,7 +117,7 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
             if (inputText.trim() || segments.length > 0) commitTag()
           }}
           placeholder={tags.length === 0 && segments.length === 0
-            ? 'SF, 판타지... (Tab으로 하위장르, Enter로 저장)'
+            ? 'SF, 판타지, 로맨스…'
             : ''}
           size={Math.max(
             2,

@@ -449,7 +449,10 @@ export function updateQuote(id: number, data: Partial<Pick<QuoteRow, 'text' | 'p
 export function deleteQuote(id: number): void {
   const row = queryOne('SELECT server_id FROM quotes WHERE id = :id', { ':id': id })
   if (row?.server_id) {
-    db.run('UPDATE quotes SET is_deleted = 1, is_dirty = 1 WHERE id = :id', { ':id': id })
+    db.run(
+      "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = :id",
+      { ':id': id }
+    )
   } else {
     db.run('DELETE FROM quotes WHERE id = :id', { ':id': id })
   }

@@ -305,14 +305,16 @@ export default function StatsModal() {
               <div className="stats-card-label">총 완독·완료</div>
             </div>
             <div className="stats-card">
-              <div className="stats-card-num">{selectedYear}년 {yearDone}</div>
-              <div className="stats-card-label">올해 완료</div>
+              <div className="stats-card-num">{yearDone}</div>
+              <div className="stats-card-label">{selectedYear}년 완료</div>
             </div>
             <div className="stats-card">
               <div className="stats-card-num">
-                {ratingAll.count > 0 ? `⭐ ${ratingAll.avg.toFixed(1)}` : '-'}
+                {ratingAll.count > 0 ? `⭐ ${ratingAll.avg.toFixed(1)}` : '–'}
               </div>
-              <div className="stats-card-label">평균 평점 ({ratingAll.count}개)</div>
+              <div className="stats-card-label">
+                {ratingAll.count > 0 ? `평균 평점 (${ratingAll.count}개)` : '평점 없음'}
+              </div>
             </div>
           </div>
 
@@ -349,30 +351,53 @@ export default function StatsModal() {
           </div>
 
           {/* 탭 콘텐츠 */}
-          {tab === 'monthly' && (
-            <div className="stats-tab-content">
-              <div className="stats-section-header">
-                <span>월별 완료 현황</span>
-                <select
-                  className="stats-year-select"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                >
-                  {availableYears.map((y) => (
-                    <option key={y} value={y}>{y}년</option>
-                  ))}
-                </select>
+          {tab === 'monthly' && (() => {
+            const yearTotal = monthlyData.reduce((s, d) => s + d.book + d.movie + d.drama, 0)
+            return (
+              <div className="stats-tab-content">
+                <div className="stats-section-header">
+                  <span>월별 완료 현황{yearTotal > 0 && <strong style={{ color: 'var(--accent)', marginLeft: 6 }}>총 {yearTotal}개</strong>}</span>
+                  <select
+                    className="stats-year-select"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  >
+                    {availableYears.map((y) => (
+                      <option key={y} value={y}>{y}년</option>
+                    ))}
+                  </select>
+                </div>
+                {yearTotal === 0 ? (
+                  <div className="stats-empty">
+                    <div className="stats-empty-icon">📭</div>
+                    <div className="stats-empty-title">{selectedYear}년에 완료한 기록이 아직 없어요</div>
+                    <div className="stats-empty-desc">작품을 ‘완료’로 표시하면 월별로 쌓여요</div>
+                  </div>
+                ) : (
+                  <>
+                    <MonthlyBarChart data={monthlyData} />
+                    <div className="stats-legend">
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#3b82f6' }} />도서</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#8b5cf6' }} />영화</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#ec4899' }} />드라마</div>
+                    </div>
+                  </>
+                )}
               </div>
-              <MonthlyBarChart data={monthlyData} />
-              <div className="stats-legend">
-                <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#3b82f6' }} />도서</div>
-                <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#8b5cf6' }} />영화</div>
-                <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#ec4899' }} />드라마</div>
+            )
+          })()}
+
+          {tab === 'rating' && ratingAll.count === 0 && (
+            <div className="stats-tab-content">
+              <div className="stats-empty">
+                <div className="stats-empty-icon">⭐</div>
+                <div className="stats-empty-title">아직 별점을 매긴 작품이 없어요</div>
+                <div className="stats-empty-desc">작품에 별점을 남기면 분포가 여기에 표시돼요</div>
               </div>
             </div>
           )}
 
-          {tab === 'rating' && (
+          {tab === 'rating' && ratingAll.count > 0 && (
             <div className="stats-tab-content">
               <div className="stats-rating-header">
                 <div className="stats-avg-rating">
@@ -414,7 +439,17 @@ export default function StatsModal() {
             </div>
           )}
 
-          {tab === 'genre' && (
+          {tab === 'genre' && genreData.length === 0 && (
+            <div className="stats-tab-content">
+              <div className="stats-empty">
+                <div className="stats-empty-icon">🏷️</div>
+                <div className="stats-empty-title">장르 정보가 아직 없어요</div>
+                <div className="stats-empty-desc">작품에 장르를 입력하면 분석이 표시돼요</div>
+              </div>
+            </div>
+          )}
+
+          {tab === 'genre' && genreData.length > 0 && (
             <div className="stats-tab-content">
               <div className="stats-genre-wrap">
                 {/* 상위 장르 바 차트 */}
@@ -431,11 +466,6 @@ export default function StatsModal() {
                         <div className="stats-genre-count">{count}</div>
                       </div>
                     ))}
-                    {genreData.length === 0 && (
-                      <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>
-                        장르 정보가 없어요
-                      </div>
-                    )}
                   </div>
                 </div>
 
