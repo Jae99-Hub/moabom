@@ -1,0 +1,47 @@
+name: Supabase Keepalive
+
+# Supabase 무료 플랜은 약 7일간 활동이 없으면 프로젝트를 자동 일시정지한다.
+# 이 워크플로우가 매일 Supabase REST API에 실제 DB 쿼리를 보내 "사용 중"으로 유지한다.
+# GitHub 클라우드에서 실행되므로 내 PC가 꺼져 있어도 동작한다.
+#
+# 참고: GitHub는 리포에 60일간 커밋이 없으면 예약 워크플로우를 자동 비활성화한다.
+#       (moabom은 자주 배포하므로 문제 없음)
+
+on:
+  schedule:
+    # 매일 03:17 UTC (한국시간 12:17). 하루 한 번이면 7일 정지 정책에 충분한 여유.
+    - cron: '17 3 * * *'
+  workflow_dispatch: {} # 수동 실행 버튼 (Actions 탭에서 즉시 핑 테스트)
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase (items 테이블 조회로 DB 활동 발생)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_URL 또는 SUPABASE_ANON_KEY 시크릿이 설정되지 않았습니다."
+            exit 1
+          fi
+
+          BASE="${SUPABASE_URL%/}"
+          echo "Pinging $BASE ..."
+
+          CODE=$(curl -sS -m 30 -o /tmp/resp.txt -w "%{http_code}" \
+            "$BASE/rest/v1/items?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" || echo "000")
+
+          echo "HTTP status: $CODE"
+          echo "Response body: $(head -c 200 /tmp/resp.txt)"
+
+          # 000 = 연결 실패(정지/네트워크 오류). 그 외 응답이 왔으면 서버가 살아있어 활동으로 집계됨.
+          if [ "$CODE" = "000" ]; then
+            echo "::error::Supabase에 연결하지 못했습니다. 프로젝트가 정지 상태일 수 있습니다 (대시보드에서 Resume 필요)."
+            exit 1
+          fi
+
+          echo "✓ Keepalive 성공 (status $CODE)"
