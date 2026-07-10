@@ -4,8 +4,9 @@ name: Supabase Keepalive
 # 이 워크플로우가 매일 Supabase REST API에 실제 DB 쿼리를 보내 "사용 중"으로 유지한다.
 # GitHub 클라우드에서 실행되므로 내 PC가 꺼져 있어도 동작한다.
 #
-# 참고: GitHub는 리포에 60일간 커밋이 없으면 예약 워크플로우를 자동 비활성화한다.
-#       (moabom은 자주 배포하므로 문제 없음)
+# 추가: GitHub은 PUBLIC 리포에 60일간 활동(커밋)이 없으면 예약 워크플로우를 자동 비활성화한다.
+#       → 아래 "self-heartbeat" 단계가 리포가 40일 이상 조용하면 스스로 작은 커밋을 만들어
+#         60일 타이머를 리셋한다. (활발히 개발 중일 땐 커밋을 만들지 않음)
 
 on:
   schedule:
@@ -13,10 +14,16 @@ on:
     - cron: '17 3 * * *'
   workflow_dispatch: {} # 수동 실행 버튼 (Actions 탭에서 즉시 핑 테스트)
 
+permissions:
+  contents: write # self-heartbeat 커밋 push 용
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Ping Supabase (items 테이블 조회로 DB 활동 발생)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -45,3 +52,23 @@ jobs:
           fi
 
           echo "✓ Keepalive 성공 (status $CODE)"
+
+      - name: Self-heartbeat (리포가 40일 이상 조용하면 커밋 생성 → 워크플로우 자동 비활성화 방지)
+        run: |
+          LAST=$(git log -1 --format=%ct HEAD)
+          NOW=$(date +%s)
+          DAYS=$(( (NOW - LAST) / 86400 ))
+          echo "마지막 커밋 이후 ${DAYS}일 경과"
+
+          if [ "$DAYS" -gt 40 ]; then
+            mkdir -p .github
+            date -u +%FT%TZ > .github/keepalive-heartbeat.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/keepalive-heartbeat.txt
+            git commit -m "chore: keepalive heartbeat (리포 활동 유지, 자동)"
+            git push
+            echo "✓ 하트비트 커밋 생성 → 60일 비활성화 타이머 리셋"
+          else
+            echo "최근 커밋이 있어 하트비트 불필요 (40일 이내)"
+          fi
