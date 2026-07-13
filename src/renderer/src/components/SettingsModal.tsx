@@ -7,7 +7,7 @@ const isWebEnv =
   !!import.meta.env.VITE_SUPABASE_URL
 
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
-type Tab = 'account' | 'general' | 'api' | 'data'
+type Tab = 'account' | 'general' | 'data'
 
 /** moabom-auto-YYYY-MM-DD_HHMMSS.db → "YYYY-MM-DD HH:MM" */
 function fmtBackupLabel(b: AutoBackupInfo): string {
@@ -26,9 +26,6 @@ export default function SettingsModal() {
   const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll } = useStore()
 
   const [activeTab, setActiveTab] = useState<Tab>('account')
-  const [tmdbKey, setTmdbKey]       = useState('')
-  const [googleKey, setGoogleKey]   = useState('')
-  const [saved, setSaved]           = useState(false)
 
   // 웹 전용 유저
   const [userEmail, setUserEmail] = useState('')
@@ -82,9 +79,6 @@ export default function SettingsModal() {
       window.updaterBridge.onDownloaded(()    => setUpdateState('downloaded'))
       window.updaterBridge.getVersion().then(setCurrentVersion).catch(() => {})
     }
-
-    window.api.settings.get('tmdb_api_key').then(setTmdbKey).catch(() => {})
-    window.api.settings.get('google_books_api_key').then(setGoogleKey).catch(() => {})
 
     // 웹 전용: 유저 정보 (Electron에서는 표시 안 함)
     if (isWebEnv && !isElectron) {
@@ -140,17 +134,6 @@ export default function SettingsModal() {
   }, [])
 
   // ── 핸들러 ──────────────────────────────────────────────────────────
-  const handleSave = async () => {
-    try {
-      await window.api.settings.set('tmdb_api_key', tmdbKey.trim())
-      await window.api.settings.set('google_books_api_key', googleKey.trim())
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch {
-      alert('설정 저장에 실패했습니다.')
-    }
-  }
-
   const handleBackup = async () => {
     try {
       const result = await window.api.db.backup() as { success: boolean; path?: string }
@@ -287,7 +270,6 @@ export default function SettingsModal() {
   const TABS: { key: Tab; label: string }[] = [
     { key: 'account', label: '계정' },
     { key: 'general', label: '일반' },
-    { key: 'api',     label: 'API' },
     { key: 'data',    label: '데이터' },
   ]
 
@@ -419,34 +401,6 @@ export default function SettingsModal() {
                   </div>
                 </div>
               )}
-            </>
-          )}
-
-          {/* ────────── API 탭 ────────── */}
-          {activeTab === 'api' && (
-            <>
-              <div className="settings-group">
-                <div className="settings-group-label">TMDB API Key</div>
-                <div className="settings-group-desc">영화·드라마 자동 검색에 사용 (기본 키 내장)</div>
-                <input
-                  className="form-input"
-                  value={tmdbKey}
-                  onChange={(e) => setTmdbKey(e.target.value)}
-                  placeholder="비워두면 기본 키 사용"
-                  type="password"
-                />
-              </div>
-              <div className="settings-group">
-                <div className="settings-group-label">Google Books API Key</div>
-                <div className="settings-group-desc">도서 자동 검색에 사용 (기본 키 내장)</div>
-                <input
-                  className="form-input"
-                  value={googleKey}
-                  onChange={(e) => setGoogleKey(e.target.value)}
-                  placeholder="비워두면 기본 키 사용"
-                  type="password"
-                />
-              </div>
             </>
           )}
 
@@ -676,11 +630,6 @@ export default function SettingsModal() {
         {/* ── 푸터 ── */}
         <div className="modal-footer">
           <button className="btn-secondary" style={{ width: 80 }} onClick={closeSettings}>닫기</button>
-          {activeTab === 'api' && (
-            <button className="btn-primary" style={{ minWidth: 80 }} onClick={handleSave}>
-              {saved ? '저장됨 ✓' : '저장'}
-            </button>
-          )}
         </div>
       </div>
     </div>
