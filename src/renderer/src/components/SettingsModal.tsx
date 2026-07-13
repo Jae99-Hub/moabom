@@ -15,6 +15,13 @@ function fmtBackupLabel(b: AutoBackupInfo): string {
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : b.name
 }
 
+/** ISO → "YYYY.M.D HH:MM" (짧게) */
+function fmtWhen(iso: string): string {
+  const d = new Date(iso)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export default function SettingsModal() {
   const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll } = useStore()
 
@@ -550,9 +557,9 @@ export default function SettingsModal() {
               {scope.anon > 0 && (
                 <div className="settings-actions-row">
                   <div>
-                    <div className="settings-group-label">익명으로 저장된 항목 {scope.anon}개</div>
+                    <div className="settings-group-label">로그인 없이 추가한 항목 {scope.anon}개</div>
                     <div className="settings-group-desc">
-                      로그인 없이 추가했던 항목을 {scope.loggedIn ? '현재 계정으로' : '이 컴퓨터로'} 불러와요
+                      이 기기에만 저장돼 있어요. {scope.loggedIn ? '현재 계정으로' : '이 컴퓨터로'} 불러올 수 있어요
                     </div>
                   </div>
                   <button className="btn-secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => handleImport('anon')}>
@@ -587,41 +594,52 @@ export default function SettingsModal() {
               {/* 자동 백업 (Electron 전용) */}
               {isElectron && (
                 <>
-                  <div className="settings-actions-row">
-                    <div style={{ minWidth: 0 }}>
-                      <div className="settings-group-label">
-                        자동 백업
-                        {backupStale && <span style={{ color: 'var(--danger)', marginLeft: 8, fontSize: 12 }}>⚠️ 최근 백업 없음</span>}
-                      </div>
-                      <div className="settings-group-desc">
-                        최근 14일 보관 · 30분마다 자동
-                        {backupStatus.lastAt && <> · 마지막 {new Date(backupStatus.lastAt).toLocaleString('ko-KR')}</>}
-                      </div>
-                      {backupStatus.dir && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, wordBreak: 'break-all' }}>
-                          📁 {backupStatus.dir}
-                        </div>
-                      )}
+                  <div className="settings-group">
+                    <div className="settings-group-label">
+                      자동 백업
+                      {backupStale && <span style={{ color: 'var(--danger)', marginLeft: 8, fontSize: 12 }}>⚠️ 최근 백업 없음</span>}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <div className="settings-group-desc" style={{ marginTop: 2 }}>
+                      최근 14일 보관 · 30분마다 자동 저장
+                      {backupStatus.lastAt && <> · 마지막 {fmtWhen(backupStatus.lastAt)}</>}
+                    </div>
+                    {backupStatus.dir && (
+                      <div
+                        title={backupStatus.dir}
+                        style={{
+                          fontSize: 12, color: 'var(--text-muted)', marginTop: 8,
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          background: 'var(--surface-2, rgba(127,127,127,0.08))',
+                          padding: '6px 9px', borderRadius: 7
+                        }}
+                      >
+                        <span style={{ flexShrink: 0 }}>📁</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{backupStatus.dir}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                       <button className="btn-secondary" disabled={busy} onClick={handleAutoBackupNow}>지금 백업</button>
                       <button className="btn-secondary" onClick={handleOpenBackupFolder}>폴더 열기</button>
                       <button className="btn-secondary" disabled={busy} onClick={handleChooseDir}>폴더 변경</button>
                     </div>
                   </div>
+
                   {autoBackups.length > 0 && (
-                    <div className="settings-group" style={{ maxHeight: 200, overflowY: 'auto', marginTop: 4 }}>
-                      {autoBackups.map((b) => (
-                        <div
-                          key={b.name}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 2px', borderBottom: '1px solid var(--border)' }}
-                        >
-                          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{fmtBackupLabel(b)}</span>
-                          <button className="btn-secondary" style={{ padding: '4px 12px' }} disabled={busy} onClick={() => handleRestoreFrom(b)}>
-                            복원
-                          </button>
-                        </div>
-                      ))}
+                    <div className="settings-group" style={{ marginTop: 14 }}>
+                      <div className="settings-group-desc" style={{ marginBottom: 6 }}>백업 시점에서 되돌리기</div>
+                      <div style={{ maxHeight: 176, overflowY: 'auto' }}>
+                        {autoBackups.map((b) => (
+                          <div
+                            key={b.name}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 2px', borderBottom: '1px solid var(--border)' }}
+                          >
+                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{fmtBackupLabel(b)}</span>
+                            <button className="btn-secondary" style={{ padding: '4px 12px', flexShrink: 0 }} disabled={busy} onClick={() => handleRestoreFrom(b)}>
+                              복원
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   <div className="settings-divider" />
