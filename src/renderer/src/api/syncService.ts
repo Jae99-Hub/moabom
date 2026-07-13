@@ -328,6 +328,8 @@ async function purgeExpiredTrash(userId: string): Promise<void> {
 }
 
 // ── 메인 동기화 함수 ─────────────────────────────────────────────────
+let syncing = false // 재진입 가드: 겹친 동기화의 이중 삽입 차단
+
 export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<SyncResult> {
   if (!isSupabaseConfigured || !supabase) return { autoMerged: 0, conflicts: [] }
   if (!window.api?.sync) return { autoMerged: 0, conflicts: [] }
@@ -337,6 +339,8 @@ export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<
   } = await supabase.auth.getUser()
   if (!user) return { autoMerged: 0, conflicts: [] }
 
+  if (syncing) return { autoMerged: 0, conflicts: [] } // 이미 진행 중이면 즉시 반환
+  syncing = true
   onStatus?.('syncing')
   try {
     const { autoMerged, conflicts } = await pushDirtyItems(user.id)
@@ -351,6 +355,8 @@ export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<
     console.error('[Sync] 오류:', err)
     onStatus?.('error')
     throw err
+  } finally {
+    syncing = false
   }
 }
 

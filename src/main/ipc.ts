@@ -1,16 +1,19 @@
-import { IpcMain, dialog, BrowserWindow } from 'electron'
+import { IpcMain, dialog, BrowserWindow, shell } from 'electron'
 import { copyFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
-import { join, extname } from 'path'
+import { join, extname, relative, isAbsolute } from 'path'
 import { app } from 'electron'
 import {
   getAllItems, getItemById, insertItem, updateItem, deleteItem,
   getQuotesByItemId, searchQuotes, insertQuote, updateQuote, deleteQuote,
-  getSetting, setSetting, reloadDatabase,
+  getSetting, setSetting,
   getDirtyItems, getDirtyQuotes, markItemSynced, markQuoteSynced,
   hardDeleteItem, hardDeleteQuote, upsertItemFromCloud, upsertQuoteFromCloud,
   setCurrentUserId, getCurrentUserId,
   getTrashedItems, restoreItem, purgeItem, purgeExpiredTrash,
   clearItemDirty, clearQuoteDirty,
+  getDbPath, restoreFromFile,
+  runAutoBackup, listAutoBackups, getAutoBackupDir,
+  getOtherScopeInfo, importOtherScopeItems,
   ItemRow, QuoteRow
 } from './database'
 import { searchTmdb } from './tmdb'
@@ -93,8 +96,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
       filters: [{ name: 'Database', extensions: ['db'] }]
     })
     if (result.canceled || !result.filePath) return { success: false }
-    const dbPath = join(app.getPath('userData'), 'bookvault.db')
-    copyFileSync(dbPath, result.filePath)
+    copyFileSync(getDbPath(), result.filePath)
     return { success: true, path: result.filePath }
   })
 
@@ -107,10 +109,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
       properties: ['openFile']
     })
     if (result.canceled || !result.filePaths[0]) return { success: false }
-    const dbPath = join(app.getPath('userData'), 'bookvault.db')
-    copyFileSync(result.filePaths[0], dbPath)
-    await reloadDatabase() // 기존 DB 닫고 새 파일로 재오픈
-    return { success: true }
+    return await restoreFromFile(result.filePaths[0]) // 검증 후에만 교체 (실패 시 현재 데이터 유지)
   })
 
   // ── 동기화 핸들러 ──────────────────────────────────────────────────
@@ -140,4 +139,23 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('trash:restore', (_, id: number) => restoreItem(id))
   ipcMain.handle('trash:purge', (_, id: number) => purgeItem(id))
   ipcMain.handle('trash:purgeExpired', (_, days: number) => purgeExpiredTrash(days ?? 15, false))
+
+  // ── 자동 백업 핸들러 ──────────────────────────────────────────────
+  ipcMain.handle('backup:run', (_, force: boolean) => runAutoBackup(!!force))
+  ipcMain.handle('backup:list', () => listAutoBackups())
+  ipcMain.handle('backup:restoreFrom', async (_, filePath: string) => {
+    // 백업 폴더 밖 경로 차단 (relative로 판정 → startsWith 우회 방지)
+    const rel = relative(getAutoBackupDir(), filePath)
+    if (rel.startsWith('..') || isAbsolute(rel)) return { success: false, error: 'out-of-dir' }
+    return await restoreFromFile(filePath)
+  })
+  ipcMain.handle('backup:openFolder', async () => {
+    try { await shell.openPath(getAutoBackupDir()); return { success: true } }
+    catch { return { success: false } }
+  })
+  ipcMain.handle('backup:status', () => ({ lastAt: getSetting('last_auto_backup_at'), dir: getAutoBackupDir() }))
+
+  // ── orphan 복구 핸들러 ────────────────────────────────────────────
+  ipcMain.handle('items:scopeInfo', () => getOtherScopeInfo())
+  ipcMain.handle('items:importOtherScope', (_, source: 'anon' | 'otherAccount') => importOtherScopeItems(source))
 }

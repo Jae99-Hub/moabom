@@ -7,7 +7,9 @@ const api = {
     getById: (id: number) => ipcRenderer.invoke('items:getById', id),
     insert: (data: unknown) => ipcRenderer.invoke('items:insert', data),
     update: (id: number, data: unknown) => ipcRenderer.invoke('items:update', id, data),
-    delete: (id: number) => ipcRenderer.invoke('items:delete', id)
+    delete: (id: number) => ipcRenderer.invoke('items:delete', id),
+    scopeInfo: () => ipcRenderer.invoke('items:scopeInfo'),
+    importOtherScope: (source: 'anon' | 'otherAccount') => ipcRenderer.invoke('items:importOtherScope', source)
   },
   quotes: {
     getByItemId: (itemId: number) => ipcRenderer.invoke('quotes:getByItemId', itemId),
@@ -60,6 +62,13 @@ const api = {
     restore: (id: number) => ipcRenderer.invoke('trash:restore', id),
     purge: (id: number) => ipcRenderer.invoke('trash:purge', id),
     purgeExpired: (days: number) => ipcRenderer.invoke('trash:purgeExpired', days),
+  },
+  backup: {
+    run: (force?: boolean) => ipcRenderer.invoke('backup:run', !!force),
+    list: () => ipcRenderer.invoke('backup:list'),
+    restoreFrom: (filePath: string) => ipcRenderer.invoke('backup:restoreFrom', filePath),
+    openFolder: () => ipcRenderer.invoke('backup:openFolder'),
+    status: () => ipcRenderer.invoke('backup:status'),
   }
 }
 

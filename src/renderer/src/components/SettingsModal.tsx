@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
+import { OtherScopeInfo, AutoBackupInfo } from '../types'
 
 const isWebEnv =
   typeof import.meta.env.VITE_SUPABASE_URL === 'string' &&
@@ -8,8 +9,14 @@ const isWebEnv =
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
 type Tab = 'account' | 'general' | 'api' | 'data'
 
+/** moabom-auto-YYYY-MM-DD_HHMMSS.db → "YYYY-MM-DD HH:MM" */
+function fmtBackupLabel(b: AutoBackupInfo): string {
+  const m = b.name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})/)
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : b.name
+}
+
 export default function SettingsModal() {
-  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour } = useStore()
+  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll } = useStore()
 
   const [activeTab, setActiveTab] = useState<Tab>('account')
   const [tmdbKey, setTmdbKey]       = useState('')
@@ -32,7 +39,26 @@ export default function SettingsModal() {
   const [updateProgress, setUpdateProgress] = useState(0)
   const [currentVersion, setCurrentVersion] = useState('')
 
+  // 데이터 탭: 백업 / orphan 복구
+  const [scope, setScope] = useState<OtherScopeInfo>({ loggedIn: false, anon: 0, otherAccount: 0 })
+  const [autoBackups, setAutoBackups] = useState<AutoBackupInfo[]>([])
+  const [backupStatus, setBackupStatus] = useState<{ lastAt: string; dir: string }>({ lastAt: '', dir: '' })
+  const [busy, setBusy] = useState(false)
+
   const isElectron = !!window.updaterBridge
+
+  // 데이터 탭 정보 로드 (스코프 카운트 + 자동 백업 목록/상태). 웹 빌드는 일부 API 미지원 → try/catch.
+  const loadDataTab = (): void => {
+    try { window.api.items.scopeInfo?.().then(setScope).catch(() => {}) } catch { /* 미지원 */ }
+    if (isElectron) {
+      try { window.api.backup.list().then(setAutoBackups).catch(() => {}) } catch { /* 미지원 */ }
+      try { window.api.backup.status().then(setBackupStatus).catch(() => {}) } catch { /* 미지원 */ }
+    }
+  }
+  useEffect(() => {
+    if (isSettingsOpen && activeTab === 'data') loadDataTab()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSettingsOpen, activeTab])
 
   // ── 모달 열릴 때마다 ────────────────────────────────────────────────
   useEffect(() => {
@@ -127,12 +153,60 @@ export default function SettingsModal() {
 
   const handleRestore = async () => {
     if (!window.confirm('복원하면 현재 데이터가 교체됩니다. 계속할까요?')) return
-    const result = await window.api.db.restore() as { success: boolean; path?: string }
+    const result = await window.api.db.restore()
     if (result.success) {
       alert('복원 완료. 앱을 재시작해 주세요.')
-      if (!result.path) window.location.reload()
-    } else {
-      alert('복원에 실패했습니다. 파일 형식을 확인해주세요.')
+      window.location.reload()
+    } else if (result.error && result.error !== 'read-source') {
+      alert('복원에 실패했습니다. 파일이 손상되었거나 형식이 올바르지 않아요.\n(현재 데이터는 그대로 유지됩니다.)')
+    }
+  }
+
+  // orphan 복구: 다른 스코프 항목을 현재 화면으로 불러오기 (사전 백업 후 실행)
+  const handleImport = async (source: 'anon' | 'otherAccount') => {
+    // 비로그인은 DB가 source 무시하고 계정 항목 전체를 불러오므로 표시 개수도 otherAccount 기준
+    const count  = scope.loggedIn ? (source === 'anon' ? scope.anon : scope.otherAccount) : scope.otherAccount
+    const target = scope.loggedIn ? '현재 계정' : '이 컴퓨터(로컬)'
+    const warn = source === 'otherAccount'
+      ? '\n※ 다른 계정 데이터를 현재 계정으로 복제해요. 원래 계정 데이터는 그대로 유지됩니다.' : ''
+    if (!window.confirm(`${count}개 항목을 ${target}(으)로 불러옵니다.${warn}\n작업 전 자동 백업을 만들어요. 계속할까요?`)) return
+    setBusy(true)
+    try {
+      try { await window.api.backup?.run(true) } catch { /* 사전 스냅샷 best-effort */ }
+      const { imported, skipped } = await window.api.items.importOtherScope(source)
+      await fetchAll()
+      if (scope.loggedIn) await triggerSync()
+      loadDataTab()
+      alert(`${imported}개 불러왔어요.${skipped ? ` (${skipped}개는 이미 있어 건너뜀)` : ''}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleAutoBackupNow = async () => {
+    setBusy(true)
+    try {
+      const r = await window.api.backup.run(true)
+      alert(r.success ? '백업했어요.' : '백업에 실패했어요.')
+      loadDataTab()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleOpenBackupFolder = () => { window.api.backup.openFolder().catch(() => {}) }
+
+  const handleRestoreFrom = async (b: AutoBackupInfo) => {
+    const extra = scope.loggedIn
+      ? '\n※ 로그인 상태에서 복원하면, 다음 동기화 때 다른 기기의 최신 변경이 이 시점으로 되돌아갈 수 있어요.' : ''
+    if (!window.confirm(`'${fmtBackupLabel(b)}' 시점으로 되돌립니다. 현재 데이터가 교체돼요.${extra}\n계속할까요?`)) return
+    setBusy(true)
+    try {
+      const r = await window.api.backup.restoreFrom(b.path)
+      if (r.success) { alert('복원 완료. 앱을 재시작해 주세요.'); window.location.reload() }
+      else alert('복원에 실패했어요. (파일이 손상되었거나 접근할 수 없어요. 현재 데이터는 그대로예요.)')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -200,6 +274,8 @@ export default function SettingsModal() {
     { key: 'api',     label: 'API' },
     { key: 'data',    label: '데이터' },
   ]
+
+  const backupStale = isElectron && (!backupStatus.lastAt || Date.now() - Date.parse(backupStatus.lastAt) > 8 * 864e5)
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeSettings()}>
@@ -461,10 +537,87 @@ export default function SettingsModal() {
           {/* ────────── 데이터 탭 ────────── */}
           {activeTab === 'data' && (
             <>
+              {/* orphan 복구: 다른 스코프 항목 불러오기 */}
+              {scope.anon > 0 && (
+                <div className="settings-actions-row">
+                  <div>
+                    <div className="settings-group-label">익명으로 저장된 항목 {scope.anon}개</div>
+                    <div className="settings-group-desc">
+                      로그인 없이 추가했던 항목을 {scope.loggedIn ? '현재 계정으로' : '이 컴퓨터로'} 불러와요
+                    </div>
+                  </div>
+                  <button className="btn-secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => handleImport('anon')}>
+                    불러오기
+                  </button>
+                </div>
+              )}
+              {scope.loggedIn && scope.otherAccount > 0 && (
+                <div className="settings-actions-row">
+                  <div>
+                    <div className="settings-group-label">다른 계정 데이터 {scope.otherAccount}개</div>
+                    <div className="settings-group-desc">이 컴퓨터에 남은 다른 계정 항목을 현재 계정으로 복제해요 (원본 유지)</div>
+                  </div>
+                  <button className="btn-secondary" style={{ flexShrink: 0, color: 'var(--accent)' }} disabled={busy} onClick={() => handleImport('otherAccount')}>
+                    불러오기
+                  </button>
+                </div>
+              )}
+              {!scope.loggedIn && scope.otherAccount > 0 && (
+                <div className="settings-actions-row">
+                  <div>
+                    <div className="settings-group-label">계정에 저장된 항목 {scope.otherAccount}개</div>
+                    <div className="settings-group-desc">로그인 계정으로 저장돼 지금 안 보이는 항목을 이 컴퓨터에서 열람할 수 있게 해요</div>
+                  </div>
+                  <button className="btn-secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => handleImport('anon')}>
+                    불러오기
+                  </button>
+                </div>
+              )}
+              {(scope.anon > 0 || scope.otherAccount > 0) && <div className="settings-divider" />}
+
+              {/* 자동 백업 (Electron 전용) */}
+              {isElectron && (
+                <>
+                  <div className="settings-actions-row">
+                    <div>
+                      <div className="settings-group-label">
+                        자동 백업
+                        {backupStale && <span style={{ color: 'var(--danger)', marginLeft: 8, fontSize: 12 }}>⚠️ 최근 백업 없음</span>}
+                      </div>
+                      <div className="settings-group-desc">
+                        문서 폴더에 자동 저장 · 최근 14일 보관
+                        {backupStatus.lastAt && <> · 마지막 {new Date(backupStatus.lastAt).toLocaleString('ko-KR')}</>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <button className="btn-secondary" disabled={busy} onClick={handleAutoBackupNow}>지금 백업</button>
+                      <button className="btn-secondary" onClick={handleOpenBackupFolder}>폴더 열기</button>
+                    </div>
+                  </div>
+                  {autoBackups.length > 0 && (
+                    <div className="settings-group" style={{ maxHeight: 200, overflowY: 'auto', marginTop: 4 }}>
+                      {autoBackups.map((b) => (
+                        <div
+                          key={b.name}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 2px', borderBottom: '1px solid var(--border)' }}
+                        >
+                          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{fmtBackupLabel(b)}</span>
+                          <button className="btn-secondary" style={{ padding: '4px 12px' }} disabled={busy} onClick={() => handleRestoreFrom(b)}>
+                            복원
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="settings-divider" />
+                </>
+              )}
+
+              {/* 수동 파일 백업 / 복원 */}
               <div className="settings-actions-row">
                 <div>
-                  <div className="settings-group-label">데이터 백업</div>
-                  <div className="settings-group-desc">전체 데이터를 파일로 내보내기</div>
+                  <div className="settings-group-label">파일로 백업</div>
+                  <div className="settings-group-desc">전체 데이터를 원하는 위치에 .db 파일로 내보내기</div>
                 </div>
                 <button className="btn-secondary" style={{ flexShrink: 0 }} onClick={handleBackup}>
                   백업
@@ -472,8 +625,8 @@ export default function SettingsModal() {
               </div>
               <div className="settings-actions-row">
                 <div>
-                  <div className="settings-group-label">데이터 복원</div>
-                  <div className="settings-group-desc">백업 파일로 데이터 복원 (현재 데이터 교체)</div>
+                  <div className="settings-group-label">파일에서 복원</div>
+                  <div className="settings-group-desc">백업 .db 파일로 데이터 복원 (현재 데이터 교체)</div>
                 </div>
                 <button
                   className="btn-secondary"

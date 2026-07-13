@@ -37,6 +37,21 @@ export interface TrashItem extends Item {
   deleted_at: string | null
 }
 
+/** 자동 로컬 백업 파일 정보 */
+export interface AutoBackupInfo {
+  name: string
+  path: string
+  size: number
+  mtime: number
+}
+
+/** 현재 화면에 안 잡히는(다른 스코프) 로컬 항목 정보 */
+export interface OtherScopeInfo {
+  loggedIn: boolean
+  anon: number
+  otherAccount: number
+}
+
 export interface Quote {
   id: number
   item_id: number
@@ -101,6 +116,8 @@ declare global {
         insert: (data: ItemFormData) => Promise<Item>
         update: (id: number, data: Partial<ItemFormData>) => Promise<Item | undefined>
         delete: (id: number) => Promise<void>
+        scopeInfo: () => Promise<OtherScopeInfo>
+        importOtherScope: (source: 'anon' | 'otherAccount') => Promise<{ imported: number; skipped: number }>
       }
       quotes: {
         getByItemId: (itemId: number) => Promise<Quote[]>
@@ -126,7 +143,14 @@ declare global {
       }
       db: {
         backup: () => Promise<{ success: boolean; path?: string }>
-        restore: () => Promise<{ success: boolean }>
+        restore: () => Promise<{ success: boolean; error?: string }>
+      }
+      backup: {
+        run: (force?: boolean) => Promise<{ success: boolean; path?: string; skipped?: boolean }>
+        list: () => Promise<AutoBackupInfo[]>
+        restoreFrom: (filePath: string) => Promise<{ success: boolean; error?: string }>
+        openFolder: () => Promise<{ success: boolean }>
+        status: () => Promise<{ lastAt: string; dir: string }>
       }
       sync: {
         getDirtyItems: () => Promise<Record<string, unknown>[]>

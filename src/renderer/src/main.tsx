@@ -36,32 +36,56 @@ function renderError(msg: string) {
   )
 }
 
-// ── 앱 시작 시 초기 로그인 처리 (세션 복원 + 동기화) ────────────────
-async function loginAndSync() {
-  try { await setupWebApi() } catch { /* Electron에서는 정상 */ }
+// ── 백엔드(Supabase) 연결 가능 여부 프로브 (타임아웃 포함) ─────────────
+// 프로젝트가 삭제/일시정지되면 도메인이 해석되지 않아 startup이 멈추고 흰 화면이 됨.
+// 짧은 타임아웃으로 도달 불가를 판정해 무조건 앱이 열리도록 함.
+async function backendReachable(timeoutMs = 4000): Promise<boolean> {
   try {
-    const { data: { user } } = await supabase.auth.getUser()
-    const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
-    await bridge?.setCurrentUser(user?.id ?? null)
-  } catch { /* ignore */ }
-  try {
-    const { runSync } = await import('./api/syncService')
-    await runSync()
-  } catch { /* 오프라인이어도 앱 실행 */ }
+    const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
+    if (!url) return false
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    // GoTrue의 공개 health 엔드포인트 — 인증 없이 응답. 응답만 오면(상태코드 무관) 도달 가능.
+    await fetch(url.replace(/\/$/, '') + '/auth/v1/health', { signal: ctrl.signal })
+    clearTimeout(timer)
+    return true
+  } catch {
+    return false // DNS 실패 / 타임아웃 / 네트워크 오류 → 도달 불가
+  }
 }
 
-// ── OAuth 코드 교환 후 백그라운드 동기화 ─────────────────────────────
-// onAuthStateChange SIGNED_IN에서 renderApp() 직후 호출 (await 없이)
+// ── 로그인 세션으로 앱 진입 (동기화는 백그라운드) ────────────────────
+async function enterAppLoggedIn(userId: string): Promise<void> {
+  try {
+    const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
+    await bridge?.setCurrentUser(userId)
+  } catch { /* ignore */ }
+  renderApp()
+  bgSync()
+}
+
+// ── 로컬(오프라인/비로그인) 모드로 앱 진입 ───────────────────────────
+async function enterAppLocal(): Promise<void> {
+  try {
+    const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
+    await bridge?.setCurrentUser(null)
+  } catch { /* ignore */ }
+  renderApp()
+}
+
+// ── 백그라운드 동기화 (앱 렌더 후 비차단 실행) ───────────────────────
 async function bgSync() {
-  try { await setupWebApi() } catch { }
+  try { await setupWebApi() } catch { /* Electron에서는 정상 */ }
   try {
     const { runSync } = await import('./api/syncService')
     await runSync()
-    // sync 완료 후 아이템 목록 갱신
     const { useStore } = await import('./store/useStore')
     await useStore.getState().fetchAll()
-  } catch { }
+    // 첫 동기화로 데이터가 채워진 직후 스냅샷 1회 (빈 백업 방지)
+    try { await window.api?.backup?.run?.(false) } catch { /* 웹/실패 무시 */ }
+  } catch { /* 오프라인이어도 앱은 이미 떠 있음 */ }
 }
+
 
 // ── OAuth 콜백 URL 처리 (main process → renderer) ────────────────────
 // 로그아웃 후 재로그인에도 동작하도록 함수로 분리해 재등록 가능하게 함
@@ -101,54 +125,64 @@ function registerAuthCallback() {
 
 async function bootstrap() {
   try {
+    // Supabase 미설정 → 순수 로컬 모드
     if (!isSupabaseConfigured) {
       renderApp()
       return
     }
 
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    if (sessionError) throw sessionError
-
-    if (session) {
-      await loginAndSync()
-      renderApp()
-    } else {
-      renderAuth()
-    }
-
-    // OAuth 콜백 핸들러 등록
+    // OAuth 콜백 핸들러는 항상 등록 (백엔드가 살아있을 때 로그인 가능)
     authBridgeRef = (window as unknown as { authBridge?: AuthBridgeType }).authBridge
     registerAuthCallback()
 
-    // 인증 상태 변화 감지
+    // 인증 상태 변화 감지 (백엔드 복구/로그인/로그아웃 시 자동 반영)
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        // currentUserId 먼저 설정 (SQLite 필터링이 즉시 정확하게 동작)
-        try {
-          const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => Promise<void> } }).authBridge
-          await bridge?.setCurrentUser(session.user.id)
-        } catch { }
-        // 화면을 즉시 전환 — sync는 백그라운드에서 처리
-        renderApp()
-        bgSync()
+        await enterAppLoggedIn(session.user.id)
       } else if (event === 'SIGNED_OUT') {
         const bridge = (window as unknown as { authBridge?: { setCurrentUser: (id: string | null) => void } }).authBridge
         bridge?.setCurrentUser(null)
-        // 설정 모달이 열린 채로 로그아웃 시 재로그인 후 자동 열리는 것 방지
         try {
           const { useStore } = await import('./store/useStore')
           useStore.getState().closeSettings()
-        } catch { }
-        // 로그아웃 후 재로그인을 위해 OAuth 콜백 핸들러 재등록
+        } catch { /* ignore */ }
         registerAuthCallback()
         renderAuth()
       }
     })
 
+    // ── 백엔드 도달 가능 여부 먼저 확인 (흰 화면 방지의 핵심) ──
+    const reachable = await backendReachable()
+
+    if (!reachable) {
+      // 백엔드가 삭제/정지/오프라인 → 로컬 데이터로 앱을 무조건 연다.
+      console.warn('[bootstrap] Supabase 백엔드에 도달할 수 없음 → 로컬 모드로 실행')
+      await enterAppLocal()
+      return
+    }
+
+    // 백엔드 정상 → 저장된 세션 확인
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError) {
+      // 세션 복원 실패해도 앱은 로컬 모드로 연다
+      console.warn('[bootstrap] 세션 확인 실패 → 로컬 모드', sessionError)
+      await enterAppLocal()
+      return
+    }
+
+    if (session) {
+      await enterAppLoggedIn(session.user.id)
+    } else {
+      renderAuth()
+    }
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error('[bootstrap 오류]', e)
-    renderError(msg)
+    // 어떤 예외가 나도 흰 화면 대신 로컬 모드로 앱을 연다
+    console.error('[bootstrap 오류] → 로컬 모드로 폴백', e)
+    try {
+      await enterAppLocal()
+    } catch (e2) {
+      renderError(e2 instanceof Error ? e2.message : String(e2))
+    }
   }
 }
 

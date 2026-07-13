@@ -3,8 +3,26 @@ import { join } from 'path'
 import * as http from 'http'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
-import { initDatabase } from './database'
+import { initDatabase, runAutoBackup } from './database'
 import { registerIpcHandlers } from './ipc'
+
+// ── 자동 로컬 백업 스케줄 ─────────────────────────────────────────
+// 시작 5초 뒤 1회 + 30분마다. runAutoBackup(false)는 데이터가 바뀐 경우에만 기록.
+let didQuitBackup = false
+function setupAutoBackup(): void {
+  setTimeout(() => { try { runAutoBackup(false) } catch { /* ignore */ } }, 5000)
+  setInterval(() => { try { runAutoBackup(false) } catch { /* ignore */ } }, 30 * 60 * 1000)
+
+  // 종료 직전 마지막 백업.
+  // runAutoBackup은 동기 함수 → 핸들러가 리턴하면 백업이 끝난 뒤 종료가 이어진다.
+  // preventDefault를 쓰지 않고(비동기 대기 없음) try/catch + 1회 가드 → 백업이 실패/지연돼도
+  // 종료가 막히거나 무한 대기하지 않는다. 변경 없으면 지문 게이트로 즉시 skip.
+  app.on('before-quit', () => {
+    if (didQuitBackup) return
+    didQuitBackup = true
+    try { runAutoBackup(false) } catch { /* 백업 실패해도 정상 종료 */ }
+  })
+}
 
 // ── 자동 업데이트 설정 ────────────────────────────────────────────
 function setupAutoUpdater(win: BrowserWindow) {
@@ -192,8 +210,9 @@ app.whenReady().then(async () => {
     await shell.openExternal(url)
   })
 
-  await initDatabase()
+  try { await initDatabase() } catch (e) { console.error('[DB init 실패]', e) } // 최악에도 창은 띄운다
   registerIpcHandlers(ipcMain)
+  setupAutoBackup()
 
   createWindow()
   if (mainWindow) setupAutoUpdater(mainWindow)

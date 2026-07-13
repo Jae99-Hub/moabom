@@ -1,7 +1,8 @@
 import initSqlJs, { Database } from 'sql.js'
 import { app } from 'electron'
 import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync,
+         readdirSync, statSync, unlinkSync, renameSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 
 let db: Database
@@ -28,11 +29,76 @@ export async function initDatabase(): Promise<void> {
   sqlInstance = await initSqlJs({ locateFile: () => getWasmPath() })
 
   if (existsSync(dbPath)) {
-    db = new sqlInstance.Database(readFileSync(dbPath))
+    try {
+      db = new sqlInstance.Database(readFileSync(dbPath))
+      db.exec("SELECT 1 FROM sqlite_master LIMIT 1") // 손상 감지 (로드 시 조용히 열리는 경우 대비)
+    } catch {
+      // DB 파일 손상 → 원본 보존 후 최신 백업으로 복구 (없으면 빈 DB)
+      try { renameSync(dbPath, dbPath + '.corrupt-' + Date.now()) } catch { /* ignore */ }
+      db = recoverDbOrEmpty()
+    }
   } else {
     db = new sqlInstance.Database()
   }
 
+  bootstrapSchema()
+
+  runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('tmdb_api_key', '')")
+  runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('last_sync_at', '')")
+  // 시작 시 비로그인/미동기화 휴지통 중 15일 경과분 영구삭제 (로그인분은 동기화에서 처리)
+  purgeExpiredTrash(15, true)
+  save()
+}
+
+function save(): void {
+  // 원자적 저장: 임시파일 기록 후 rename → 쓰기 중 중단돼도 dbPath는 항상 완전한 이전본/새본
+  const data = db.export()
+  const tmp = dbPath + '.savetmp'
+  writeFileSync(tmp, Buffer.from(data))
+  renameSync(tmp, dbPath)
+}
+
+export function getDbPath(): string { return dbPath }
+
+/** 파일을 열어 무결성 검증. 유효하면 Database, 아니면 null. */
+function tryOpenValid(path: string): Database | null {
+  try {
+    if (!existsSync(path)) return null
+    const d = new sqlInstance.Database(readFileSync(path))
+    const ic = d.exec("PRAGMA integrity_check")
+    if (ic?.[0]?.values?.[0]?.[0] !== 'ok') { try { d.close() } catch { /* ignore */ } ; return null }
+    d.exec("SELECT 1 FROM items LIMIT 1")
+    return d
+  } catch { return null }
+}
+
+/** dbPath 손상 시: 최신 자동 백업(검증 통과분)으로 복구, 없으면 빈 DB. */
+function recoverDbOrEmpty(): Database {
+  try {
+    for (const b of listAutoBackups()) { // 최신순
+      const d = tryOpenValid(b.path)
+      if (d) return d
+    }
+  } catch { /* ignore */ }
+  return new sqlInstance.Database()
+}
+
+// ── 스키마 + 마이그레이션 (초기화 및 복원 후 재적용) ─────────────────
+const MIGRATIONS: string[] = [
+  "ALTER TABLE items ADD COLUMN server_id INTEGER",
+  "ALTER TABLE items ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE items ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE items ADD COLUMN user_id TEXT",
+  "ALTER TABLE items ADD COLUMN deleted_at TEXT",
+  "ALTER TABLE quotes ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
+  "ALTER TABLE quotes ADD COLUMN server_id INTEGER",
+  "ALTER TABLE quotes ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE quotes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE quotes ADD COLUMN episode_number INTEGER",
+  "ALTER TABLE quotes ADD COLUMN deleted_at TEXT",
+]
+
+function bootstrapSchema(): void {
   db.run(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,41 +141,224 @@ export async function initDatabase(): Promise<void> {
       value TEXT NOT NULL
     );
   `)
-
-  // ── 동기화 컬럼 마이그레이션 (기존 DB 호환) ──────────────────────
-  // SQLite는 IF NOT EXISTS를 지원하지 않으므로 try/catch로 처리
-  const migrations = [
-    "ALTER TABLE items ADD COLUMN server_id INTEGER",
-    "ALTER TABLE items ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
-    "ALTER TABLE items ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE items ADD COLUMN user_id TEXT",
-    "ALTER TABLE items ADD COLUMN deleted_at TEXT",
-    "ALTER TABLE quotes ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
-    "ALTER TABLE quotes ADD COLUMN server_id INTEGER",
-    "ALTER TABLE quotes ADD COLUMN is_dirty INTEGER NOT NULL DEFAULT 1",
-    "ALTER TABLE quotes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE quotes ADD COLUMN episode_number INTEGER",
-    "ALTER TABLE quotes ADD COLUMN deleted_at TEXT",
-  ]
-  for (const sql of migrations) {
+  // SQLite는 ADD COLUMN IF NOT EXISTS 미지원 → try/catch
+  for (const sql of MIGRATIONS) {
     try { db.run(sql) } catch { /* 이미 존재하면 무시 */ }
   }
+}
 
-  runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('tmdb_api_key', '')")
-  runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('last_sync_at', '')")
-  // 시작 시 비로그인/미동기화 휴지통 중 15일 경과분 영구삭제 (로그인분은 동기화에서 처리)
-  purgeExpiredTrash(15, true)
+/** DB 파일 복원 — 소스를 먼저 검증한 뒤에만 라이브 DB 교체 (실패해도 현재 데이터 무손상).
+ *  성공 시 { success:true }, 실패 시 { success:false, error } (라이브 DB는 그대로 유지). */
+export async function restoreFromFile(srcPath: string): Promise<{ success: boolean; error?: string }> {
+  let srcBytes: Buffer
+  try { srcBytes = readFileSync(srcPath) } // OneDrive 오프라인 placeholder 등 → throw
+  catch { return { success: false, error: 'read-source' } }
+  if (!srcBytes || srcBytes.length === 0) return { success: false, error: 'empty-source' }
+
+  // 1) 소스를 임시 핸들로 열어 검증 (라이브 DB는 아직 손대지 않음)
+  let tmpDb: Database | null = null
+  try {
+    tmpDb = new sqlInstance.Database(srcBytes)
+    const ic = tmpDb.exec("PRAGMA integrity_check")
+    if (ic?.[0]?.values?.[0]?.[0] !== 'ok') throw new Error('integrity')
+    tmpDb.exec("SELECT 1 FROM items LIMIT 1") // 우리 스키마 최소 확인
+  } catch {
+    try { tmpDb?.close() } catch { /* ignore */ }
+    return { success: false, error: 'invalid-db' } // ← 라이브 DB 무손상
+  }
+
+  // 2) 검증된 핸들에 스키마 보강 → 최종 바이트를 임시파일 기록 → 단 한 번의 rename으로만 커밋.
+  //    커밋(rename) 이후엔 실패할 코드가 없어 '디스크는 새본인데 실패 반환' 불일치가 원천 차단됨.
+  const validDb = tmpDb as Database
+  const prevDb = db
+  try {
+    db = validDb
+    bootstrapSchema()                      // 구버전 백업 누락 컬럼 보강
+    const bytes = Buffer.from(db.export())
+    const tmpPath = dbPath + '.restoretmp'
+    writeFileSync(tmpPath, bytes)          // 실패해도 dbPath는 아직 원본
+    renameSync(tmpPath, dbPath)            // ← 유일한 커밋 지점 (원자적)
+    try { prevDb.close() } catch { /* ignore */ }
+    return { success: true }
+  } catch {
+    // 커밋 전 실패 → 인메모리 원본 복구 + 채택 핸들 닫기 (디스크 dbPath는 원본 그대로)
+    db = prevDb
+    try { validDb.close() } catch { /* ignore */ }
+    return { success: false, error: 'swap-failed' }
+  }
+}
+
+// ── 자동 로컬 백업 (최근 14일 보관, 데이터 변경 시에만 기록) ──────────
+const AUTO_BACKUP_PREFIX = 'moabom-auto-'
+const AUTO_BACKUP_RE = /^moabom-auto-\d{4}-\d{2}-\d{2}_\d{6}\.db$/
+const AUTO_BACKUP_KEEP_DAYS = 14
+export interface AutoBackupInfo { name: string; path: string; size: number; mtime: number }
+
+let cachedBackupDir: string | null = null
+export function getAutoBackupDir(): string {
+  if (cachedBackupDir) return cachedBackupDir
+  const primary = join(app.getPath('documents'), '모아봄 백업')
+  try {
+    if (!existsSync(primary)) mkdirSync(primary, { recursive: true })
+    return (cachedBackupDir = primary)
+  } catch { /* Documents 불가 → userData 폴백 */ }
+  const fb = join(app.getPath('userData'), 'backups')
+  try { if (!existsSync(fb)) mkdirSync(fb, { recursive: true }) } catch { /* ignore */ }
+  return (cachedBackupDir = fb)
+}
+
+const pad = (n: number): string => String(n).padStart(2, '0')
+function todayStamp(d = new Date()): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+function autoBackupName(d = new Date()): string {
+  return `${AUTO_BACKUP_PREFIX}${todayStamp(d)}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.db`
+}
+function backupDay(name: string): string {
+  return name.slice(AUTO_BACKUP_PREFIX.length, AUTO_BACKUP_PREFIX.length + 10) // YYYY-MM-DD
+}
+
+/** 데이터 변경 감지용 지문 (최신 updated_at + 개수). 바뀌면 백업 필요. */
+function dataFingerprint(): string {
+  try {
+    const r = queryOne(`SELECT
+      (SELECT COALESCE(MAX(updated_at),'') FROM items)  AS mi,
+      (SELECT COALESCE(MAX(updated_at),'') FROM quotes) AS mq,
+      (SELECT COUNT(*) FROM items)  AS ci,
+      (SELECT COUNT(*) FROM quotes) AS cq`) as Record<string, unknown>
+    return `${r?.mi ?? ''}|${r?.mq ?? ''}|${r?.ci ?? ''}|${r?.cq ?? ''}`
+  } catch { return String(Date.now()) } // 실패 시 항상 다르게 → 백업 진행
+}
+
+export function listAutoBackups(): AutoBackupInfo[] {
+  const dir = getAutoBackupDir()
+  let files: string[] = []
+  try { files = readdirSync(dir) } catch { return [] }
+  return files
+    .filter((f) => AUTO_BACKUP_RE.test(f))
+    .map((f): AutoBackupInfo | null => {
+      const full = join(dir, f)
+      try {
+        const st = statSync(full)
+        return { name: f, path: full, size: st.size, mtime: st.mtimeMs }
+      } catch { return null } // 삭제/잠김/권한오류 파일은 목록에서 제외
+    })
+    .filter((x): x is AutoBackupInfo => x !== null)
+    .sort((a, b) => b.name.localeCompare(a.name)) // 파일명(=시간) 최신순
+}
+
+/** 회전: 14일 지난 것 삭제 + 지난 날짜는 하루 1개만 유지(오늘은 전부 보존) */
+function pruneAutoBackups(): void {
+  const cutoff = todayStamp(new Date(Date.now() - AUTO_BACKUP_KEEP_DAYS * 86400000))
+  const today = todayStamp()
+  const keptDays = new Set<string>()
+  for (const b of listAutoBackups()) { // 최신순
+    const day = backupDay(b.name)
+    let del = false
+    if (day < cutoff) del = true          // 14일 초과 → 삭제
+    else if (day === today) del = false   // 오늘 → 전부 보존
+    else if (keptDays.has(day)) del = true // 지난 날짜 2개째부터 삭제
+    else keptDays.add(day)                // 지난 날짜 최신 1개 보존
+    if (del) { try { unlinkSync(b.path) } catch { /* EBUSY 등 무시 */ } }
+  }
+}
+
+/** 자동 백업 실행. force=false면 지문이 이전과 같을 때(변경 없음) skip. */
+export function runAutoBackup(force = false): { success: boolean; path?: string; skipped?: boolean } {
+  try {
+    const fp = dataFingerprint()
+    if (!force && fp === (getSetting('last_auto_backup_fp') || '')) {
+      return { success: true, skipped: true } // 변경 없음
+    }
+    const dir = getAutoBackupDir()
+    const bytes = Buffer.from(db.export())
+    if (bytes.length === 0) return { success: false }
+    const dest = join(dir, autoBackupName())
+    const tmp = dest + '.tmp'
+    writeFileSync(tmp, bytes)
+    renameSync(tmp, dest) // 원자적 확정 (부분 파일은 .tmp라 회전 대상 아님)
+    setSetting('last_auto_backup_at', new Date().toISOString())
+    setSetting('last_auto_backup_fp', fp)
+    try { pruneAutoBackups() } catch { /* 회전 실패는 백업 성공에 영향 없음 (파일은 이미 확정됨) */ }
+    return { success: true, path: dest }
+  } catch { return { success: false } }
+}
+
+// ── orphan 복구 (계정 없이 열람 / 다른 스코프 데이터 불러오기) ────────
+export interface OtherScopeInfo { loggedIn: boolean; anon: number; otherAccount: number }
+const scopeNum = (r?: Record<string, unknown>): number => Number((r?.n as number) ?? 0)
+
+// 현재 계정에 같은 제목(정규화)+유형이 이미 있으면 제외 → 유령/자기 중복 차단
+const COLLISION = `AND NOT EXISTS (SELECT 1 FROM items cur
+  WHERE cur.user_id = :uid AND cur.is_deleted = 0
+    AND LOWER(TRIM(cur.title)) = LOWER(TRIM(items.title)) AND cur.item_type = items.item_type)`
+
+export function getOtherScopeInfo(): OtherScopeInfo {
+  if (currentUserId) {
+    // anon: 순수 로컬 + 로컬 고아(user_id NULL). otherAccount: 클라우드에 존재(server_id NOT NULL)하는 분만.
+    const anon = scopeNum(queryOne(
+      `SELECT COUNT(*) n FROM items WHERE is_deleted=0 AND user_id IS NULL ${COLLISION}`,
+      { ':uid': currentUserId }))
+    const other = scopeNum(queryOne(
+      `SELECT COUNT(*) n FROM items WHERE is_deleted=0 AND user_id IS NOT NULL AND user_id != :uid AND server_id IS NOT NULL ${COLLISION}`,
+      { ':uid': currentUserId }))
+    return { loggedIn: true, anon, otherAccount: other }
+  }
+  const acct = scopeNum(queryOne("SELECT COUNT(*) n FROM items WHERE is_deleted=0 AND user_id IS NOT NULL"))
+  return { loggedIn: false, anon: 0, otherAccount: acct }
+}
+
+/** 대상 후보 중 현재계정 기존항목과 충돌하지 않고, 배치 내 정규화 제목+유형 중복은 최소 id 1건만 남긴 id 목록. */
+function pickImportIds(base: string): number[] {
+  const rows = queryAll(
+    `SELECT id, title, item_type FROM items WHERE ${base} ${COLLISION} ORDER BY id ASC`,
+    { ':uid': currentUserId }
+  )
+  const seen = new Set<string>()
+  const ids: number[] = []
+  for (const r of rows) {
+    const key = String(r.title ?? '').trim().toLowerCase() + '|' + String(r.item_type ?? '')
+    if (seen.has(key)) continue // 배치 내 중복 제거
+    seen.add(key)
+    ids.push(r.id as number)
+  }
+  return ids
+}
+
+export function importOtherScopeItems(source: 'anon' | 'otherAccount'): { imported: number; skipped: number } {
+  if (currentUserId) {
+    const base = source === 'anon'
+      ? 'is_deleted = 0 AND user_id IS NULL'                                                   // 순수 로컬 + 로컬 고아 재귀속
+      : 'is_deleted = 0 AND user_id IS NOT NULL AND user_id != :uid AND server_id IS NOT NULL' // 클라우드 존재분만 복제(원본 유실 방지)
+    const total = scopeNum(queryOne(`SELECT COUNT(*) n FROM items WHERE ${base}`, { ':uid': currentUserId }))
+    const ids = pickImportIds(base)
+
+    if (source === 'otherAccount') { // 도너 last_sync_at 리셋 → 재로그인 시 전체 pull로 원본 복원
+      for (const d of queryAll(`SELECT DISTINCT user_id FROM items WHERE ${base}`, { ':uid': currentUserId })) {
+        const uid = d.user_id as string
+        if (uid) setSetting('last_sync_at_' + uid, '')
+      }
+    }
+
+    if (ids.length > 0) {
+      const inList = ids.join(',') // DB 정수 id → 인젝션 안전
+      // anon·otherAccount 모두 새 항목처럼 재삽입(server_id NULL). 교차계정 server_id를 유지하면
+      // pushDirtyItems의 update가 0행에 매치되며 오류 없이 markSynced 처리돼 영영 업로드가 안 되는
+      // 문제가 생김. server_id를 비우면 삽입 경로를 타고, 클라우드 중복은 push의 제목/텍스트 dedup이 흡수.
+      db.run(`UPDATE quotes SET server_id = NULL, is_dirty = 1, updated_at = datetime('now') WHERE item_id IN (${inList})`)
+      db.run(`UPDATE items  SET user_id = :uid, server_id = NULL, is_dirty = 1, updated_at = datetime('now') WHERE id IN (${inList})`, { ':uid': currentUserId })
+      save()
+    }
+    return { imported: ids.length, skipped: total - ids.length }
+  }
+
+  // 비로그인(열람 전용): 대상 계정 last_sync_at 리셋(재로그인 시 full pull로 user_id 백필) 후 user_id NULL flip
+  const donors = queryAll("SELECT DISTINCT user_id FROM items WHERE is_deleted = 0 AND user_id IS NOT NULL")
+  const total = scopeNum(queryOne("SELECT COUNT(*) n FROM items WHERE is_deleted=0 AND user_id IS NOT NULL"))
+  for (const d of donors) { const uid = d.user_id as string; if (uid) setSetting('last_sync_at_' + uid, '') }
+  db.run("UPDATE items SET user_id = NULL WHERE is_deleted = 0 AND user_id IS NOT NULL")
   save()
-}
-
-function save(): void {
-  const data = db.export()
-  writeFileSync(dbPath, Buffer.from(data))
-}
-
-export async function reloadDatabase(): Promise<void> {
-  db.close()
-  db = new sqlInstance.Database(readFileSync(dbPath))
+  return { imported: total, skipped: 0 }
 }
 
 function runStmt(sql: string, params: Record<string, unknown> = {}): void {
