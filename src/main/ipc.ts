@@ -12,7 +12,7 @@ import {
   getTrashedItems, restoreItem, purgeItem, purgeExpiredTrash,
   clearItemDirty, clearQuoteDirty,
   getDbPath, restoreFromFile,
-  runAutoBackup, listAutoBackups, getAutoBackupDir,
+  runAutoBackup, listAutoBackups, getAutoBackupDir, setAutoBackupDir,
   getOtherScopeInfo, importOtherScopeItems,
   ItemRow, QuoteRow
 } from './database'
@@ -154,6 +154,17 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     catch { return { success: false } }
   })
   ipcMain.handle('backup:status', () => ({ lastAt: getSetting('last_auto_backup_at'), dir: getAutoBackupDir() }))
+  ipcMain.handle('backup:chooseDir', async () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+    if (!win) return { success: false }
+    const r = await dialog.showOpenDialog(win, {
+      title: '백업 폴더 선택',
+      defaultPath: getAutoBackupDir(),
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (r.canceled || !r.filePaths[0]) return { success: false, canceled: true }
+    return setAutoBackupDir(r.filePaths[0])
+  })
 
   // ── orphan 복구 핸들러 ────────────────────────────────────────────
   ipcMain.handle('items:scopeInfo', () => getOtherScopeInfo())

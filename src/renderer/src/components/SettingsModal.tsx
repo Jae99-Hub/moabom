@@ -196,6 +196,15 @@ export default function SettingsModal() {
 
   const handleOpenBackupFolder = () => { window.api.backup.openFolder().catch(() => {}) }
 
+  const handleChooseDir = async () => {
+    setBusy(true)
+    try {
+      const r = await window.api.backup.chooseDir()
+      if (r.success) { loadDataTab(); alert('백업 폴더를 변경했어요. 기존 백업도 새 폴더로 옮겼습니다.') }
+      else if (!r.canceled) alert('폴더 변경에 실패했어요. (쓰기 권한이 없는 폴더일 수 있어요.)')
+    } finally { setBusy(false) }
+  }
+
   const handleRestoreFrom = async (b: AutoBackupInfo) => {
     const extra = scope.loggedIn
       ? '\n※ 로그인 상태에서 복원하면, 다음 동기화 때 다른 기기의 최신 변경이 이 시점으로 되돌아갈 수 있어요.' : ''
@@ -579,19 +588,25 @@ export default function SettingsModal() {
               {isElectron && (
                 <>
                   <div className="settings-actions-row">
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div className="settings-group-label">
                         자동 백업
                         {backupStale && <span style={{ color: 'var(--danger)', marginLeft: 8, fontSize: 12 }}>⚠️ 최근 백업 없음</span>}
                       </div>
                       <div className="settings-group-desc">
-                        문서 폴더에 자동 저장 · 최근 14일 보관
+                        최근 14일 보관 · 30분마다 자동
                         {backupStatus.lastAt && <> · 마지막 {new Date(backupStatus.lastAt).toLocaleString('ko-KR')}</>}
                       </div>
+                      {backupStatus.dir && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, wordBreak: 'break-all' }}>
+                          📁 {backupStatus.dir}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <button className="btn-secondary" disabled={busy} onClick={handleAutoBackupNow}>지금 백업</button>
                       <button className="btn-secondary" onClick={handleOpenBackupFolder}>폴더 열기</button>
+                      <button className="btn-secondary" disabled={busy} onClick={handleChooseDir}>폴더 변경</button>
                     </div>
                   </div>
                   {autoBackups.length > 0 && (

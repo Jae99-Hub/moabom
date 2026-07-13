@@ -69,6 +69,7 @@ const api = {
     restoreFrom: (filePath: string) => ipcRenderer.invoke('backup:restoreFrom', filePath),
     openFolder: () => ipcRenderer.invoke('backup:openFolder'),
     status: () => ipcRenderer.invoke('backup:status'),
+    chooseDir: () => ipcRenderer.invoke('backup:chooseDir'),
   }
 }
 

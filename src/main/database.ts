@@ -2,7 +2,8 @@ import initSqlJs, { Database } from 'sql.js'
 import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync,
-         readdirSync, statSync, unlinkSync, renameSync } from 'fs'
+         readdirSync, statSync, unlinkSync, renameSync, copyFileSync } from 'fs'
+import { resolve } from 'path'
 import { is } from '@electron-toolkit/utils'
 
 let db: Database
@@ -194,9 +195,32 @@ const AUTO_BACKUP_RE = /^moabom-auto-\d{4}-\d{2}-\d{2}_\d{6}\.db$/
 const AUTO_BACKUP_KEEP_DAYS = 14
 export interface AutoBackupInfo { name: string; path: string; size: number; mtime: number }
 
+// 사용자 지정 백업 경로는 DB가 아니라 별도 파일에 저장.
+// → DB 손상 자동복구(recoverDbOrEmpty) 시점(DB 미로드)에도 읽을 수 있어 custom 폴더의 백업을 찾을 수 있음.
+function backupDirConfigPath(): string {
+  return join(app.getPath('userData'), 'backup-dir.txt')
+}
+function readCustomBackupDir(): string {
+  try {
+    const p = backupDirConfigPath()
+    return existsSync(p) ? readFileSync(p, 'utf-8').trim() : ''
+  } catch { return '' }
+}
+function writeCustomBackupDir(dir: string): void {
+  try { writeFileSync(backupDirConfigPath(), dir, 'utf-8') } catch { /* ignore */ }
+}
+
 let cachedBackupDir: string | null = null
 export function getAutoBackupDir(): string {
   if (cachedBackupDir) return cachedBackupDir
+  // 사용자 지정 폴더 우선 (파일 기반이라 DB 없이도 조회 가능)
+  const custom = readCustomBackupDir()
+  if (custom) {
+    try {
+      if (!existsSync(custom)) mkdirSync(custom, { recursive: true })
+      return (cachedBackupDir = custom)
+    } catch { /* 커스텀 폴더 접근 불가 → 기본값으로 폴백 */ }
+  }
   const primary = join(app.getPath('documents'), '모아봄 백업')
   try {
     if (!existsSync(primary)) mkdirSync(primary, { recursive: true })
@@ -205,6 +229,39 @@ export function getAutoBackupDir(): string {
   const fb = join(app.getPath('userData'), 'backups')
   try { if (!existsSync(fb)) mkdirSync(fb, { recursive: true }) } catch { /* ignore */ }
   return (cachedBackupDir = fb)
+}
+
+/** 백업 폴더 변경. 쓰기 검증 → 기존 백업 이동(안전한 copy+삭제) → 설정 저장 + 캐시 무효화. */
+export function setAutoBackupDir(newPath: string): { success: boolean; error?: string } {
+  if (!newPath) return { success: false, error: 'empty' }
+  // 쓰기 가능 검증
+  try {
+    if (!existsSync(newPath)) mkdirSync(newPath, { recursive: true })
+    const probe = join(newPath, '.moabom-write-test')
+    writeFileSync(probe, 'ok')
+    unlinkSync(probe)
+  } catch { return { success: false, error: 'not-writable' } }
+
+  const oldDir = getAutoBackupDir()
+  if (resolve(oldDir).toLowerCase() === resolve(newPath).toLowerCase()) {
+    writeCustomBackupDir(newPath) // 경로만 정규화 저장
+    cachedBackupDir = null
+    return { success: true }
+  }
+
+  // 기존 백업 파일 이동 (copy 후 삭제 → 실패해도 원본은 남아 유실 없음)
+  try {
+    for (const b of listAutoBackups()) {
+      try {
+        copyFileSync(b.path, join(newPath, b.name))
+        try { unlinkSync(b.path) } catch { /* 원본 삭제 실패는 무시(중복만 남음) */ }
+      } catch { /* 개별 파일 이동 실패 무시 */ }
+    }
+  } catch { /* ignore */ }
+
+  writeCustomBackupDir(newPath)
+  cachedBackupDir = null // 다음 getAutoBackupDir가 새 경로 반환
+  return { success: true }
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0')

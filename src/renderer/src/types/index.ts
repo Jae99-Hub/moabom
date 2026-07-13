@@ -151,6 +151,7 @@ declare global {
         restoreFrom: (filePath: string) => Promise<{ success: boolean; error?: string }>
         openFolder: () => Promise<{ success: boolean }>
         status: () => Promise<{ lastAt: string; dir: string }>
+        chooseDir: () => Promise<{ success: boolean; error?: string; canceled?: boolean }>
       }
       sync: {
         getDirtyItems: () => Promise<Record<string, unknown>[]>
