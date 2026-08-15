@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore'
 import { CardContextMenu } from './CardContextMenu'
 
 
-const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마' }
+const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
 const STATUS_LABEL: Record<ItemStatus, string> = {
   want: '예정',
   reading: '진행',

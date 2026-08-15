@@ -157,7 +157,7 @@ export default function QuotesModal() {
                   />
                 </div>
               )}
-              {itemType === 'drama' && (
+              {(itemType === 'drama' || itemType === 'documentary') && (
                 <div className="form-group">
                   <label className="form-label">에피소드 (선택)</label>
                   <input
@@ -220,7 +220,7 @@ export default function QuotesModal() {
                             <input className="form-input" type="number" value={editPage} onChange={(e) => setEditPage(e.target.value)} placeholder="p." min={1} />
                           </div>
                         )}
-                        {itemType === 'drama' && (
+                        {(itemType === 'drama' || itemType === 'documentary') && (
                           <div className="form-group">
                             <label className="form-label">에피소드</label>
                             <input className="form-input" type="number" value={editEpisode} onChange={(e) => setEditEpisode(e.target.value)} placeholder="화" min={1} />

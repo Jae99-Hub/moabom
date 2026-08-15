@@ -18,18 +18,18 @@ function getDateMonth(item: Item, year: number): number | null {
   return dt.getFullYear() === year ? dt.getMonth() : null
 }
 
-interface MonthSlot { month: number; book: number; movie: number; drama: number }
+interface MonthSlot { month: number; book: number; movie: number; drama: number; documentary: number }
 
 function buildMonthly(items: Item[], year: number): MonthSlot[] {
   const slots: MonthSlot[] = Array.from({ length: 12 }, (_, i) => ({
-    month: i + 1, book: 0, movie: 0, drama: 0,
+    month: i + 1, book: 0, movie: 0, drama: 0, documentary: 0,
   }))
   items
     .filter((m) => m.status === 'done')
     .forEach((m) => {
       const mo = getDateMonth(m, year)
       if (mo == null) return
-      const t = m.item_type as 'book' | 'movie' | 'drama'
+      const t = m.item_type as 'book' | 'movie' | 'drama' | 'documentary'
       if (t in slots[mo]) slots[mo][t]++
     })
   return slots
@@ -144,7 +144,7 @@ function RadarChart({ points, color }: { points: RadarPoint[]; color: string }) 
 
 function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
   const [hovered, setHovered] = useState<number | null>(null)
-  const maxVal = Math.max(...data.map((d) => d.book + d.movie + d.drama), 1)
+  const maxVal = Math.max(...data.map((d) => d.book + d.movie + d.drama + d.documentary), 1)
   const yTicks = useMemo(() => {
     const step = maxVal <= 5 ? 1 : maxVal <= 10 ? 2 : Math.ceil(maxVal / 5)
     const ticks: number[] = []
@@ -166,10 +166,11 @@ function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
           ))}
         </div>
         {data.map((d) => {
-          const total = d.book + d.movie + d.drama
+          const total = d.book + d.movie + d.drama + d.documentary
           const bookH = (d.book / maxVal) * 100
           const movieH = (d.movie / maxVal) * 100
           const dramaH = (d.drama / maxVal) * 100
+          const docH = (d.documentary / maxVal) * 100
           const isHov = hovered === d.month
           return (
             <div key={d.month} className="stat-bar-col"
@@ -183,9 +184,13 @@ function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
                     {d.book > 0 && <span style={{ color: '#60a5fa' }}> 📚{d.book}</span>}
                     {d.movie > 0 && <span style={{ color: '#a78bfa' }}> 🎬{d.movie}</span>}
                     {d.drama > 0 && <span style={{ color: '#f472b6' }}> 📺{d.drama}</span>}
+                    {d.documentary > 0 && <span style={{ color: '#fbbf24' }}> 🎞️{d.documentary}</span>}
                   </div>
                 )}
                 <div className="stat-bar-stack">
+                  {d.documentary > 0 && (
+                    <div className="stat-bar-seg" style={{ height: `${docH}%`, background: '#f59e0b' }} />
+                  )}
                   {d.drama > 0 && (
                     <div className="stat-bar-seg" style={{ height: `${dramaH}%`, background: '#ec4899' }} />
                   )}
@@ -276,6 +281,7 @@ export default function StatsModal() {
     book:  itemList.filter((m) => m.status === 'done' && m.item_type === 'book').length,
     movie: itemList.filter((m) => m.status === 'done' && m.item_type === 'movie').length,
     drama: itemList.filter((m) => m.status === 'done' && m.item_type === 'drama').length,
+    documentary: itemList.filter((m) => m.status === 'done' && m.item_type === 'documentary').length,
   }), [itemList])
 
   if (!isStatsOpen) return null
@@ -335,6 +341,11 @@ export default function StatsModal() {
               <span className="stats-type-label">📺 드라마</span>
               <span className="stats-type-num" style={{ color: '#f472b6' }}>{byType.drama}편</span>
             </div>
+            <div className="stats-type-item">
+              <div className="stats-type-dot" style={{ background: '#f59e0b' }} />
+              <span className="stats-type-label">🎞️ 다큐</span>
+              <span className="stats-type-num" style={{ color: '#fbbf24' }}>{byType.documentary}편</span>
+            </div>
           </div>
 
           {/* 탭 */}
@@ -352,7 +363,7 @@ export default function StatsModal() {
 
           {/* 탭 콘텐츠 */}
           {tab === 'monthly' && (() => {
-            const yearTotal = monthlyData.reduce((s, d) => s + d.book + d.movie + d.drama, 0)
+            const yearTotal = monthlyData.reduce((s, d) => s + d.book + d.movie + d.drama + d.documentary, 0)
             return (
               <div className="stats-tab-content">
                 <div className="stats-section-header">
@@ -380,6 +391,7 @@ export default function StatsModal() {
                       <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#3b82f6' }} />도서</div>
                       <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#8b5cf6' }} />영화</div>
                       <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#ec4899' }} />드라마</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#f59e0b' }} />다큐</div>
                     </div>
                   </>
                 )}
@@ -418,10 +430,10 @@ export default function StatsModal() {
               {/* 타입별 평균 평점 */}
               <div className="stats-section-header" style={{ marginTop: 16 }}>타입별 평균 평점</div>
               <div className="stats-type-rating">
-                {(['book', 'movie', 'drama'] as const).map((type) => {
+                {(['book', 'movie', 'drama', 'documentary'] as const).map((type) => {
                   const typed = buildRating(itemList.filter((m) => m.item_type === type))
-                  const COLOR = type === 'book' ? '#3b82f6' : type === 'movie' ? '#8b5cf6' : '#ec4899'
-                  const LABEL = type === 'book' ? '📚 도서' : type === 'movie' ? '🎬 영화' : '📺 드라마'
+                  const COLOR = type === 'book' ? '#3b82f6' : type === 'movie' ? '#8b5cf6' : type === 'drama' ? '#ec4899' : '#f59e0b'
+                  const LABEL = type === 'book' ? '📚 도서' : type === 'movie' ? '🎬 영화' : type === 'drama' ? '📺 드라마' : '🎞️ 다큐'
                   return (
                     <div key={type} className="stats-type-rating-item">
                       <div className="stats-type-rating-label">{LABEL}</div>

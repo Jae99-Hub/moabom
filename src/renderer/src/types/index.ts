@@ -1,4 +1,4 @@
-export type ItemType = 'book' | 'movie' | 'drama'
+export type ItemType = 'book' | 'movie' | 'drama' | 'documentary'
 export type ItemStatus = 'want' | 'reading' | 'done' | 'dropped'
 
 export interface Item {

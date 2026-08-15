@@ -64,7 +64,7 @@ export default function AuthScreen({ onContinueAnonymous, isElectron }: Props) {
         </div>
 
         <h1 className="auth-title">모아봄</h1>
-        <p className="auth-subtitle">책 · 영화 · 드라마를 한 곳에서</p>
+        <p className="auth-subtitle">책 · 영화 · 드라마 · 다큐를 한 곳에서</p>
 
         <button
           className="auth-google-btn"

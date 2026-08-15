@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { resolveConflict, SyncConflict, mergeItemFields } from '../api/syncService'
 
-const TYPE_LABEL: Record<string, string> = { book: '📚 책', movie: '🎬 영화', drama: '📺 드라마' }
+const TYPE_LABEL: Record<string, string> = { book: '📚 책', movie: '🎬 영화', drama: '📺 드라마', documentary: '🎞️ 다큐' }
 const STATUS_LABEL: Record<string, string> = { want: '볼 예정', reading: '읽는 중 / 보는 중', done: '완료', dropped: '중단' }
 
 function excerpt(text: unknown, max = 60): string {

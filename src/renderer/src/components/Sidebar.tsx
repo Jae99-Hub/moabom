@@ -5,7 +5,8 @@ import { Item, ItemType } from '../types'
 const TYPES: { value: ItemType; label: string; color: string }[] = [
   { value: 'book',  label: '도서',   color: '#3b82f6' },
   { value: 'movie', label: '영화',  color: '#8b5cf6' },
-  { value: 'drama', label: '드라마', color: '#ec4899' }
+  { value: 'drama', label: '드라마', color: '#ec4899' },
+  { value: 'documentary', label: '다큐', color: '#f59e0b' }
 ]
 
 type GenreNode = {
@@ -96,12 +97,13 @@ function GenreNodes({
 
 export default function Sidebar() {
   const { itemList, filters, setFilter, isSidebarOpen, closeSidebar, openSettings, openStats, openTrash } = useStore()
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['book', 'movie', 'drama']))
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['book', 'movie', 'drama', 'documentary']))
 
   const forests = useMemo(() => ({
     book:  buildForest(itemList, 'book'),
     movie: buildForest(itemList, 'movie'),
-    drama: buildForest(itemList, 'drama')
+    drama: buildForest(itemList, 'drama'),
+    documentary: buildForest(itemList, 'documentary')
   }), [itemList])
 
   const toggle = (key: string) =>
@@ -130,6 +132,7 @@ export default function Sidebar() {
   const bookCount = itemList.filter((m) => m.item_type === 'book').length
   const movieCount = itemList.filter((m) => m.item_type === 'movie').length
   const dramaCount = itemList.filter((m) => m.item_type === 'drama').length
+  const docCount = itemList.filter((m) => m.item_type === 'documentary').length
 
   return (
     <>
@@ -155,6 +158,11 @@ export default function Sidebar() {
           <span className="sidebar-stat-dot" style={{ background: '#ec4899' }} />
           <span className="sidebar-stat-number">{dramaCount}</span>
           <span className="sidebar-stat-label">드라마</span>
+        </div>
+        <div className="sidebar-stat">
+          <span className="sidebar-stat-dot" style={{ background: '#f59e0b' }} />
+          <span className="sidebar-stat-number">{docCount}</span>
+          <span className="sidebar-stat-label">다큐</span>
         </div>
       </div>
 
@@ -214,6 +222,15 @@ export default function Sidebar() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
                       <polyline points="17 2 12 7 7 2" />
+                    </svg>
+                  )}
+                  {t.value === 'documentary' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="2" width="20" height="20" rx="2" />
+                      <line x1="7" y1="2" x2="7" y2="22" />
+                      <line x1="17" y1="2" x2="17" y2="22" />
+                      <line x1="2" y1="12" x2="7" y2="12" />
+                      <line x1="17" y1="12" x2="22" y2="12" />
                     </svg>
                   )}
                 </span>

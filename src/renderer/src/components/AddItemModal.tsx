@@ -153,7 +153,9 @@ export default function AddItemModal() {
     setForm((p) => ({
       ...p,
       title: r.title, original_title: r.original_title,
-      item_type: r.item_type as ItemType, director: r.director,
+      // 사용자가 '다큐'로 선택한 경우 TMDB 분류(영화/드라마)와 무관하게 다큐로 유지
+      item_type: p.item_type === 'documentary' ? 'documentary' : (r.item_type as ItemType),
+      director: r.director,
       year: r.year ? parseInt(r.year) : null,
       overview: r.overview, cover_path: r.cover_path,
       backdrop_path: r.backdrop_path, tmdb_id: r.tmdb_id
@@ -285,7 +287,8 @@ export default function AddItemModal() {
               {([
                 { v: 'book',  icon: '📖', l: '도서' },
                 { v: 'movie', icon: '🎬', l: '영화' },
-                { v: 'drama', icon: '📺', l: '드라마' }
+                { v: 'drama', icon: '📺', l: '드라마' },
+                { v: 'documentary', icon: '🎞️', l: '다큐' }
               ] as const).map(({ v, icon, l }) => (
                 <button
                   key={v}

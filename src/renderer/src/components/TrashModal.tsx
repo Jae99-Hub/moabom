@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { TrashItem } from '../types'
 
-const TYPE_LABEL: Record<string, string> = { book: '📚 도서', movie: '🎬 영화', drama: '📺 드라마' }
+const TYPE_LABEL: Record<string, string> = { book: '📚 도서', movie: '🎬 영화', drama: '📺 드라마', documentary: '🎞️ 다큐' }
 const RETENTION_DAYS = 15
 
 function parseTs(s: string | null | undefined): number {

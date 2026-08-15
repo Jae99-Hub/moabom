@@ -3,7 +3,7 @@ import { useStore, useFilteredItems } from '../store/useStore'
 import { Item, ItemType, ItemStatus, Quote } from '../types'
 import StarRating from './StarRating'
 
-const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마' }
+const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
 const STATUS_LABEL: Record<string, string> = { want: '읽고 싶다', reading: '읽는 중', done: '완독', dropped: '중단' }
 const STATUS_LABEL_MEDIA: Record<string, string> = { want: '볼 예정', reading: '보는 중', done: '시청 완료', dropped: '중단' }
 

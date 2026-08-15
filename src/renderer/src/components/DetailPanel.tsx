@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore'
 import { Item, ItemType, ItemStatus, Quote } from '../types'
 import StarRating from './StarRating'
 
-const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마' }
+const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
 const STATUS_LABEL: Record<string, string> = {
   want: '읽고 싶다',
   reading: '읽는 중',
