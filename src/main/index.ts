@@ -30,6 +30,9 @@ function setupAutoUpdater(win: BrowserWindow) {
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+  // 차등(blockmap) 다운로드 비활성화 — GitHub 릴리스에서 범위 요청이 폭주하며
+  // 다운로드가 멈추고 CPU 부하가 치솟는 문제가 있어 항상 전체 파일을 받는다.
+  autoUpdater.disableDifferentialDownload = true
 
   // 업데이트 있음 → 렌더러에 버전 알림 (다운로드 버튼은 렌더러가 표시)
   autoUpdater.on('update-available', (info) => {

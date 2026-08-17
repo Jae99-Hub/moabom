@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 
-type Phase = 'idle' | 'available' | 'downloading' | 'downloaded'
+type Phase = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error'
 
 export default function UpdaterToast() {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -15,6 +15,7 @@ export default function UpdaterToast() {
     bridge.onAvailable((v) => { setVersion(v); setPhase('available') })
     bridge.onProgress((pct) => { setProgress(pct); setPhase('downloading') })
     bridge.onDownloaded(() => setPhase('downloaded'))
+    bridge.onError(() => setPhase('error')) // 실패 시 '다운로드 중'에 영원히 머무는 것 방지
   }, [])
 
   async function handleDownload() {
@@ -73,6 +74,12 @@ export default function UpdaterToast() {
               <p style={styles.sub}>재시작하면 업데이트가 적용돼요</p>
             </>
           )}
+          {phase === 'error' && (
+            <>
+              <p style={styles.title}>다운로드 실패 ⚠️</p>
+              <p style={styles.sub}>네트워크 확인 후 다시 시도해 주세요</p>
+            </>
+          )}
         </div>
 
         {/* 버튼 */}
@@ -92,6 +99,12 @@ export default function UpdaterToast() {
             <>
               <button style={styles.btnSuccess} onClick={handleInstall}>지금 재시작</button>
               <button style={styles.btnGhost} onClick={() => setDismissed(true)}>나중에</button>
+            </>
+          )}
+          {phase === 'error' && (
+            <>
+              <button style={styles.btnPrimary} onClick={handleDownload}>다시 시도</button>
+              <button style={styles.btnGhost} onClick={() => setDismissed(true)}>닫기</button>
             </>
           )}
         </div>
