@@ -140,13 +140,31 @@ export default function AddItemModal() {
   useEscapeKey(() => { void requestClose() }, isAddModalOpen)
 
   const switchType = (newType: ItemType) => {
+    // 영화·드라마·다큐끼리는 같은 작품 정보가 그대로 맞으므로 유지 (예: 다큐 시리즈를 드라마로 검색했다가 다큐로)
+    if ((form.item_type === 'book') === (newType === 'book')) {
+      setForm((p) => ({ ...p, item_type: newType }))
+      return
+    }
     searchSeqRef.current++ // 진행 중이던 검색 결과는 버림
     setIsSearching(false)
-    setForm((p) => ({
-      ...p, item_type: newType,
-      author: '', publisher: '', isbn: '', page_count: null, current_page: 0,
-      director: '', platform: '', google_books_id: null, tmdb_id: null,
-    }))
+    setForm((p) => {
+      // 책 ↔ 영상: 검색으로 채운 작품 정보(제목·표지·줄거리 등)는 다른 종류의 것이라 비운다
+      // (예전엔 드라마로 검색한 뒤 도서로 바꿔도 드라마 정보가 그대로 남았음).
+      // 직접 쓴 기록(상태·별점·감상·완료일)과 직접 넣은 표지는 남김.
+      if (p.google_books_id || p.tmdb_id) {
+        return {
+          ...DEFAULT_FORM, item_type: newType,
+          cover_path: p.cover_path?.startsWith('data:') ? p.cover_path : null,
+          status: p.status, rating: p.rating, review: p.review, read_date: p.read_date,
+        }
+      }
+      // 검색 없이 직접 쓰던 중이면 제목 등은 두고, 종류에 안 맞는 칸(저자↔감독 등)만 비움
+      return {
+        ...p, item_type: newType,
+        author: '', publisher: '', isbn: '', page_count: null, current_page: 0,
+        director: '', platform: '',
+      }
+    })
     setSearchQuery('')
     setBookResults([])
     setTmdbResults([])
