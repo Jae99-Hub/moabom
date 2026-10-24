@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/react'
 import App from './App'
 import './styles/index.css'
 import { setupWebApi } from './api/webApi'
-import { supabase, isSupabaseConfigured } from './api/supabaseClient'
+import { supabase, isSupabaseConfigured, storedUserId } from './api/supabaseClient'
 import AuthScreen from './components/AuthScreen'
 import DialogHost from './components/DialogHost'
 import { useStore } from './store/useStore'
@@ -131,10 +131,12 @@ async function bootstrap() {
   try {
     await setupWebApi()
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session) {
+    // 만료된 로그인을 연결 문제로 갱신하지 못했으면 저장된 계정으로 연다 (요청이 실패하면 그 오류를 보여 줌)
+    const { data: { session }, error } = await supabase.auth.getSession()
+    const uid = session?.user.id ?? (error ? storedUserId() : null)
+    if (uid) {
       setAnonMode(false)
-      renderApp(session.user.id)
+      renderApp(uid)
     } else if (isAnonMode()) {
       renderApp(null)
     } else {
