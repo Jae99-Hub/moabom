@@ -9,3 +9,6 @@ out/
 
 .vercel
 *.tsbuildinfo
+
+# 예전 모바일 앱 폴더의 로컬 잔여물 (코드는 archive/mobile 브랜치)
+mobile/
