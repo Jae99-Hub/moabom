@@ -133,6 +133,11 @@ export default function Sidebar() {
     closeSidebar() // 모바일: 선택 후 사이드바 닫기
   }
 
+  // 이미 보고 있는 종류를 한 번 더 누르면 전체로 — 위쪽 개수 칸과 아래 목록의 종류 줄이 똑같이 동작
+  // (예전엔 목록의 종류 줄은 다시 눌러도 그대로라서 '전체로 안 돌아간다'고 느껴짐)
+  const isTypeOnly = (type: ItemType) => filters.type === type && filters.genre === 'all'
+  const toggleType = (type: ItemType) => handleSelectType(isTypeOnly(type) ? 'all' : type)
+
   const bookCount = itemList.filter((m) => m.item_type === 'book').length
   const movieCount = itemList.filter((m) => m.item_type === 'movie').length
   const dramaCount = itemList.filter((m) => m.item_type === 'drama').length
@@ -152,12 +157,12 @@ export default function Sidebar() {
           ['book', bookCount], ['movie', movieCount], ['drama', dramaCount], ['documentary', docCount],
         ] as const).map(([type, count]) => {
           const t = TYPES.find((x) => x.value === type)!
-          const active = filters.type === type && filters.genre === 'all'
+          const active = isTypeOnly(type)
           return (
             <button
               key={type}
               className={`sidebar-stat${active ? ' active' : ''}`}
-              onClick={() => handleSelectType(active ? 'all' : type)}
+              onClick={() => toggleType(type)}
               aria-pressed={active}
               aria-label={`${t.label} ${count}개${active ? ' (전체 보기로 돌아가기)' : ' 보기'}`}
               title={active ? '전체 보기' : `${t.label}만 보기`}
@@ -193,14 +198,16 @@ export default function Sidebar() {
         const forest = forests[t.value]
         const isOpen = expanded.has(t.value)
         const typeCount = itemList.filter((m) => m.item_type === t.value).length
-        const isTypeActive = filters.type === t.value && filters.genre === 'all'
+        const isTypeActive = isTypeOnly(t.value)
 
         return (
           <div key={t.value}>
             <div className="sidebar-type-row">
               <button
                 className={`sidebar-nav-item sidebar-type-item${isTypeActive ? ' active' : ''}`}
-                onClick={() => { handleSelectType(t.value); if (forest.size > 0 && !isOpen) toggle(t.value) }}
+                onClick={() => { toggleType(t.value); if (!isTypeActive && forest.size > 0 && !isOpen) toggle(t.value) }}
+                aria-pressed={isTypeActive}
+                title={isTypeActive ? '전체 보기' : undefined}
                 style={{ flex: 1 }}
               >
                 <span className="sidebar-type-icon" style={{ color: t.color }}>
