@@ -94,8 +94,8 @@ function setupAutoUpdater(win: BrowserWindow) {
 // ── 로컬 OAuth 수신 서버 (localhost:3000) ─────────────────────────
 // Supabase Site URL이 localhost:3000으로 설정되어 있어
 // redirectTo: 'http://localhost:3000'으로 OAuth 콜백을 받음.
-// PKCE flow: ?code=...가 쿼리로 옴 → moabom://auth-callback?code=...로 전달
-// Implicit flow(fallback): #access_token=...가 해시로 옴 → 해시째 전달
+// PKCE flow(현재): ?code=...가 쿼리로 옴 → moabom://auth-callback?code=...로 전달
+// Implicit flow(예전 버전 호환): #access_token=...가 해시로 옴 → 쿼리로 바꿔 전달
 function startLocalAuthServer() {
   const HTML = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -189,7 +189,8 @@ function createWindow(): void {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      // 화면(렌더러)을 격리된 환경에서 실행 — preload는 electron 모듈만 쓰므로 그대로 동작
+      sandbox: true
     }
   })
 
@@ -206,8 +207,8 @@ function createWindow(): void {
   })
 
   // 창 안에서 다른 페이지로 이동 차단 (예: 파일을 창에 끌어다 놓으면 앱 화면이 그 파일로 바뀌던 문제)
-  mainWindow.webContents.on('will-navigate', (e, url) => {
-    if (url !== mainWindow?.webContents.getURL()) e.preventDefault()
+  mainWindow.webContents.on('will-navigate', (details) => {
+    if (details.url !== mainWindow?.webContents.getURL()) details.preventDefault()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {

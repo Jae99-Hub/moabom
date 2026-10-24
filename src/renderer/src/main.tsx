@@ -182,19 +182,13 @@ function registerAuthCallback() {
       const fake = url.replace('moabom://', 'https://x/')
       const urlObj = new URL(fake)
 
-      const access_token = urlObj.searchParams.get('access_token')
-      const refresh_token = urlObj.searchParams.get('refresh_token')
-      if (access_token && refresh_token) {
-        const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-        if (error) authFailed(`잠시 뒤 다시 시도해 주세요.\n(${error.message})`)
-        // 앱 진입은 onAuthStateChange SIGNED_IN이 처리
-        return
-      }
-
+      // PKCE: 일회용 코드만 받는다. 이 앱이 로그인을 시작할 때 만든 비밀값과 짝이 맞아야 세션이 됨.
+      // (토큰을 주소로 직접 받던 예전 방식은 남이 만든 moabom:// 링크로도 그 사람 계정에 로그인될 수 있어 받지 않음)
       const code = urlObj.searchParams.get('code')
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) authFailed(`잠시 뒤 다시 시도해 주세요.\n(${error.message})`)
+        if (error) authFailed(`로그인 버튼을 다시 눌러 주세요.\n(${error.message})`)
+        // 앱 진입은 onAuthStateChange SIGNED_IN이 처리
         return
       }
 
