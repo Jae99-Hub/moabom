@@ -289,6 +289,14 @@ describe('파일·복구', () => {
     expect(readdirSync(env.dir).some((f) => f.startsWith('bookvault.db.corrupt-'))).toBe(true)
   })
 
+  it('같은 초에 두 번 백업해도 앞의 백업을 덮어쓰지 않음', () => {
+    newItem('책')
+    const a = db.runAutoBackup(true)
+    const b = db.runAutoBackup(true)
+    expect(a.path).not.toBe(b.path)
+    expect(db.listAutoBackups()).toHaveLength(2)
+  })
+
   it('바뀐 게 없으면 자동 백업을 건너뜀', () => {
     newItem('책')
     expect(db.runAutoBackup(false).skipped).toBeFalsy()

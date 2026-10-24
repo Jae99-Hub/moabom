@@ -436,7 +436,13 @@ export function runAutoBackup(force = false): { success: boolean; path?: string;
     const dir = getAutoBackupDir()
     const bytes = Buffer.from(db.export())
     if (bytes.length === 0) return { success: false }
-    const dest = join(dir, autoBackupName())
+    let dest = join(dir, autoBackupName())
+    // 같은 초에 만든 백업이 이미 있으면 다음 초 이름으로 — 덮어쓰면 그 백업이 사라짐
+    // (예: '지금 백업' 직후 그 백업으로 되돌리면, 되돌리기 전 안전 백업이 바로 그 파일을 덮어썼음)
+    for (let i = 0; existsSync(dest) && i < 3; i++) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1005 - (Date.now() % 1000))
+      dest = join(dir, autoBackupName())
+    }
     const tmp = dest + '.tmp'
     writeFileSync(tmp, bytes)
     renameSync(tmp, dest) // 원자적 확정 (부분 파일은 .tmp라 회전 대상 아님)
