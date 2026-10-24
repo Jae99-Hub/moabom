@@ -423,6 +423,8 @@ export function runAutoBackup(force = false): { success: boolean; path?: string;
     if (!force && fp === (getSetting('last_auto_backup_fp') || '')) {
       return { success: true, skipped: true } // 변경 없음
     }
+    // 기록이 하나도 없으면 남길 것이 없음 (처음 켰을 때 빈 백업이 생기던 것)
+    if (!force && fp.endsWith('|0|0')) return { success: true, skipped: true }
     const dir = getAutoBackupDir()
     const bytes = Buffer.from(db.export())
     if (bytes.length === 0) return { success: false }

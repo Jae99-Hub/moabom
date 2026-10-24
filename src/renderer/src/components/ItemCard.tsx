@@ -86,6 +86,9 @@ function ItemCard({ item }: { item: Item }) {
       className={`media-card${isSelected && !selectionMode ? ' selected' : ''}${selectionMode && isChecked ? ' checked' : ''}`}
       role="button"
       tabIndex={0}
+      data-item-id={item.id}
+      aria-label={item.title}
+      aria-pressed={selectionMode ? isChecked : undefined}
       onKeyDown={(e) => {
         // 상세창이 열려 있는 동안엔 뒤에 남은 카드 포커스가 키를 받지 않게 (스페이스로 상세창이 닫히던 문제)
         if (!selectionMode && useStore.getState().selectedId != null) return
@@ -147,7 +150,7 @@ function ItemCard({ item }: { item: Item }) {
       <div className="media-card-info">
         <div className="media-card-title" title={item.title}>{item.title}</div>
         <div className="media-card-meta">
-          <span className="media-card-year">
+          <span className="media-card-year" title={[item.author || item.director, item.year].filter(Boolean).join(' · ')}>
             {[item.author || item.director, item.year].filter(Boolean).join(' · ')}
           </span>
           {item.rating != null && (

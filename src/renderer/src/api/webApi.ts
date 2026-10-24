@@ -119,9 +119,11 @@ async function fetchAllRows(table: 'items' | 'quotes', userId: string): Promise<
 // ── 도서·영화 검색 — 모아봄 웹 서버(/api)를 거친다 ──────────────────
 // 검색 키를 브라우저 코드에 두지 않기 위해서 (서버가 키를 들고 대신 요청, 같은 검색어는 잠시 저장해 빠르게 돌려줌)
 async function searchViaServer(path: 'books' | 'tmdb', query: string): Promise<unknown[]> {
+  // 서버와 같은 방식으로 검색어를 정리해서 보냄 → 같은 검색어는 서버에 저장된 결과를 바로 받음 (api/_shared.js)
+  const q = query.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 100)
   let res: Response
   try {
-    res = await fetch(`/api/${path}?q=${encodeURIComponent(query.trim())}`, { signal: AbortSignal.timeout(15000) })
+    res = await fetch(`/api/${path}?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(15000) })
   } catch {
     throw new Error('검색 응답이 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')
   }
@@ -343,9 +345,49 @@ export async function setupWebApi(): Promise<void> {
           .eq('item_id', id).eq('user_id', userId).not('is_deleted', 'is', true)
       },
 
-      // 웹에는 데스크톱처럼 '다른 범위의 기록'이 없음 (설정 화면 호환용)
-      scopeInfo: async () => ({ loggedIn: await isAuthenticated(), anon: 0, otherAccount: 0 }),
-      importOtherScope: async () => ({ imported: 0, skipped: 0 }),
+      // 로그인했는데 이 브라우저에 로그인 없이 쓴 기록이 남아 있으면 그 개수 (계정으로 옮길 수 있게)
+      scopeInfo: async () => {
+        const loggedIn = await isAuthenticated()
+        const anon = loggedIn ? anonLoad<Row[]>(ANON.items, []).filter((i) => !i.is_deleted).length : 0
+        return { loggedIn, anon, otherAccount: 0 }
+      },
+
+      // 로그인 없이 쓴 기록을 지금 계정으로 옮김. 계정에 같은 제목·종류가 있으면 건너뜀.
+      // 옮긴 것은 이 브라우저에서 지운다 (다시 옮겨져 두 번 생기지 않게). 실패한 것은 남겨 다음에 다시.
+      importOtherScope: async (source: 'anon' | 'otherAccount') => {
+        const userId = await currentUserId()
+        if (!userId || source !== 'anon') return { imported: 0, skipped: 0 }
+        const localItems = anonLoad<Row[]>(ANON.items, []).filter((i) => !i.is_deleted)
+        const localQuotes = anonLoad<Row[]>(ANON.quotes, []).filter((q) => !q.is_deleted)
+        const key = (r: Row) => `${String(r.title ?? '').trim().toLowerCase()}|${r.item_type}`
+        const existing = new Set((await fetchAllRows('items', userId)).filter((r) => !r.is_deleted).map(key))
+        const done = new Set<unknown>()
+        let imported = 0
+        let skipped = 0
+        for (const it of localItems) {
+          if (existing.has(key(it))) { skipped++; done.add(it.id); continue }
+          const now = nowIso()
+          const { data, error } = await supabase.from('items')
+            .insert({ ...itemFields(it), user_id: userId, created_at: it.created_at ?? now, updated_at: now })
+            .select('id').single()
+          if (error || !data) continue
+          const quotes = localQuotes.filter((q) => q.item_id === it.id).map((q) => ({
+            user_id: userId, item_id: (data as Row).id, text: String(q.text ?? ''),
+            page_number: q.page_number ?? null, episode_number: q.episode_number ?? null, note: q.note ?? null,
+            created_at: q.created_at ?? now, updated_at: now,
+          }))
+          if (quotes.length > 0) {
+            const { error: qError } = await supabase.from('quotes').insert(quotes)
+            if (qError) { await supabase.from('items').delete().eq('id', (data as Row).id).eq('user_id', userId); continue }
+          }
+          existing.add(key(it))
+          done.add(it.id)
+          imported++
+        }
+        anonSave(ANON.items, anonLoad<Row[]>(ANON.items, []).filter((i) => !done.has(i.id)))
+        anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => !done.has(q.item_id)))
+        return { imported, skipped }
+      },
     },
 
     trash: {

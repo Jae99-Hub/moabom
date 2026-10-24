@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { useStore, useStorePick } from '../store/useStore'
 import { TYPE_COLOR, TYPE_TEXT_COLOR, typeEmojiLabel } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { getDateYear, buildMonthly, buildRating, buildGenre, MonthSlot, RatingStat } from '../utils/stats'
+import { useFocusTrap } from '../hooks/useFocusTrap'
+import { getDateYear, buildMonthly, buildRating, buildGenre, niceScale, MonthSlot, RatingStat } from '../utils/stats'
 
 // ── SVG 레이더 차트 (오각형) ────────────────────────────────────────
 
@@ -34,8 +35,9 @@ function RadarChart({ points, color }: { points: RadarPoint[]; color: string }) 
     }).join(' ')
   )
 
+  // 라벨이 오각형 바깥으로 나가므로 양옆에 여백을 둔 viewBox (예전엔 '문학'이 '학'으로 잘렸음)
   return (
-    <svg width="180" height="180" viewBox="0 0 180 180">
+    <svg width="240" height="196" viewBox="-30 -8 240 196" role="img" aria-label={points.map((p) => `${p.label} ${p.value}`).join(', ')}>
       {/* 그리드 링 */}
       {rings.map((pts, i) => (
         <polygon key={i} points={pts} fill="none" stroke="var(--border)" strokeWidth="1" />
@@ -63,7 +65,7 @@ function RadarChart({ points, color }: { points: RadarPoint[]; color: string }) 
         return (
           <text key={i} x={lx} y={ly + 4} textAnchor={anchor}
             fontSize="10" fill="var(--text-muted)" fontFamily="inherit">
-            {p.label}
+            {p.label.length > 7 ? p.label.slice(0, 7) + '…' : p.label}
           </text>
         )
       })}
@@ -85,13 +87,10 @@ function RadarChart({ points, color }: { points: RadarPoint[]; color: string }) 
 
 function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
   const [hovered, setHovered] = useState<number | null>(null)
-  const maxVal = Math.max(...data.map((d) => d.book + d.movie + d.drama + d.documentary), 1)
-  const yTicks = useMemo(() => {
-    const step = maxVal <= 5 ? 1 : maxVal <= 10 ? 2 : Math.ceil(maxVal / 5)
-    const ticks: number[] = []
-    for (let i = 0; i <= maxVal; i += step) ticks.push(i)
-    return ticks
-  }, [maxVal])
+  // 맨 위 눈금 = 그래프 꼭대기 (눈금 글자와 가로선 위치가 어긋나지 않게)
+  const { max: maxVal, ticks: yTicks } = useMemo(
+    () => niceScale(Math.max(...data.map((d) => d.book + d.movie + d.drama + d.documentary))),
+    [data])
 
   return (
     <div className="stat-bar-chart-wrap">
@@ -108,10 +107,12 @@ function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
         </div>
         {data.map((d) => {
           const total = d.book + d.movie + d.drama + d.documentary
-          const bookH = (d.book / maxVal) * 100
-          const movieH = (d.movie / maxVal) * 100
-          const dramaH = (d.drama / maxVal) * 100
-          const docH = (d.documentary / maxVal) * 100
+          // 막대 전체 높이는 그래프 대비, 칸마다의 높이는 막대 안에서의 비율
+          const part = (n: number) => (total > 0 ? (n / total) * 100 : 0)
+          const bookH = part(d.book)
+          const movieH = part(d.movie)
+          const dramaH = part(d.drama)
+          const docH = part(d.documentary)
           const isHov = hovered === d.month
           return (
             <div key={d.month} className="stat-bar-col"
@@ -128,7 +129,7 @@ function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
                     {d.documentary > 0 && <span style={{ color: TYPE_TEXT_COLOR.documentary }}> 🎞️{d.documentary}</span>}
                   </div>
                 )}
-                <div className="stat-bar-stack">
+                <div className="stat-bar-stack" style={{ height: `${(total / maxVal) * 100}%` }}>
                   {d.documentary > 0 && (
                     <div className="stat-bar-seg" style={{ height: `${docH}%`, background: TYPE_COLOR.documentary }} />
                   )}
@@ -193,6 +194,8 @@ function StatsContent() {
   const { closeStats, itemList } = useStorePick('closeStats', 'itemList')
   const [tab, setTab] = useState<StatsTab>('monthly')
   useEscapeKey(closeStats)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef)
 
   // 연도 목록 계산
   const availableYears = useMemo(() => {
@@ -234,7 +237,7 @@ function StatsContent() {
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeStats()}>
-      <div className="stats-modal">
+      <div className="stats-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="나의 기록 통계">
         {/* 헤더 */}
         <div className="modal-header">
           <span className="modal-title">📊 나의 기록 통계</span>

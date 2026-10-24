@@ -13,7 +13,9 @@
     "build:web": "vite build --config vite.web.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run typecheck && npm run test",
+    "release": "node scripts/release.mjs",
+    "deploy:web": "node scripts/deploy-web.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",

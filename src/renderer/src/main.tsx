@@ -42,8 +42,15 @@ window.addEventListener('drop', (e) => e.preventDefault())
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
+// '로그인 없이 계속하기'를 고르면 기억해 두고 다음부터는 바로 연다 (예전엔 켤 때마다 로그인 화면이 떴음)
+const ANON_KEY = 'moabom_anon_mode'
+const isAnonMode = (): boolean => { try { return localStorage.getItem(ANON_KEY) === '1' } catch { return false } }
+const setAnonMode = (v: boolean): void => {
+  try { if (v) localStorage.setItem(ANON_KEY, '1'); else localStorage.removeItem(ANON_KEY) } catch { /* ignore */ }
+}
+
 const renderAuth = () =>
-  root.render(<><AuthScreen onContinueAnonymous={() => { void enterApp(null) }} isElectron={true} /><DialogHost /></>)
+  root.render(<><AuthScreen onContinueAnonymous={() => { setAnonMode(true); void enterApp(null) }} /><DialogHost /></>)
 
 function renderError(msg: string) {
   root.render(
@@ -150,6 +157,7 @@ async function confirmSessionAndSync(uid: string): Promise<void> {
 
 async function handleAuthEvent(event: AuthChangeEvent, session: Session | null): Promise<void> {
   if (event === 'SIGNED_IN' && session) {
+    setAnonMode(false)
     const uid = session.user.id
     if (enteredScope === uid) {
       // 같은 계정의 세션 복원 신호(시작 직후, 창을 내렸다 올릴 때마다 옴) → 다시 진입하지 않음.
@@ -226,8 +234,10 @@ async function bootstrap() {
       return
     }
 
-    // 저장된 로그인 없음 → 서버에 닿으면 로그인 화면, 닿지 않으면 로그인 없이 바로 연다
-    if (await backendReachable()) renderAuth()
+    // 저장된 로그인 없음 → '로그인 없이'를 골랐었으면 바로 열고,
+    // 아니면 서버에 닿을 때 로그인 화면, 닿지 않으면 로그인 없이 바로 연다
+    if (isAnonMode()) await enterApp(null)
+    else if (await backendReachable()) renderAuth()
     else await enterApp(null)
   } catch (e: unknown) {
     // 어떤 예외가 나도 흰 화면 대신 로컬 모드로 앱을 연다

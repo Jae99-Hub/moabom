@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { coverSrc } from '../utils/cover'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 interface CropArea {
   x: number
@@ -19,6 +20,8 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
   const imgRef = useRef<HTMLImageElement>(null)
   const downOnBackdrop = useRef(false)
   useEscapeKey(onCancel)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef)
   const containerRef = useRef<HTMLDivElement>(null)
   const [crop, setCrop] = useState<CropArea | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -29,7 +32,7 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
 
   const onImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
-    const maxW = 520
+    const maxW = Math.min(520, window.innerWidth - 48) // 휴대폰 화면보다 넓어지지 않게
     const maxH = 400 // .crop-image의 max-height와 같게 — 세로로 긴 표지가 찌그러지고 선택 영역이 어긋나던 문제
     const ratio = img.naturalWidth / img.naturalHeight
     const displayW = Math.min(maxW, img.naturalWidth, maxH * ratio)
@@ -84,8 +87,8 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
     }
   }
 
+  // 화면이 함께 스크롤·확대되지 않게 하는 건 CSS(.crop-container { touch-action: none })가 맡는다
   const onTouchStart = (e: React.TouchEvent) => {
-    e.preventDefault()
     const pos = getTouchRelPos(e)
     setStartPos(pos)
     setCrop({ x: pos.x, y: pos.y, w: 0, h: 0 })
@@ -93,7 +96,6 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
   }
 
   const onTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault()
     if (!dragging) return
     const pos = getTouchRelPos(e)
     setCrop({
@@ -134,7 +136,7 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
       onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
       onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) onCancel() }}
     >
-      <div className="modal" style={{ width: 580 }}>
+      <div className="modal" style={{ width: 'min(580px, 100vw)' }} ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="표지 자르기">
         <div className="modal-header">
           <span className="modal-title">이미지 자르기</span>
           <button className="btn-icon" onClick={onCancel} aria-label="닫기" title="닫기">

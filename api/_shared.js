@@ -16,8 +16,8 @@ export function fromOurSite(req) {
   return false
 }
 
-/** 같은 검색어는 1시간 동안 Vercel이 저장해 둔 결과를 바로 돌려줌 (빠르고 검색 사용량도 아낌) */
-const CACHE = { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400' }
+/** 같은 검색어는 하루 동안 Vercel이 저장해 둔 결과를 바로 돌려줌 (빠르고 검색 사용량도 아낌) */
+const CACHE = { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800' }
 
 export function json(body, status = 200, cache = false) {
   return new Response(JSON.stringify(body), {
@@ -26,6 +26,20 @@ export function json(body, status = 200, cache = false) {
   })
 }
 
+/** 검색어 정리 — 대소문자·띄어쓰기·한글 조합 방식이 달라도 같은 검색어로 (화면 쪽 webApi.ts와 같은 규칙) */
+export function normalizeQuery(q) {
+  return (q || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 100)
+}
+
 export function readQuery(req) {
-  return (new URL(req.url).searchParams.get('q') || '').trim().slice(0, 100)
+  return normalizeQuery(new URL(req.url).searchParams.get('q'))
+}
+
+/** 정리된 검색어 하나만 붙은 주소가 아니면 그 주소로 보냄.
+ *  주소에 아무 값이나 덧붙여 저장된 결과를 피해 가며 검색 사용량을 소모하는 것을 막는다 */
+export function canonicalRedirect(req) {
+  const url = new URL(req.url)
+  const canonical = `${url.pathname}?q=${encodeURIComponent(readQuery(req))}`
+  if (url.pathname + url.search === canonical) return null
+  return Response.redirect(new URL(canonical, url).toString(), 308)
 }

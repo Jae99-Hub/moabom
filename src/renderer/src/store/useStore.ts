@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { Item, ItemFormData, FilterState, QuoteSearchResult } from '../types'
 import type { SyncStatus, SyncConflict } from '../api/syncService'
 import { showToast, confirmDialog } from './dialogs'
+import { josa, shortTitle } from '../utils/korean'
 
 interface AppState {
   itemList: Item[]
@@ -28,6 +29,7 @@ interface AppState {
   restoreItems: (ids: number[]) => Promise<void>
   selectItem: (id: number | null) => void
   setFilter: (key: keyof FilterState, value: string) => void
+  resetFilters: () => void
   toggleTheme: () => void
   openAddModal: (editing?: Item | null) => void
   closeAddModal: () => void
@@ -78,9 +80,10 @@ function scheduleSync(triggerSync: () => Promise<void>) {
   _syncTimer = setTimeout(() => { triggerSync() }, 3000)
 }
 
-const koCollator = new Intl.Collator('ko')
+// numeric: 제목 속 숫자를 수로 비교 (1, 2, 10 순 — 예전엔 1, 10, 100, 2)
+const koCollator = new Intl.Collator('ko', { numeric: true })
 
-function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
+export function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
   let result = [...list]
 
   if (filters.type !== 'all') {
@@ -222,8 +225,7 @@ export const useStore = create<AppState>((set, get) => ({
     }))
     scheduleSync(get().triggerSync)
     if (!canUndo) return
-    const name = title.length > 24 ? title.slice(0, 24) + '…' : title
-    showToast(name ? `"${name}"을(를) 휴지통으로 옮겼어요` : '휴지통으로 옮겼어요', {
+    showToast(title ? `'${shortTitle(title)}'${josa(title, '을/를')} 휴지통으로 옮겼어요` : '휴지통으로 옮겼어요', {
       text: '되돌리기', onClick: () => { void get().restoreItems([id]) }
     })
   },
@@ -240,6 +242,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   setFilter: (key, value) =>
     set((s) => ({ filters: { ...s.filters, [key]: value }, checkedItems: [] })),
+
+  // 종류·상태·장르·검색어를 처음으로 (정렬과 검색 방식은 그대로)
+  resetFilters: () =>
+    set((s) => ({
+      filters: { ...s.filters, type: 'all', status: 'all', genre: 'all', search: '' },
+      checkedItems: [], quoteSearchResults: [], quoteSearchQuery: '',
+    })),
 
   toggleTheme: () =>
     set((s) => {
@@ -262,7 +271,12 @@ export const useStore = create<AppState>((set, get) => ({
       set({ quoteSearchResults: [], quoteSearchQuery: '' })
       return
     }
-    const results = await window.api.quotes.search(query)
+    let results: QuoteSearchResult[]
+    try {
+      results = await window.api.quotes.search(query)
+    } catch {
+      results = [] // 연결 문제 등 — 결과 없음으로 보여 주고, 다음 입력 때 다시 시도
+    }
     if (get().filters.search !== query) return // 그사이 검색어가 바뀌었으면 늦게 온 결과는 버림
     set({ quoteSearchResults: results, quoteSearchQuery: query })
   },

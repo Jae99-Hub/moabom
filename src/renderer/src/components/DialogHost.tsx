@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
 import { useDialogStore, closeConfirm, dismissToast } from '../store/dialogs'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 /** 앱 안 확인창과 아래쪽 알림을 그리는 곳 (App과 로그인 화면에 하나씩) */
 export default function DialogHost() {
@@ -11,8 +12,10 @@ export default function DialogHost() {
   // 되돌릴 수 없는 작업은 처음 포커스를 '취소'에 둠 (Enter를 길게 눌러 바로 지워지지 않게)
   const focusCancel = !!confirm?.danger && !isAlert
 
-  // 확인창은 다른 어떤 창보다 먼저 Esc로 닫힘
+  // 확인창은 다른 어떤 창보다 먼저 Esc로 닫힘. 포커스 되돌리기는 closeConfirm이 맡음
   useEscapeKey(() => closeConfirm(isAlert), !!confirm, 2)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef, !!confirm, false)
 
   return (
     <>
@@ -22,7 +25,7 @@ export default function DialogHost() {
           onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
           onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) closeConfirm(isAlert) }}
         >
-          <div className="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message">
+          <div className="dialog" ref={dialogRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-labelledby={confirm.title ? 'dialog-title' : undefined} aria-describedby="dialog-message">
             {confirm.title && <div className="dialog-title" id="dialog-title">{confirm.title}</div>}
             <div className="dialog-message" id="dialog-message">{confirm.message}</div>
             <div className="dialog-actions">

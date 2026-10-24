@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStorePick } from '../store/useStore'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 interface TourStep {
   selector?: string   // 하이라이트할 실제 요소 (없으면 가운데 카드)
@@ -61,16 +62,28 @@ const STEPS: TourStep[] = [
 const TOOLTIP_W = 340
 const PAD = 8
 
+/** 지금 화면에 보이는 대상만 — 휴대폰에서는 검색·설정·사이드바가 숨거나 화면 밖이라 빈 곳을 가리키던 단계를 건너뜀 */
+function visibleSteps(): TourStep[] {
+  return STEPS.filter((s) => {
+    if (!s.selector) return true
+    const r = document.querySelector(s.selector)?.getBoundingClientRect()
+    return !!r && r.width > 0 && r.height > 0 && r.right > 0 && r.left < window.innerWidth
+  })
+}
+
 export default function OnboardingTour() {
   const { isTourOpen, closeTour } = useStorePick('isTourOpen', 'closeTour')
   useEscapeKey(closeTour, isTourOpen, 1) // 안내는 다른 창보다 위에 떠 있으므로 Esc도 먼저
   const [idx, setIdx] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const [steps, setSteps] = useState<TourStep[]>(STEPS)
+  const cardRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(cardRef, isTourOpen)
 
-  const step = STEPS[idx]
+  const step = steps[idx]
 
   const recalc = useCallback(() => {
-    const sel = STEPS[idx]?.selector
+    const sel = steps[idx]?.selector
     if (!sel) { setRect(null); return }
     const el = document.querySelector(sel) as HTMLElement | null
     if (el) {
@@ -79,10 +92,14 @@ export default function OnboardingTour() {
     } else {
       setRect(null)
     }
-  }, [idx])
+  }, [idx, steps])
 
-  // 투어 열릴 때 첫 단계로 리셋
-  useEffect(() => { if (isTourOpen) setIdx(0) }, [isTourOpen])
+  // 투어 열릴 때 첫 단계로 리셋 + 지금 화면에 보이는 단계만 고름
+  useEffect(() => {
+    if (!isTourOpen) return
+    setSteps(visibleSteps())
+    setIdx(0)
+  }, [isTourOpen])
 
   useLayoutEffect(() => {
     if (!isTourOpen) return
@@ -94,16 +111,24 @@ export default function OnboardingTour() {
   if (!isTourOpen || !step) return null
 
   const isFirst = idx === 0
-  const isLast = idx === STEPS.length - 1
+  const isLast = idx === steps.length - 1
   const next = () => (isLast ? closeTour() : setIdx((i) => i + 1))
   const prev = () => setIdx((i) => Math.max(0, i - 1))
 
   const vw = window.innerWidth
   const vh = window.innerHeight
 
-  // ── 스포트라이트 (대상 주위 투명 구멍) ──
+  // ── 스포트라이트 (대상 주위 투명 구멍) — 창 가장자리 밖으로 나가지 않게 ──
   const spotlight = rect
-    ? { top: rect.top - PAD, left: rect.left - PAD, width: rect.width + PAD * 2, height: rect.height + PAD * 2 }
+    ? (() => {
+        const top = Math.max(2, rect.top - PAD)
+        const left = Math.max(2, rect.left - PAD)
+        return {
+          top, left,
+          width: Math.min(vw - 2, rect.right + PAD) - left,
+          height: Math.min(vh - 2, rect.bottom + PAD) - top,
+        }
+      })()
     : null
 
   // ── 툴팁 위치: 공간이 충분한 쪽(아래→위→오른쪽→왼쪽) 자동 선택 후 화면 안으로 clamp ──
@@ -153,7 +178,13 @@ export default function OnboardingTour() {
 
       {/* 툴팁 카드 */}
       <div
+        ref={cardRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={step.title}
         style={{
+          outline: 'none',
           position: 'fixed',
           width: TOOLTIP_W,
           maxWidth: 'calc(100vw - 24px)',
@@ -171,8 +202,8 @@ export default function OnboardingTour() {
         <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-secondary)' }}>{step.body}</div>
 
         {/* 진행 점 */}
-        <div style={{ display: 'flex', gap: 6, margin: '16px 0 4px' }}>
-          {STEPS.map((_, i) => (
+        <div style={{ display: 'flex', gap: 6, margin: '16px 0 4px' }} aria-label={`${steps.length}단계 중 ${idx + 1}단계`}>
+          {steps.map((_, i) => (
             <span
               key={i}
               style={{
@@ -197,9 +228,9 @@ export default function OnboardingTour() {
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
             {!isFirst && (
-              <button className="btn-secondary" style={{ padding: '7px 14px' }} onClick={prev}>이전</button>
+              <button className="btn-secondary btn-compact" style={{ padding: '7px 14px' }} onClick={prev}>이전</button>
             )}
-            <button className="btn-primary" style={{ padding: '7px 16px' }} onClick={next}>
+            <button className="btn-primary" style={{ padding: '7px 16px' }} onClick={next} autoFocus>
               {isLast ? '시작하기' : '다음'}
             </button>
           </div>

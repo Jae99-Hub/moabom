@@ -443,7 +443,3 @@ export async function getElectronUser(): Promise<{ email: string; name: string }
   }
 }
 
-export async function electronSignOut(): Promise<void> {
-  if (!isSupabaseConfigured || !supabase) return
-  await supabase.auth.signOut()
-}

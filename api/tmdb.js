@@ -1,6 +1,6 @@
 // 영화·드라마 검색 (TMDB) — 검색 키를 브라우저 코드에 두지 않으려고 서버에서 대신 요청한다.
 // 감독 정보까지 서버에서 한 번에 모아 돌려줘서, 휴대폰에서 요청을 여러 번 보내지 않아도 된다.
-import { fromOurSite, json, readQuery } from './_shared.js'
+import { fromOurSite, json, readQuery, canonicalRedirect } from './_shared.js'
 
 // TMDB 서버(미국) 가까이에서 실행 — 검색 1번 + 감독 정보 여러 번을 서버끼리 빠르게 주고받고, 결과만 한 번에 돌려줌
 export const config = { runtime: 'edge', regions: ['iad1'] }
@@ -33,6 +33,8 @@ async function getDirector(mediaType, id, key) {
 
 export default async function handler(req) {
   if (!fromOurSite(req)) return json({ error: '허용되지 않은 요청이에요.' }, 403)
+  const redirect = canonicalRedirect(req)
+  if (redirect) return redirect
   const q = readQuery(req)
   if (!q) return json([])
   const key = process.env.TMDB_API_KEY

@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react'
-import { useStore, useStorePick, useFilteredItems } from '../store/useStore'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
+import { useStore, useStorePick, useFilteredItems, applyFilters } from '../store/useStore'
 import ItemCard from './ItemCard'
 import { CardContextMenu } from './CardContextMenu'
 import { Item, ItemType, ItemStatus, QuoteSearchResult } from '../types'
@@ -7,8 +7,13 @@ import { coverSrc } from '../utils/cover'
 
 import { TYPE_LABEL, STATUS_SHORT } from '../constants/itemMeta'
 
-function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query: string }) {
-  const { itemList, selectItem } = useStorePick('itemList', 'selectItem')
+function QuoteResults({ results: allResults, query }: { results: QuoteSearchResult[]; query: string }) {
+  const { itemList, selectItem, filters } = useStorePick('itemList', 'selectItem', 'filters')
+  // 왼쪽·위의 종류·상태·장르 필터도 명대사 검색에 적용 (예전엔 필터가 켜져 보여도 무시됐음)
+  const results = useMemo(() => {
+    const allowed = new Set(applyFilters(itemList, { ...filters, search: '' }).map((m) => m.id))
+    return allResults.filter((r) => allowed.has(r.item_id))
+  }, [allResults, itemList, filters])
 
   if (results.length === 0) {
     return (
@@ -42,8 +47,9 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
             ) : (
               <div className="quote-result-cover" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                  {r.item_type === 'book'
+                    ? <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>
+                    : <><rect x="2" y="2" width="20" height="20" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></>}
                 </svg>
               </div>
             )}
@@ -51,7 +57,8 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
               <div className="quote-result-text">"{r.text}"</div>
               <div className="quote-result-meta">
                 <span className="quote-result-book">{r.item_title}</span>
-                {r.page_number && <span>p.{r.page_number}</span>}
+                {!!r.page_number && <span>p.{r.page_number}</span>}
+                {!!r.episode_number && <span>{r.episode_number}화</span>}
                 {r.note && <span>— {r.note}</span>}
               </div>
             </div>
@@ -93,6 +100,9 @@ const ItemRow = React.memo(function ItemRow({ item }: { item: Item }) {
       className={`list-row${isSelected && !selectionMode ? ' selected' : ''}${selectionMode && isChecked ? ' checked' : ''}`}
       role="button"
       tabIndex={0}
+      data-item-id={item.id}
+      aria-label={item.title}
+      aria-pressed={selectionMode ? isChecked : undefined}
       onKeyDown={(e) => {
         if (!selectionMode && useStore.getState().selectedId != null) return // 상세창이 열려 있으면 무시
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick() }
@@ -162,8 +172,8 @@ const ItemRow = React.memo(function ItemRow({ item }: { item: Item }) {
 })
 
 export default function ItemGrid() {
-  const { filters, quoteSearchResults, quoteSearchQuery, viewMode, selectionMode } =
-    useStorePick('filters', 'quoteSearchResults', 'quoteSearchQuery', 'viewMode', 'selectionMode')
+  const { filters, quoteSearchResults, quoteSearchQuery, viewMode, selectionMode, resetFilters } =
+    useStorePick('filters', 'quoteSearchResults', 'quoteSearchQuery', 'viewMode', 'selectionMode', 'resetFilters')
   const filtered = useFilteredItems()
 
   if (filters.searchMode === 'quote' && filters.search.trim()) {
@@ -185,6 +195,9 @@ export default function ItemGrid() {
           </svg>
           <p>{isFiltered ? '조건에 맞는 작품이 없어요' : '아직 기록한 작품이 없어요'}</p>
           <span>{isFiltered ? '다른 낱말이나 필터로 찾아보세요' : '오른쪽 위 + 추가 버튼으로 첫 작품을 등록해 보세요'}</span>
+          {isFiltered && (
+            <button className="btn-secondary btn-compact" style={{ marginTop: 12 }} onClick={resetFilters}>필터 초기화</button>
+          )}
         </div>
       </div>
     )

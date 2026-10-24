@@ -67,6 +67,9 @@
   --text-muted: #6b7194;
   --text-accent: #4f46e5;
 
+  /* 별점 글씨가 흰 배경에서도 읽히게 (예전 #f59e0b는 2.2:1) */
+  --star: #b45309;
+
   /* 밝은 배경에서도 읽히는 진한 종류별 글씨색 (예전 연한 색은 흰 배경 대비 1.7~2.7:1) */
   --type-book-text: #2563eb;
   --type-movie-text: #7c3aed;
@@ -117,7 +120,8 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
 
 /* Layout */
-.app { display: flex; flex-direction: column; height: 100vh; }
+/* 휴대폰 브라우저는 100vh가 주소창까지 포함해 아래가 잘림 → 보이는 높이(dvh) 우선 */
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .app-body { display: flex; flex: 1; overflow: hidden; }
 
 /* Header */
@@ -576,7 +580,9 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 }
 
 .list-row-right { width: 160px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.list-row-rating { font-size: 11px; color: #f59e0b; white-space: nowrap; }
+.list-row-rating { font-size: 11px; color: var(--star); white-space: nowrap; }
+/* 머리글 칸은 줄의 글씨 크기·색을 따르지 않고 머리글 모양 그대로 */
+.list-header > div { font-size: inherit; color: inherit; font-weight: inherit; }
 .list-row-status {
   font-size: 10px;
   font-weight: 600;
@@ -763,11 +769,18 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   justify-content: space-between;
 }
 
-.media-card-year { font-size: 11px; color: var(--text-muted); }
+/* 저자·감독이 길어도 한 줄로 (예전엔 카드 하나가 6줄로 늘어나 그 줄 전체가 커졌음) */
+.media-card-year {
+  font-size: 11px; color: var(--text-muted);
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .media-card-rating {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+  margin-left: 6px;
   gap: 3px;
   font-size: 11px;
   font-weight: 600;
@@ -825,15 +838,16 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 }
 .media-card-progress-bar { height: 100%; background: var(--accent); border-radius: 0; }
 
-.status-want { background: rgba(99,102,241,0.85); color: #fff; }
-.status-reading { background: rgba(16,185,129,0.85); color: #fff; }
-.status-done { background: rgba(107,114,128,0.85); color: #fff; }
-.status-dropped { background: rgba(239,68,68,0.85); color: #fff; }
+/* 흰 글씨가 4.5:1 이상 되도록 진한 색 (예전 반투명 색은 '진행' 배지가 2.2:1이라 잘 안 읽혔음) */
+.status-want { background: #4f46e5; color: #fff; }
+.status-reading { background: #047857; color: #fff; }
+.status-done { background: #4b5563; color: #fff; }
+.status-dropped { background: #dc2626; color: #fff; }
 
-.type-book { background: rgba(59,130,246,0.85); color: #fff; }
-.type-movie { background: rgba(139,92,246,0.85); color: #fff; }
-.type-drama { background: rgba(236,72,153,0.85); color: #fff; }
-.type-documentary { background: rgba(180,83,9,0.9); color: #fff; }
+.type-book { background: #2563eb; color: #fff; }
+.type-movie { background: #7c3aed; color: #fff; }
+.type-drama { background: #be185d; color: #fff; }
+.type-documentary { background: #b45309; color: #fff; }
 
 /* Detail Panel */
 
@@ -855,7 +869,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 
 .detail-info-item { background: var(--bg-card); border-radius: var(--radius-sm); padding: 8px 10px; min-width: 0; }
 .detail-info-label { font-size: 10px; color: var(--text-muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
-.detail-info-value { font-size: 13px; font-weight: 600; color: var(--text-primary); word-break: break-all; }
+.detail-info-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 
 .detail-info-genre { display: flex; flex-wrap: wrap; gap: 4px; }
 .detail-genre-tag {
@@ -1237,7 +1251,13 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 .stars { display: flex; gap: 2px; }
 .star { cursor: pointer; color: var(--text-muted); transition: color 0.1s; font-size: 18px; }
 .star.filled { color: var(--star); }
-.star.half { color: var(--star); }
+/* 반 별: 왼쪽 절반만 칠함 (예전엔 꽉 찬 별과 똑같아 4.5가 별 5개로 보였음) */
+.star.half {
+  background: linear-gradient(90deg, var(--star) 50%, var(--text-muted) 50%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 .star:hover { color: var(--star); }
 /* 읽기 전용 별점(상세창)은 마우스를 올려도 바뀌지 않게 */
 .stars.readonly .star { cursor: default; }
@@ -1342,11 +1362,18 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 10px 12px;
   cursor: pointer;
   transition: background 0.1s;
+  border: none;
   border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
+.search-result-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .search-result-item:last-child { border-bottom: none; }
 .search-result-item:hover { background: var(--bg-hover); }
 
@@ -1490,6 +1517,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   border-radius: var(--radius-md);
   cursor: crosshair;
   user-select: none;
+  touch-action: none; /* 손가락으로 영역을 고를 때 화면이 같이 움직이지 않게 */
 }
 .crop-image { display: block; max-width: 100%; max-height: 400px; }
 .crop-selection {
@@ -1879,6 +1907,13 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.7;
+  white-space: pre-line;
+}
+.dm-overview.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .dm-footer {
@@ -1982,6 +2017,41 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   margin: 4px 0 0;
   text-align: center;
   line-height: 1.5;
+}
+
+/* 앱 안 브라우저(카카오톡 등) 안내 */
+.auth-inapp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-glow);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: left;
+}
+.auth-inapp strong { color: var(--text-primary); }
+.auth-inapp-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.auth-anon-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* 비로그인 계속 버튼 */
@@ -2701,11 +2771,12 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 }
 .stat-bar-y-tick { font-size: 10px; color: var(--text-muted); text-align: right; }
 
+/* 막대 칸은 그래프 높이만큼 늘어나야 안의 % 높이가 계산됨 (예전 flex-end로는 막대가 전혀 안 그려졌음) */
 .stat-bar-chart {
   flex: 1;
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 4px;
   padding-bottom: 22px;
 }
@@ -2727,6 +2798,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 }
 .stat-bar-col-inner {
   flex: 1;
+  min-height: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -2927,7 +2999,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 .toast-stack {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 450;
   display: flex;
@@ -2992,5 +3064,29 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   .spinner { animation-duration: 0.8s !important; animation-iteration-count: infinite !important; }
 }
 
-/* 상세창은 열릴 때 프로그램으로 포커스를 받음 — 테두리는 표시하지 않음 */
-.detail-modal-inner:focus { outline: none; }
+/* 창은 열릴 때 프로그램으로 포커스를 받음 — 테두리는 표시하지 않음 */
+.detail-modal-inner:focus, .add-modal-shell:focus, .modal:focus, .settings-modal:focus,
+.stats-modal:focus, .dialog:focus { outline: none; }
+
+/* 버튼이 줄 안에서 늘어나지 않게 (휴지통·백업 목록 — 예전엔 버튼이 커져 제목이 잘렸음) */
+.btn-secondary.btn-compact { flex: 0 0 auto; width: auto; }
+
+/* 창이 떠 있을 때는 알림을 위로 — 아래에 있으면 창의 '취소'·'저장' 버튼을 가렸음 */
+body:has(.modal-overlay, .dm-overlay, .dialog-overlay) .toast-stack { top: 16px; bottom: auto; }
+
+/* 휴대폰 */
+@media (max-width: 768px) {
+  /* 16px보다 작은 입력칸은 iPhone이 누를 때마다 화면을 확대함 */
+  input, textarea, select, .form-input, .form-textarea, .header-search input { font-size: 16px; }
+
+  /* 보이는 높이 기준 (주소창 때문에 아래가 잘리던 것) */
+  .detail-modal-inner { max-height: 92dvh; }
+  .settings-modal, .modal { max-height: 90dvh; }
+  .add-modal-shell { height: 100dvh; max-height: 100dvh; }
+
+  /* 홈 표시줄(아이폰 아래 막대)과 겹치지 않게 */
+  .add-modal-footer, .modal-footer { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .dm-footer { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .selection-bar { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .media-grid-wrapper { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+}

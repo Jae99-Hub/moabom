@@ -1,12 +1,14 @@
 import React from 'react'
 import { useStore, useStorePick, selectFilteredItems, hasTrash } from '../store/useStore'
 import { confirmDialog } from '../store/dialogs'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 export default function SelectionBar() {
   const { selectionMode, checkedItems, exitSelectionMode, selectAllChecked, deleteCheckedItems } =
     useStorePick('selectionMode', 'checkedItems', 'exitSelectionMode', 'selectAllChecked', 'deleteCheckedItems')
   // 선택 모드일 때만 개수를 본다 (목록 계산은 공유 캐시라 다시 정렬하지 않음)
   const filteredCount = useStore((s) => (s.selectionMode ? selectFilteredItems(s).length : 0))
+  useEscapeKey(exitSelectionMode, selectionMode) // Esc로 선택 모드 끝내기
 
   if (!selectionMode) return null
 
@@ -31,7 +33,7 @@ export default function SelectionBar() {
   }
 
   return (
-    <div className="selection-bar">
+    <div className="selection-bar" role="toolbar" aria-label="선택한 작품">
       <button className="selection-bar-cancel" onClick={exitSelectionMode}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

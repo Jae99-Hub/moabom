@@ -5,6 +5,8 @@ import StarRating from './StarRating'
 import { coverSrc } from '../utils/cover'
 import { TYPE_LABEL, statusLabels, quoteWord } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
+import { statusPatch } from '../utils/itemRules'
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
   if (!total || total <= 0) return null
@@ -46,7 +48,7 @@ function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) 
             {(q.page_number || q.episode_number || q.note) && (
               <div className="quote-item-meta">
                 {q.page_number ? `p.${q.page_number}` : ''}
-                {q.episode_number ? `E${String(q.episode_number).padStart(2, '0')}` : ''}
+                {q.episode_number ? `${q.episode_number}화` : ''}
                 {(q.page_number || q.episode_number) && q.note ? ' · ' : ''}
                 {q.note}
               </div>
@@ -67,12 +69,17 @@ function DetailContent({ item }: { item: Item }) {
   const { deleteItem, openAddModal, openQuotesModal, selectItem, updateItem } =
     useStorePick('deleteItem', 'openAddModal', 'openQuotesModal', 'selectItem', 'updateItem')
   const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const [overviewOpen, setOverviewOpen] = useState(false)
   const [coverFailed, setCoverFailed] = useState(false)
   useEffect(() => setCoverFailed(false), [item.cover_path]) // 표지를 바꾸면 다시 시도
-  // 열리면 포커스를 상세창 안으로 — 키 입력이 뒤의 카드로 가지 않고, 스페이스로 내용을 스크롤
+  // 열리면 포커스를 상세창 안으로 — 키 입력이 뒤의 카드로 가지 않고, 스페이스로 내용을 스크롤.
+  // Tab은 창 안에서만 돈다. 닫힐 때 포커스는 DetailModal이 그 작품 카드로 돌려준다.
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => { rootRef.current?.focus({ preventScroll: true }) }, [])
+  useFocusTrap(rootRef, true, false)
   const statusMenuRef = useRef<HTMLDivElement>(null)
+  // 상태 목록이 열려 있으면 Esc는 목록만 닫음 (예전엔 상세창까지 닫혔음)
+  useEscapeKey(() => setShowStatusMenu(false), showStatusMenu)
   const isBook = item.item_type === 'book'
   const statusMap = statusLabels(item.item_type)
 
@@ -91,7 +98,8 @@ function DetailContent({ item }: { item: Item }) {
   const handleStatusChange = async (newStatus: ItemStatus) => {
     setShowStatusMenu(false)
     if (newStatus === item.status) return
-    await updateItem(item.id, { status: newStatus })
+    // 완료로 바꾸면 완료일(비었을 때 오늘)·다 읽은 쪽수도 함께
+    await updateItem(item.id, statusPatch(item, newStatus))
   }
 
   const coverUrl = coverSrc(item.cover_path)
@@ -153,6 +161,8 @@ function DetailContent({ item }: { item: Item }) {
                 className={`status-tag-btn status-${item.status}`}
                 onClick={() => setShowStatusMenu((v) => !v)}
                 title="상태 변경"
+                aria-haspopup="menu"
+                aria-expanded={showStatusMenu}
               >
                 {statusMap[item.status]}
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ opacity: 0.7 }}>
@@ -243,8 +253,16 @@ function DetailContent({ item }: { item: Item }) {
 
         {item.overview && (
           <div className="detail-section">
-            <div className="detail-section-title"><span>줄거리</span></div>
-            <div className="dm-overview">{item.overview}</div>
+            <div className="detail-section-title">
+              <span>줄거리</span>
+              {item.overview.length > 240 && (
+                <button className="btn-text" onClick={() => setOverviewOpen((v) => !v)} aria-expanded={overviewOpen}>
+                  {overviewOpen ? '접기' : '더 보기'}
+                </button>
+              )}
+            </div>
+            {/* 긴 줄거리는 접어 둠 — 감상평·명대사가 한참 아래로 밀리던 것 */}
+            <div className={`dm-overview${item.overview.length > 240 && !overviewOpen ? ' clamped' : ''}`}>{item.overview}</div>
           </div>
         )}
         {item.review && (
@@ -293,6 +311,17 @@ export default function DetailModal() {
 
   // Esc는 맨 위 창부터 닫힘 (명대사 창이 위에 있으면 그것 먼저)
   useEscapeKey(() => selectItem(null), !!selected)
+
+  // 닫히면 마지막으로 보던 작품의 카드로 포커스를 돌려줌 — 키보드로 600개 목록의 자리를 잃지 않게
+  const lastShownId = useRef<number | null>(null)
+  useEffect(() => {
+    if (selected) { lastShownId.current = selected.id; return }
+    const id = lastShownId.current
+    lastShownId.current = null
+    if (id == null) return
+    const card = document.querySelector<HTMLElement>(`[data-item-id="${id}"]`)
+    if (card && (document.activeElement === document.body || !document.activeElement)) card.focus({ preventScroll: false })
+  }, [selected])
 
   useEffect(() => {
     if (!selectedId) return // 상세창이 닫혀 있으면 키를 가로채지 않음

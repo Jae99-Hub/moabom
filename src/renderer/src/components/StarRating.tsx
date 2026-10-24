@@ -13,7 +13,12 @@ export default function StarRating({ value, onChange, readonly = false, size = 2
   const display = hovered ?? value ?? 0
 
   return (
-    <div className={`stars${readonly ? ' readonly' : ''}`} onMouseLeave={() => setHovered(null)}>
+    <div
+      className={`stars${readonly ? ' readonly' : ''}`}
+      onMouseLeave={() => setHovered(null)}
+      role={readonly ? 'img' : undefined}
+      aria-label={readonly && value != null ? `별점 ${value}점` : undefined}
+    >
       {[1, 2, 3, 4, 5].map((star) => {
         const filled = display >= star
         const half = !filled && display >= star - 0.5
@@ -29,7 +34,7 @@ export default function StarRating({ value, onChange, readonly = false, size = 2
             tabIndex={readonly ? undefined : 0}
             onKeyDown={(e) => { if (!readonly && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onChange?.(star) } }}
           >
-            {half ? '★' : filled ? '★' : '☆'}
+            {filled || half ? '★' : '☆'}
           </span>
         )
       })}

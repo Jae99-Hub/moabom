@@ -14,6 +14,16 @@ export type GoogleBookResult = {
   genre: string
 }
 
+/** 책 소개에 섞여 오는 HTML 태그(<p>, <br> 등)를 글자만 남기고 정리 */
+export function plainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>\s*/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n').trim()
+}
+
 // Simple in-memory cache to avoid hitting rate limits
 const cache = new Map<string, { data: GoogleBookResult[]; ts: number }>()
 const CACHE_MS = 5 * 60 * 1000
@@ -46,7 +56,7 @@ function mapVolume(item: {
     isbn: isbn13 || isbn10,
     page_count: v.pageCount ?? null,
     year: v.publishedDate ? v.publishedDate.slice(0, 4) : null,
-    overview: v.description ?? '',
+    overview: plainText(v.description ?? ''),
     cover_path: coverPath,
     genre: (v.categories ?? []).join(', ')
   }

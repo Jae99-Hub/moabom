@@ -92,27 +92,20 @@ function setupAutoUpdater(win: BrowserWindow) {
 }
 
 // ── 로컬 OAuth 수신 서버 (localhost:3000) ─────────────────────────
-// Supabase Site URL이 localhost:3000으로 설정되어 있어
-// redirectTo: 'http://localhost:3000'으로 OAuth 콜백을 받음.
-// PKCE flow(현재): ?code=...가 쿼리로 옴 → moabom://auth-callback?code=...로 전달
-// Implicit flow(예전 버전 호환): #access_token=...가 해시로 옴 → 쿼리로 바꿔 전달
+// Supabase Site URL이 localhost:3000으로 설정되어 있어 redirectTo: 'http://localhost:3000'으로 로그인 결과를 받음.
+// PKCE: ?code=...(일회용 코드)만 moabom://auth-callback?code=...로 앱에 전달.
+// 이 코드는 로그인을 시작한 이 앱의 비밀값이 있어야만 쓸 수 있다. 토큰(#access_token)은 받지 않음.
 function startLocalAuthServer() {
   const HTML = `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f0f13;color:#e8e8e8;}</style>
+<html lang="ko"><head><meta charset="utf-8"><title>모아봄 로그인</title>
+<style>body{font-family:'Malgun Gothic',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f0f13;color:#e8e8e8;}</style>
 </head><body>
 <p>로그인 처리 중이에요. 곧 앱으로 돌아가요.</p>
 <script>
 var s = window.location.search;
-var h = window.location.hash;
-if (s && s.includes('code=')) {
-  // PKCE: ?code=... → 쿼리 파라미터 그대로 전달
+if (s && s.indexOf('code=') !== -1) {
   window.location.href = 'moabom://auth-callback' + s;
-  setTimeout(function(){ window.close(); }, 2000);
-} else if (h && h.includes('access_token')) {
-  // Implicit: #access_token=... → 해시는 커스텀 프로토콜에서 잘리므로 쿼리 파라미터로 변환
-  window.location.href = 'moabom://auth-callback?' + h.slice(1);
-  setTimeout(function(){ window.close(); }, 2000);
+  setTimeout(function(){ document.querySelector('p').textContent = '앱으로 돌아갔어요. 이 창은 닫아도 돼요.'; window.close(); }, 2000);
 } else {
   document.querySelector('p').textContent = '로그인 정보를 찾지 못했어요. 앱에서 다시 시도해 주세요.';
 }
@@ -120,7 +113,11 @@ if (s && s.includes('code=')) {
 </body></html>`
 
   const server = http.createServer((_req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+    })
     res.end(HTML)
   })
 

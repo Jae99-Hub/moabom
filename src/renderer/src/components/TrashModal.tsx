@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useStorePick } from '../store/useStore'
 import { TrashItem } from '../types'
 import { coverSrc } from '../utils/cover'
 import { confirmDialog, showToast } from '../store/dialogs'
 import { typeEmojiLabel } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { parseDbDate } from '../utils/date'
+import { josa } from '../utils/korean'
 
 const RETENTION_DAYS = 15
 
@@ -41,6 +43,8 @@ export default function TrashModal() {
   const [busyId, setBusyId] = useState<number | null>(null)
   const [emptying, setEmptying] = useState(false)
   useEscapeKey(closeTrash, isTrashOpen)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, isTrashOpen)
 
   // quiet: 복원·삭제 뒤 목록만 다시 맞출 때 ('불러오는 중'으로 깜빡이지 않게)
   const refresh = async (quiet = false) => {
@@ -79,7 +83,7 @@ export default function TrashModal() {
   const handlePurge = async (item: TrashItem) => {
     const ok = await confirmDialog({
       title: '완전히 삭제할까요?',
-      message: `"${item.title}"을(를) 지우면 되돌릴 수 없어요.`,
+      message: `'${item.title}'${josa(item.title, '을/를')} 지우면 되돌릴 수 없어요.`,
       confirmText: '완전히 삭제',
       danger: true,
     })
@@ -101,7 +105,9 @@ export default function TrashModal() {
     if (items.length === 0) return
     const ok = await confirmDialog({
       title: '휴지통을 비울까요?',
-      message: `${items.length}개를 모두 완전히 삭제해요. 되돌릴 수 없어요.`,
+      message: items.length === 1
+        ? '휴지통의 1개를 완전히 삭제해요. 되돌릴 수 없어요.'
+        : `${items.length}개를 모두 완전히 삭제해요. 되돌릴 수 없어요.`,
       confirmText: '비우기',
       danger: true,
     })
@@ -121,7 +127,7 @@ export default function TrashModal() {
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeTrash()}>
-      <div className="settings-modal">
+      <div className="settings-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="휴지통">
         {/* 헤더 */}
         <div className="modal-header">
           <span className="modal-title">🗑️ 휴지통</span>
@@ -182,16 +188,18 @@ export default function TrashModal() {
                       </div>
                     </div>
                     <button
-                      className="btn-secondary"
-                      style={{ flexShrink: 0, padding: '6px 12px' }}
+                      className="btn-secondary btn-compact"
+                      style={{ padding: '6px 12px' }}
                       onClick={() => handleRestore(item)}
                       disabled={busy}
+                      aria-label={`${item.title} 복원`}
                     >
                       복원
                     </button>
                     <button
-                      className="btn-secondary"
-                      style={{ flexShrink: 0, padding: '6px 12px', color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
+                      className="btn-secondary btn-compact"
+                      aria-label={`${item.title} 영구삭제`}
+                      style={{ padding: '6px 12px', color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
                       onClick={() => handlePurge(item)}
                       disabled={busy}
                     >

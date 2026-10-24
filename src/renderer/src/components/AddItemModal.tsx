@@ -7,6 +7,9 @@ import GenreTagInput from './GenreTagInput'
 import { coverSrc } from '../utils/cover'
 import { confirmDialog, alertDialog } from '../store/dialogs'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
+import { statusPatch, findDuplicate, validateForm } from '../utils/itemRules'
+import { josa } from '../utils/korean'
 
 /** Electron이 붙이는 "Error invoking remote method '…': Error: " 접두어를 떼고 사용자용 문구만 남김 */
 function friendlyError(e: unknown): string {
@@ -98,6 +101,8 @@ export default function AddItemModal() {
   const initialSnapshotRef = useRef('')
   // 배경에서 누르고 배경에서 뗐을 때만 닫음 (감상문을 드래그하다 창 밖에서 놓아도 닫히지 않게)
   const downOnBackdrop = useRef(false)
+  const shellRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(shellRef, isAddModalOpen)
 
   useEffect(() => {
     if (!isAddModalOpen) return
@@ -127,8 +132,8 @@ export default function AddItemModal() {
   const requestClose = async () => {
     if (formSnapshot(form) !== initialSnapshotRef.current) {
       const ok = await confirmDialog({
-        title: '작성 중인 내용이 있어요',
-        message: '저장하지 않고 닫으면 지금 쓴 내용이 사라져요.',
+        title: editingItem ? '수정한 내용이 있어요' : '작성 중인 내용이 있어요',
+        message: editingItem ? '저장하지 않고 닫으면 고친 내용이 사라져요.' : '저장하지 않고 닫으면 지금 쓴 내용이 사라져요.',
         confirmText: '닫기',
         cancelText: '계속 쓰기',
         danger: true,
@@ -148,7 +153,14 @@ export default function AddItemModal() {
     searchSeqRef.current++ // 진행 중이던 검색 결과는 버림
     setIsSearching(false)
     setForm((p) => {
-      // 책 ↔ 영상: 검색으로 채운 작품 정보(제목·표지·줄거리 등)는 다른 종류의 것이라 비운다
+      // 이미 저장된 작품을 고치는 중이면 종류를 바로잡는 것 — 제목·표지·줄거리는 두고
+      // 새 종류에 없는 칸(저자↔감독 등)과 다른 검색처의 번호만 비운다 (예전엔 제목까지 모두 지워졌음)
+      if (editingItem) {
+        return newType === 'book'
+          ? { ...p, item_type: newType, director: '', platform: '', tmdb_id: null, backdrop_path: null }
+          : { ...p, item_type: newType, author: '', publisher: '', isbn: '', page_count: null, current_page: 0, google_books_id: null }
+      }
+      // 새로 추가하는 중, 책 ↔ 영상: 검색으로 채운 작품 정보(제목·표지·줄거리 등)는 다른 종류의 것이라 비운다
       // (예전엔 드라마로 검색한 뒤 도서로 바꿔도 드라마 정보가 그대로 남았음).
       // 직접 쓴 기록(상태·별점·감상·완료일)과 직접 넣은 표지는 남김.
       if (p.google_books_id || p.tmdb_id) {
@@ -250,7 +262,24 @@ export default function AddItemModal() {
   }
 
   const handleSubmit = async () => {
-    if (!form.title.trim()) { setActiveTab('info'); return }
+    const problem = validateForm(form)
+    if (problem) {
+      setActiveTab(problem.tab)
+      if (form.title.trim()) void alertDialog(problem.message, '입력을 확인해 주세요')
+      return
+    }
+    if (!editingItem) {
+      const dup = findDuplicate(itemList, form)
+      if (dup) {
+        const ok = await confirmDialog({
+          title: '이미 기록한 작품이에요',
+          message: `'${dup.title}'${josa(dup.title, '이/가')} 이미 있어요. 그래도 하나 더 추가할까요?`,
+          confirmText: '추가',
+          cancelText: '돌아가기',
+        })
+        if (!ok) return
+      }
+    }
     setIsSaving(true)
     try {
       const safePageCount = form.page_count != null ? Math.max(1, Math.round(form.page_count)) : null
@@ -268,9 +297,10 @@ export default function AddItemModal() {
         review: form.review?.trim() || null,
         read_date: form.read_date?.trim() || null,
         page_count: safePageCount,
-        current_page: safePageCount != null
-          ? Math.min(safePageCount, Math.max(0, Math.round(form.current_page ?? 0)))
-          : 0
+        // 완독이면 다 읽은 것으로 (예전엔 120/244쪽에서 완독으로 바꿔도 진행률 49%가 남았음)
+        current_page: safePageCount == null ? 0
+          : form.status === 'done' ? safePageCount
+          : Math.min(safePageCount, Math.max(0, Math.round(form.current_page ?? 0)))
       }
       if (editingItem) {
         await updateItem(editingItem.id, payload)
@@ -288,6 +318,10 @@ export default function AddItemModal() {
 
   const set = (key: keyof ItemFormData, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }))
+
+  // 완료로 바꾸면 완료일 칸에 오늘을 넣어 둔다 (비어 있을 때만 — 보이는 칸이라 바로 고치거나 지울 수 있음)
+  const setStatus = (status: ItemStatus) =>
+    setForm((prev) => ({ ...prev, ...statusPatch({ ...prev, current_page: prev.current_page ?? 0 }, status) }))
 
   const addGenreChip = (g: string) => {
     const current = form.genre ? form.genre.split(',').map(s => s.trim()).filter(Boolean) : []
@@ -322,11 +356,27 @@ export default function AddItemModal() {
           else if (hasResults) closeResults()
         }}
       >
-        <div className="add-modal-shell" onClick={(e) => { if (hasResults) { closeResults(); e.stopPropagation() } }}>
+        <div
+          className="add-modal-shell"
+          ref={shellRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-label={editingItem ? '작품 편집' : '새 작품 추가'}
+          onClick={(e) => { if (hasResults) { closeResults(); e.stopPropagation() } }}
+        >
 
           {/* ── 왼쪽: 표지 + 종류 ── */}
           <div className="add-modal-left">
-            <div className="add-modal-cover-wrap" onClick={!coverUrl ? handlePickImage : undefined} style={!coverUrl ? { cursor: 'pointer' } : {}}>
+            <div
+              className="add-modal-cover-wrap"
+              onClick={!coverUrl ? handlePickImage : undefined}
+              style={!coverUrl ? { cursor: 'pointer' } : {}}
+              role={!coverUrl ? 'button' : undefined}
+              tabIndex={!coverUrl ? 0 : undefined}
+              aria-label={!coverUrl ? '표지 추가' : undefined}
+              onKeyDown={!coverUrl ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void handlePickImage() } } : undefined}
+            >
               {coverUrl ? (
                 <>
                   <img className="add-modal-cover-img" src={coverUrl} alt="" />
@@ -358,6 +408,7 @@ export default function AddItemModal() {
                   key={v}
                   className={`add-modal-type-btn${form.item_type === v ? ' active' : ''}`}
                   onClick={() => switchType(v)}
+                  aria-pressed={form.item_type === v}
                 >
                   <span>{icon}</span>
                   <span>{l}</span>
@@ -438,7 +489,7 @@ export default function AddItemModal() {
                     {hasResults && (
                       <div className="search-results">
                         {bookResults.map((r) => (
-                          <div key={r.google_books_id} className="search-result-item" onClick={() => applyBook(r)}>
+                          <button type="button" key={r.google_books_id} className="search-result-item" onClick={() => applyBook(r)}>
                             {r.cover_path ? <img className="search-result-poster" src={r.cover_path} alt="" /> : <div className="search-result-poster" />}
                             <div className="search-result-info">
                               <div className="search-result-title">{r.title}</div>
@@ -447,10 +498,10 @@ export default function AddItemModal() {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                               <polyline points="9 18 15 12 9 6" />
                             </svg>
-                          </div>
+                          </button>
                         ))}
                         {tmdbResults.map((r) => (
-                          <div key={r.tmdb_id} className="search-result-item" onClick={() => applyTmdb(r)}>
+                          <button type="button" key={r.tmdb_id} className="search-result-item" onClick={() => applyTmdb(r)}>
                             {r.cover_path ? <img className="search-result-poster" src={r.cover_path} alt="" /> : <div className="search-result-poster" />}
                             <div className="search-result-info">
                               <div className="search-result-title">{r.title}</div>
@@ -461,7 +512,7 @@ export default function AddItemModal() {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                               <polyline points="9 18 15 12 9 6" />
                             </svg>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -498,11 +549,11 @@ export default function AddItemModal() {
                     <div className="form-row">
                       <div className="form-group">
                         <label className="form-label">전체 페이지</label>
-                        <input className="form-input" type="number" value={form.page_count ?? ''} onChange={(e) => set('page_count', e.target.value ? parseInt(e.target.value) : null)} placeholder="300" min={1} />
+                        <input className="form-input" type="number" inputMode="numeric" value={form.page_count ?? ''} onChange={(e) => set('page_count', e.target.value ? parseInt(e.target.value) : null)} placeholder="예: 300" min={1} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">ISBN</label>
-                        <input className="form-input" value={form.isbn ?? ''} onChange={(e) => set('isbn', e.target.value)} placeholder="9791234567890" />
+                        <input className="form-input" value={form.isbn ?? ''} onChange={(e) => set('isbn', e.target.value)} placeholder="13자리 숫자" />
                       </div>
                     </div>
                   )}
@@ -527,7 +578,7 @@ export default function AddItemModal() {
                   <div className="form-row" style={{ alignItems: 'flex-start' }}>
                     <div className="form-group" style={{ flex: '0 0 90px' }}>
                       <label className="form-label">연도</label>
-                      <input className="form-input" type="number" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="2024" min={1900} max={2100} />
+                      <input className="form-input" type="number" inputMode="numeric" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="예: 2024" min={1000} max={2100} />
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label className="form-label">
@@ -562,16 +613,17 @@ export default function AddItemModal() {
                   <div className="form-group">
                     <label className="form-label">상태</label>
                     <div className="status-btn-group">
-                      {[
+                      {([
                         { v: 'want',    label: isBook ? '읽고 싶다' : '볼 예정',   icon: '🔖' },
-                        { v: 'reading', label: isBook ? '읽는 중'   : '보는 중',   icon: '📖' },
+                        { v: 'reading', label: isBook ? '읽는 중'   : '보는 중',   icon: isBook ? '📖' : '▶️' },
                         { v: 'done',    label: isBook ? '완독'       : '시청 완료', icon: '✅' },
                         { v: 'dropped', label: '중단',                              icon: '⏸' }
-                      ].map(({ v, label, icon }) => (
+                      ] as const).map(({ v, label, icon }) => (
                         <button
                           key={v}
                           className={`status-btn${form.status === v ? ' active' : ''} status-btn-${v}`}
-                          onClick={() => set('status', v)}
+                          onClick={() => setStatus(v)}
+                          aria-pressed={form.status === v}
                         >
                           <span>{icon}</span>
                           <span>{label}</span>
@@ -582,19 +634,24 @@ export default function AddItemModal() {
 
                   <div className="form-section-divider" />
 
-                  {/* 날짜 + 페이지 */}
-                  <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                    <div className="form-group">
-                      <label className="form-label">{isBook ? '완독일' : '시청일'}</label>
-                      <input className="form-input" type="date" value={form.read_date ?? ''} onChange={(e) => set('read_date', e.target.value)} />
+                  {/* 날짜 + 페이지 — 완료일은 완료했을 때만 (읽는 중인데 '완독일' 칸이 보이던 것) */}
+                  {(form.status === 'done' || !!form.read_date || (isBook && form.status === 'reading' && !!form.page_count)) && (
+                    <div className="form-row" style={{ alignItems: 'flex-end' }}>
+                      {(form.status === 'done' || !!form.read_date) && (
+                        <div className="form-group">
+                          <label className="form-label">{isBook ? '완독일' : '시청일'}</label>
+                          <input className="form-input" type="date" value={form.read_date ?? ''} onChange={(e) => set('read_date', e.target.value)} />
+                        </div>
+                      )}
+                      {isBook && form.status === 'reading' && !!form.page_count && (
+                        <div className="form-group">
+                          <label className="form-label">현재 페이지</label>
+                          {/* 0일 때는 빈칸으로 — 예전엔 0 뒤에 이어 쳐져 '0120'이 됐음 */}
+                          <input className="form-input" type="number" inputMode="numeric" value={form.current_page || ''} onChange={(e) => set('current_page', Math.max(0, parseInt(e.target.value) || 0))} min={0} max={form.page_count} placeholder={`0 ~ ${form.page_count}`} />
+                        </div>
+                      )}
                     </div>
-                    {isBook && form.status === 'reading' && form.page_count && (
-                      <div className="form-group">
-                        <label className="form-label">현재 페이지</label>
-                        <input className="form-input" type="number" value={form.current_page ?? 0} onChange={(e) => set('current_page', parseInt(e.target.value) || 0)} min={0} max={form.page_count} placeholder={`0 ~ ${form.page_count}`} />
-                      </div>
-                    )}
-                  </div>
+                  )}
                   {progress !== null && (
                     <div className="reading-progress-preview">
                       <div className="reading-progress-bar-bg">
@@ -613,7 +670,7 @@ export default function AddItemModal() {
                       <StarRating value={form.rating} onChange={(v) => set('rating', v === form.rating ? null : v)} size={26} />
                       {form.rating != null && (
                         <>
-                          <span className="rating-value">{form.rating}.0</span>
+                          <span className="rating-value">{form.rating.toFixed(1)}</span>
                           <button className="btn-text" style={{ marginLeft: 4 }} onClick={() => set('rating', null)}>초기화</button>
                         </>
                       )}
@@ -640,7 +697,7 @@ export default function AddItemModal() {
 
             {/* 푸터 — 저장(추가하기)은 어느 탭에서나 가능, 탭 이동은 보조 버튼/상단 탭으로 */}
             <div className="add-modal-footer">
-              <button className="btn-secondary" style={{ flex: 'none', minWidth: 84 }} onClick={closeAddModal}>취소</button>
+              <button className="btn-secondary" style={{ flex: 'none', minWidth: 84 }} onClick={() => { void requestClose() }}>취소</button>
               <div style={{ flex: 1 }} />
               {activeTab === 'info' ? (
                 <button

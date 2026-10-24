@@ -1,9 +1,19 @@
 // 도서 검색 (Google Books) — 검색 키를 브라우저 코드에 두지 않으려고 서버에서 대신 요청한다
-import { fromOurSite, json, readQuery } from './_shared.js'
+import { fromOurSite, json, readQuery, canonicalRedirect } from './_shared.js'
 
 // 서울에서 실행 — Google Books는 요청한 곳의 나라에 따라 결과가 달라서(미국에서 요청하면 한국 책이 빠지거나
 // 일시 오류 503이 잦음) 한국 사용자가 직접 검색할 때와 같은 결과가 나오게 한다
 export const config = { runtime: 'edge', regions: ['icn1'] }
+
+/** 책 소개에 섞여 오는 HTML 태그(<p>, <br> 등)를 글자만 남기고 정리 */
+function plainText(html) {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>\s*/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n').trim()
+}
 
 function mapVolume(item) {
   const v = item.volumeInfo || {}
@@ -19,7 +29,7 @@ function mapVolume(item) {
     isbn,
     page_count: v.pageCount ?? null,
     year: v.publishedDate ? String(v.publishedDate).slice(0, 4) : null,
-    overview: v.description || '',
+    overview: plainText(v.description || ''),
     cover_path: thumb ? thumb.replace('http://', 'https://') : null,
     genre: (v.categories || []).join(', '),
   }
@@ -36,6 +46,8 @@ function scoreTitle(title, query) {
 
 export default async function handler(req) {
   if (!fromOurSite(req)) return json({ error: '허용되지 않은 요청이에요.' }, 403)
+  const redirect = canonicalRedirect(req)
+  if (redirect) return redirect
   const q = readQuery(req)
   if (!q) return json([])
   const key = process.env.GOOGLE_BOOKS_API_KEY

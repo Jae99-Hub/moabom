@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useStorePick } from '../store/useStore'
 import { confirmDialog, alertDialog, showToast } from '../store/dialogs'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
+import { startGoogleSignIn, signOutHere } from '../api/auth'
 import { OtherScopeInfo, AutoBackupInfo } from '../types'
 
 const isWebEnv =
@@ -11,10 +13,14 @@ const isWebEnv =
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
 type Tab = 'account' | 'general' | 'data'
 
-/** moabom-auto-YYYY-MM-DD_HHMMSS.db → "YYYY-MM-DD HH:MM" */
+/** moabom-auto-YYYY-MM-DD_HHMMSS.db → "YYYY-MM-DD HH:MM:SS" (같은 분에 만든 백업도 구별되게) */
 function fmtBackupLabel(b: AutoBackupInfo): string {
   const m = b.name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})/)
-  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : b.name
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}` : b.name
+}
+
+function fmtSize(bytes: number): string {
+  return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`
 }
 
 /** ISO → "YYYY.M.D HH:MM" (짧게) */
@@ -39,6 +45,8 @@ export default function SettingsModal() {
   const [electronName, setElectronName]   = useState('')
   const [signingIn, setSigningIn]         = useState(false)
   useEscapeKey(closeSettings, isSettingsOpen)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, isSettingsOpen)
 
   // 업데이트
   const [updateState, setUpdateState]     = useState<UpdateCheckState>('idle')
@@ -142,6 +150,8 @@ export default function SettingsModal() {
     if (result.success) {
       await alertDialog('화면을 새로 불러올게요.', '되돌렸어요')
       window.location.reload()
+    } else if (result.error === 'swap-failed') {
+      void alertDialog('되돌리는 도중에 문제가 생겼어요. 인터넷 연결을 확인하고 다시 시도해 주세요.', '되돌리지 못했어요')
     } else if (result.error && result.error !== 'read-source') {
       void alertDialog('파일이 손상됐거나 모아봄 백업 파일이 아니에요. 지금 기록은 그대로예요.', '되돌리지 못했어요')
     }
@@ -156,7 +166,9 @@ export default function SettingsModal() {
       ? '\n다른 계정의 기록을 현재 계정으로 복사해요. 원래 계정의 기록은 그대로 남아요.' : ''
     const ok = await confirmDialog({
       title: `${count}개를 ${target}(으)로 불러올까요?`,
-      message: `불러오기 전에 자동 백업을 만들어요.${warn}`,
+      message: isElectron
+        ? `불러오기 전에 자동 백업을 만들어요.${warn}`
+        : '옮긴 기록은 계정에 저장되고, 이 브라우저에서는 지워져요.',
       confirmText: '불러오기',
     })
     if (!ok) return
@@ -225,43 +237,26 @@ export default function SettingsModal() {
 
   const handleSignOut = async () => {
     if (!(await confirmSignOut())) return
-    const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
-    if (!isSupabaseConfigured || !supabase) return
-    await supabase.auth.signOut()
+    await signOutHere()
     window.location.reload()
   }
 
   const handleElectronSignIn = async () => {
-    const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
-    if (!isSupabaseConfigured || !supabase || !window.authBridge) return
     setSigningIn(true)
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: 'http://localhost:3000',
-        queryParams: { prompt: 'select_account' },
-        skipBrowserRedirect: true,
-      }
-    })
-    if (error || !data.url) { setSigningIn(false); return }
-    await window.authBridge.openExternal(data.url)
+    const message = await startGoogleSignIn() // 브라우저에서 로그인이 끝나면 앱이 알아서 넘어감
+    if (message) { setSigningIn(false); void alertDialog(message, '로그인하지 못했어요') }
   }
 
   const handleElectronSignOut = async () => {
     if (!(await confirmSignOut())) return
-    const { electronSignOut } = await import('../api/syncService')
-    await electronSignOut()
+    await signOutHere()
     // setCurrentUser(null), renderAuth()는 onAuthStateChange SIGNED_OUT이 처리
     setElectronEmail(''); setElectronName(''); setSyncStatus('idle')
   }
 
   const handleWebSignIn = async () => {
-    const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
-    if (!isSupabaseConfigured || !supabase) return
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } }
-    })
+    const message = await startGoogleSignIn()
+    if (message) void alertDialog(message, '로그인하지 못했어요')
   }
 
   const handleCheckUpdate = async () => {
@@ -291,7 +286,7 @@ export default function SettingsModal() {
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeSettings()}>
-      <div className="settings-modal">
+      <div className="settings-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="설정">
 
         {/* ── 헤더 ── */}
         <div className="modal-header">
@@ -601,8 +596,11 @@ export default function SettingsModal() {
                             key={b.name}
                             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 2px', borderBottom: '1px solid var(--border)' }}
                           >
-                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{fmtBackupLabel(b)}</span>
-                            <button className="btn-secondary" style={{ padding: '4px 12px', flexShrink: 0 }} disabled={busy} onClick={() => handleRestoreFrom(b)}>
+                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                              {fmtBackupLabel(b)}
+                              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>{fmtSize(b.size)}</span>
+                            </span>
+                            <button className="btn-secondary btn-compact" style={{ padding: '4px 12px' }} disabled={busy} onClick={() => handleRestoreFrom(b)}>
                               복원
                             </button>
                           </div>
@@ -618,7 +616,7 @@ export default function SettingsModal() {
               <div className="settings-actions-row">
                 <div>
                   <div className="settings-group-label">파일로 백업</div>
-                  <div className="settings-group-desc">전체 데이터를 원하는 위치에 .db 파일로 내보내기</div>
+                  <div className="settings-group-desc">전체 기록을 원하는 위치에 {isElectron ? '.db' : '.json'} 파일로 내보내기</div>
                 </div>
                 <button className="btn-secondary" style={{ flexShrink: 0 }} onClick={handleBackup}>
                   백업
@@ -627,7 +625,7 @@ export default function SettingsModal() {
               <div className="settings-actions-row">
                 <div>
                   <div className="settings-group-label">파일에서 복원</div>
-                  <div className="settings-group-desc">백업 .db 파일로 데이터 복원 (현재 데이터 교체)</div>
+                  <div className="settings-group-desc">백업 {isElectron ? '.db' : '.json'} 파일로 기록을 되돌리기 (지금 기록을 바꿈)</div>
                 </div>
                 <button
                   className="btn-secondary"

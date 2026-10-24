@@ -4,6 +4,13 @@ import { Quote } from '../types'
 import { confirmDialog } from '../store/dialogs'
 import { quoteWord } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
+
+/** 쪽·회차 번호 — 1 이상의 정수만 (0쪽은 저장돼도 보이지 않고 맨 앞에 정렬되던 문제) */
+const posInt = (s: string): number | null => {
+  const n = parseInt(s, 10)
+  return Number.isFinite(n) && n >= 1 ? n : null
+}
 
 export default function QuotesModal() {
   const { isQuotesModalOpen, closeQuotesModal, bumpQuotesVersion, selectedId, itemList, requestSync } =
@@ -11,6 +18,8 @@ export default function QuotesModal() {
   // 배경에서 누르고 배경에서 뗐을 때만 닫음 (입력칸에서 드래그하다 창 밖에서 놓아도 닫히지 않게)
   const downOnBackdrop = useRef(false)
   useEscapeKey(closeQuotesModal, isQuotesModalOpen)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, isQuotesModalOpen)
   const item = itemList.find((i) => i.id === selectedId)
 
   const [quotes, setQuotes] = useState<Quote[]>([])
@@ -57,8 +66,8 @@ export default function QuotesModal() {
       await window.api.quotes.insert({
         item_id: selectedId,
         text: newText.trim(),
-        page_number: newPage ? parseInt(newPage) : null,
-        episode_number: newEpisode ? parseInt(newEpisode) : null,
+        page_number: itemType === 'book' ? posInt(newPage) : null,
+        episode_number: itemType === 'drama' || itemType === 'documentary' ? posInt(newEpisode) : null,
         note: newNote.trim() || null
       })
       setNewText('')
@@ -89,8 +98,8 @@ export default function QuotesModal() {
     try {
       await window.api.quotes.update(id, {
         text: editText.trim(),
-        page_number: editPage ? parseInt(editPage) : null,
-        episode_number: editEpisode ? parseInt(editEpisode) : null,
+        page_number: itemType === 'book' ? posInt(editPage) : null,
+        episode_number: itemType === 'drama' || itemType === 'documentary' ? posInt(editEpisode) : null,
         note: editNote.trim() || null
       })
       setEditingId(null)
@@ -133,7 +142,7 @@ export default function QuotesModal() {
       onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
       onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) closeQuotesModal() }}
     >
-      <div className="modal modal-lg">
+      <div className="modal modal-lg" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={quoteWord(itemType)}>
         <div className="modal-header">
           <span className="modal-title">
             {item ? `"${item.title}" ${itemType === 'book' ? '명문장' : '명대사'}` : '명대사'}
@@ -265,7 +274,7 @@ export default function QuotesModal() {
                           {(q.page_number || q.episode_number || q.note) && (
                             <div className="quote-edit-meta" style={{ marginTop: 6 }}>
                               {q.page_number ? <span style={{ fontWeight: 600 }}>p.{q.page_number}</span> : null}
-                              {q.episode_number ? <span style={{ fontWeight: 600 }}>E{String(q.episode_number).padStart(2, '0')}</span> : null}
+                              {q.episode_number ? <span style={{ fontWeight: 600 }}>{q.episode_number}화</span> : null}
                               {(q.page_number || q.episode_number) && q.note ? ' · ' : ''}
                               {q.note ? <span style={{ fontStyle: 'italic' }}>{q.note}</span> : null}
                             </div>
