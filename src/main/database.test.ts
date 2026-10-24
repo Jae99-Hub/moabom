@@ -294,7 +294,9 @@ describe('파일·복구', () => {
     const a = db.runAutoBackup(true)
     const b = db.runAutoBackup(true)
     expect(a.path).not.toBe(b.path)
-    expect(db.listAutoBackups()).toHaveLength(2)
+    const list = db.listAutoBackups()
+    expect(list).toHaveLength(2)
+    expect(list[0].path).toBe(b.path) // 나중에 만든 것이 맨 앞
   })
 
   it('바뀐 게 없으면 자동 백업을 건너뜀', () => {

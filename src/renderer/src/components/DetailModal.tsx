@@ -36,7 +36,7 @@ function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) 
     window.api.quotes.getByItemId(itemId)
       .then((q) => { setQuotes(q); setFailed(false) })
       // 실패를 '없어요'로 보이지 않게 (기록이 사라진 것처럼 보였음)
-      .catch((e) => { reportProblem('quotes.load', e); setFailed(true) })
+      .catch((e) => { reportProblem('quotes.load', e); setQuotes([]); setFailed(true) })
   }, [itemId, quotesVersion])
 
   return (

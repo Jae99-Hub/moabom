@@ -67,7 +67,8 @@ function changedItemFields(src: Row): Row {
  *  클라우드는 연도를 글자('2019')로 저장해서 숫자로 바꿈 — 그대로 두면 편집 후 저장할 때 연도 확인에 걸렸음 */
 function toItem(r: Row): Item {
   const year = r.year == null || r.year === '' ? null : Number(r.year)
-  return { ...r, year: Number.isFinite(year) ? year : null, current_page: Number(r.current_page ?? 0) || 0 } as unknown as Item
+  // 숫자가 아닌 연도('2019–2020' 등)는 그대로 둠 — 지우면 편집 저장 때 그 값이 사라짐 (저장 전 확인에서 고치도록 안내됨)
+  return { ...r, year: year == null || Number.isFinite(year) ? year : r.year, current_page: Number(r.current_page ?? 0) || 0 } as unknown as Item
 }
 const toItems = (rows: Row[]): Item[] => rows.map(toItem)
 

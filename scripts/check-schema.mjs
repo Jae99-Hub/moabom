@@ -59,6 +59,13 @@ const CHECKS = [
   ['웹 명대사 검색', 'GET', `quotes?select=*&user_id=eq.${UID}&is_deleted=not.is.true&text=ilike.${q('%문장%')}&order=created_at.desc&limit=200`],
   ['검색 결과의 작품', 'GET', `items?select=id,title,item_type,cover_path&user_id=eq.${UID}&id=in.(1,2)&is_deleted=not.is.true`],
   ['영구삭제 전 확인', 'GET', `items?select=id,is_deleted,updated_at&id=eq.1&user_id=eq.${UID}`],
+  ['메모로 명대사 검색', 'GET', `quotes?select=*&user_id=eq.${UID}&is_deleted=not.is.true&note=ilike.${q('%메모%')}&limit=200`],
+  ['같은 문장 목록', 'GET', `quotes?select=text&user_id=eq.${UID}&item_id=eq.1&is_deleted=not.is.true`],
+  ['휴지통에 간 시각', 'GET', `items?select=deleted_at&id=eq.1&user_id=eq.${UID}`],
+  ['명대사 하나 휴지통으로', 'PATCH', `quotes?id=eq.1&user_id=eq.${UID}&select=id`, TRASH],
+  ['여러 작품 휴지통으로', 'PATCH', `items?user_id=eq.${UID}&id=in.(1,2)`, TRASH],
+  ['작품 영구삭제', 'DELETE', `items?id=eq.1&user_id=eq.${UID}&is_deleted=eq.true`],
+  ['작품의 명대사 영구삭제', 'DELETE', `quotes?item_id=eq.1&user_id=eq.${UID}`],
   // 지우기 (해당 행 없음 → 0개)
   ['15일 지난 휴지통 비우기', 'DELETE', `items?user_id=eq.${UID}&is_deleted=eq.true&deleted_at=lt.${q(NOW)}`],
   ['15일 지난 명대사 비우기', 'DELETE', `quotes?user_id=eq.${UID}&is_deleted=eq.true&deleted_at=lt.${q(NOW)}`],
@@ -71,8 +78,11 @@ for (const [name, method, path, body] of CHECKS) {
   const text = await res.text()
   let data = null
   try { data = JSON.parse(text) } catch { /* 빈 응답 */ }
-  // 넣기는 보안 규칙이 막아야 정상, 나머지는 성공(0개)이 정상
-  const ok = method === 'POST' ? data?.code === '42501' : res.ok && (!Array.isArray(data) || data.length === 0)
+  // 넣기는 행 단위 보안(RLS)이 막아야 정상 — 권한 없음(같은 42501)과 구별하려고 문구까지 확인.
+  // 나머지는 성공(0개)이 정상. 단, 넣기는 보안 검사가 NOT NULL·외래 키 같은 제약보다 먼저라 그런 제약은 여기서 못 잡음
+  const ok = method === 'POST'
+    ? data?.code === '42501' && /row-level security/i.test(data?.message ?? '')
+    : res.ok && (!Array.isArray(data) || data.length === 0)
   if (!ok) problems.push(`${name}: ${res.status} ${data?.code ?? ''} ${data?.message ?? text.slice(0, 120)}`)
 }
 

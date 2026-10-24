@@ -19,6 +19,13 @@ Sentry.init({
   enabled: import.meta.env.PROD,
   tracesSampleRate: 0,
   sendDefaultPii: false,
+  // 자동으로 붙는 최근 기록: 콘솔 기록은 빼고(오류 안에 기록 내용이 들어 있을 수 있음),
+  // 요청 주소의 조건 부분(검색한 제목·문장, 계정 id)은 지운다
+  beforeBreadcrumb(crumb) {
+    if (crumb.category === 'console') return null
+    if (crumb.data?.url) crumb.data.url = String(crumb.data.url).replace(/\?.*$/, '')
+    return crumb
+  },
   beforeSend(event) {
     if (event.request?.url) event.request.url = scrubUserPath(event.request.url)
     for (const ex of event.exception?.values ?? []) {
@@ -122,8 +129,10 @@ function bgSync(): Promise<void> {
   bgSyncRunning = (async () => {
     try {
       const store = useStore.getState()
-      await store.triggerSync() // 동기화 + 목록 새로고침 + 충돌 안내
-      if (useStore.getState().syncStatus === 'success' && enteredScope === scope) {
+      // 동기화 + 목록 새로고침 + 충돌 안내. 받기까지 끝났으면 true — 일부를 못 올렸어도(다음에 다시 올림)
+      // 백업은 하고, 창을 다시 열 때마다 전체 동기화를 반복하지 않게 한다
+      const finished = await store.triggerSync()
+      if (finished && enteredScope === scope) {
         syncedThisSession = true
         // 첫 동기화로 데이터가 채워진 직후 스냅샷 1회 (빈 백업 방지)
         try { await window.api?.backup?.run?.(false) } catch { /* 실패 무시 */ }

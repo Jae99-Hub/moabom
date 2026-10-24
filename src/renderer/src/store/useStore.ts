@@ -61,7 +61,8 @@ interface AppState {
   // 동기화
   syncStatus: SyncStatus
   setSyncStatus: (s: SyncStatus) => void
-  triggerSync: () => Promise<void>
+  /** 받기까지 끝났으면 true (일부를 못 올렸어도), 연결 끊김 등으로 멈췄으면 false */
+  triggerSync: () => Promise<boolean>
   requestSync: () => void
   syncConflicts: SyncConflict[]
   syncAutoMerged: number
@@ -76,7 +77,7 @@ export const hasTrash = (): boolean => !!(window.api as { trash?: { restore?: un
 // 아이템 변경 후 3초 디바운스 자동 sync
 let _syncTimer: ReturnType<typeof setTimeout> | null = null
 let _toldUploadFailure = false // '올리지 못했어요' 알림은 앱을 켠 동안 한 번만
-function scheduleSync(triggerSync: () => Promise<void>) {
+function scheduleSync(triggerSync: () => Promise<boolean>) {
   if (_syncTimer) clearTimeout(_syncTimer)
   _syncTimer = setTimeout(() => { triggerSync() }, 3000)
 }
@@ -324,8 +325,10 @@ export const useStore = create<AppState>((set, get) => ({
         _toldUploadFailure = true
         showToast(`기록 ${result.failed}개를 클라우드에 올리지 못했어요. 이 컴퓨터에는 그대로 있고, 다음 동기화 때 다시 올려요.`)
       }
+      return true
     } catch {
       // runSync already called setSyncStatus('error')
+      return false
     }
   },
   toggleCheckedItem: (id) => set((s) => ({

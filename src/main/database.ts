@@ -295,7 +295,14 @@ export async function restoreFromFile(srcPath: string): Promise<{ success: boole
 
 // ── 자동 로컬 백업 (최근 14일 보관, 데이터 변경 시에만 기록) ──────────
 const AUTO_BACKUP_PREFIX = 'moabom-auto-'
-const AUTO_BACKUP_RE = /^moabom-auto-\d{4}-\d{2}-\d{2}_\d{6}\.db$/
+// 같은 초에 여러 개를 만들면 뒤에 -2, -3 …이 붙음
+const AUTO_BACKUP_RE = /^moabom-auto-\d{4}-\d{2}-\d{2}_\d{6}(-\d+)?\.db$/
+
+/** 최신순 정렬용 — 같은 초에 만든 것은 번호가 클수록 나중 */
+function backupSortKey(name: string): string {
+  const m = /^(.*_\d{6})(?:-(\d+))?\.db$/.exec(name)
+  return m ? m[1] + '#' + String(Number(m[2] ?? 1)).padStart(4, '0') : name
+}
 const AUTO_BACKUP_KEEP_DAYS = 14
 export interface AutoBackupInfo { name: string; path: string; size: number; mtime: number }
 
@@ -405,7 +412,7 @@ export function listAutoBackups(): AutoBackupInfo[] {
       } catch { return null } // 삭제/잠김/권한오류 파일은 목록에서 제외
     })
     .filter((x): x is AutoBackupInfo => x !== null)
-    .sort((a, b) => b.name.localeCompare(a.name)) // 파일명(=시간) 최신순
+    .sort((a, b) => backupSortKey(b.name).localeCompare(backupSortKey(a.name))) // 파일명(=시간) 최신순
 }
 
 /** 회전: 14일 지난 것 삭제 + 지난 날짜는 하루 1개만 유지(오늘은 전부 보존) */
@@ -436,13 +443,11 @@ export function runAutoBackup(force = false): { success: boolean; path?: string;
     const dir = getAutoBackupDir()
     const bytes = Buffer.from(db.export())
     if (bytes.length === 0) return { success: false }
-    let dest = join(dir, autoBackupName())
-    // 같은 초에 만든 백업이 이미 있으면 다음 초 이름으로 — 덮어쓰면 그 백업이 사라짐
+    // 같은 초에 만든 백업이 이미 있으면 -2, -3 …을 붙임 — 덮어쓰면 그 백업이 사라짐
     // (예: '지금 백업' 직후 그 백업으로 되돌리면, 되돌리기 전 안전 백업이 바로 그 파일을 덮어썼음)
-    for (let i = 0; existsSync(dest) && i < 3; i++) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1005 - (Date.now() % 1000))
-      dest = join(dir, autoBackupName())
-    }
+    const base = autoBackupName().replace(/\.db$/, '')
+    let dest = join(dir, base + '.db')
+    for (let n = 2; existsSync(dest); n++) dest = join(dir, `${base}-${n}.db`)
     const tmp = dest + '.tmp'
     writeFileSync(tmp, bytes)
     renameSync(tmp, dest) // 원자적 확정 (부분 파일은 .tmp라 회전 대상 아님)

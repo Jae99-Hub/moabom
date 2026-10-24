@@ -20,6 +20,7 @@ Sentry.init({
   tracesSampleRate: 0,
   sendDefaultPii: false,
   beforeBreadcrumb(crumb) {
+    if (crumb.category === 'console') return null // 오류 안에 기록 내용이 들어 있을 수 있음
     if (crumb.data?.url) crumb.data.url = scrubUrl(String(crumb.data.url))
     if (crumb.data?.to) crumb.data.to = scrubUrl(String(crumb.data.to))
     if (crumb.data?.from) crumb.data.from = scrubUrl(String(crumb.data.from))

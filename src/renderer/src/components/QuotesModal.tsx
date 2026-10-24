@@ -45,8 +45,10 @@ export default function QuotesModal() {
   useEffect(() => {
     if (isQuotesModalOpen && selectedId) {
       setLoadError('')
+      setQuotes([]) // 창은 계속 남아 있어 비우지 않으면 앞서 연 작품의 명대사가 보일 수 있음
       window.api.quotes.getByItemId(selectedId).then(setQuotes).catch((e) => {
         reportProblem('quotes.load', e)
+        setQuotes([])
         setLoadError(`목록을 불러오지 못했어요. 창을 닫았다 다시 열어 주세요.${codeSuffix(e)}`)
       })
     }
@@ -238,7 +240,7 @@ export default function QuotesModal() {
           </div>
 
           {/* 기존 명문장 목록 */}
-          {quotes.length === 0 && !loadError ? (
+          {quotes.length === 0 && loadError ? null : quotes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
               {itemType === 'book' ? '아직 기록한 명문장이 없어요' : '아직 기록한 명대사가 없어요'}
             </div>
