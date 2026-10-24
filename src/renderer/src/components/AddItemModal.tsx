@@ -179,9 +179,14 @@ export default function AddItemModal() {
   }
 
   const handleCropDone = async (base64: string) => {
-    const savedPath = await window.api.image.saveCropped(base64, form.title || 'cover')
-    setForm((p) => ({ ...p, cover_path: savedPath }))
-    setCropImagePath(null)
+    try {
+      const savedPath = await window.api.image.saveCropped(base64, form.title || 'cover')
+      setForm((p) => ({ ...p, cover_path: savedPath }))
+    } catch {
+      alert('표지 이미지 저장에 실패했어요. 다시 시도해 주세요.')
+    } finally {
+      setCropImagePath(null)
+    }
   }
 
   const handleSubmit = async () => {

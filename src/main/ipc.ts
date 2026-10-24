@@ -71,7 +71,14 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('image:saveCropped', async (_, base64Data: string, fileName: string) => {
     const coversDir = getCoversDir()
     const ext = '.jpg'
-    const name = `${fileName}_${Date.now()}${ext}`
+    // 작품 제목을 파일명으로 쓰므로 Windows 금지 문자(\ / : * ? " < > |)·제어문자·끝의 점/공백을 제거
+    // (예: "미션 임파서블: 폴아웃" → 저장 실패/깨진 표지 방지, 경로 이동도 차단)
+    const safeBase = String(fileName || 'cover')
+      .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+      .replace(/[. ]+$/g, '')
+      .trim()
+      .slice(0, 60) || 'cover'
+    const name = `${safeBase}_${Date.now()}${ext}`
     const filePath = join(coversDir, name)
     const buffer = Buffer.from(base64Data.replace(/^data:image\/\w+;base64,/, ''), 'base64')
     writeFileSync(filePath, buffer)

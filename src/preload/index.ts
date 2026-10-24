@@ -74,27 +74,24 @@ const api = {
 }
 
 // ── 자동 업데이트 브릿지 ──────────────────────────────────────────
+// 리스너를 덮어쓰지 않고 추가 등록하며, 해제 함수를 돌려준다.
+// (예전엔 removeAllListeners로 덮어써서 설정창이 열리면 업데이트 알림창이 진행률·완료 신호를 못 받았음)
+function subscribe(channel: string, listener: (...args: unknown[]) => void): () => void {
+  ipcRenderer.on(channel, listener)
+  return () => { ipcRenderer.removeListener(channel, listener) }
+}
+
 const updaterBridge = {
-  onAvailable: (cb: (version: string) => void) => {
-    ipcRenderer.removeAllListeners('updater:available')
-    ipcRenderer.on('updater:available', (_e, version: string) => cb(version))
-  },
-  onProgress: (cb: (pct: number) => void) => {
-    ipcRenderer.removeAllListeners('updater:progress')
-    ipcRenderer.on('updater:progress', (_e, pct: number) => cb(pct))
-  },
-  onDownloaded: (cb: () => void) => {
-    ipcRenderer.removeAllListeners('updater:downloaded')
-    ipcRenderer.on('updater:downloaded', () => cb())
-  },
-  onNotAvailable: (cb: () => void) => {
-    ipcRenderer.removeAllListeners('updater:not-available')
-    ipcRenderer.on('updater:not-available', () => cb())
-  },
-  onError: (cb: (msg: string) => void) => {
-    ipcRenderer.removeAllListeners('updater:error')
-    ipcRenderer.on('updater:error', (_e, msg: string) => cb(msg))
-  },
+  onAvailable: (cb: (version: string) => void) =>
+    subscribe('updater:available', (_e, version) => cb(version as string)),
+  onProgress: (cb: (pct: number) => void) =>
+    subscribe('updater:progress', (_e, pct) => cb(pct as number)),
+  onDownloaded: (cb: () => void) =>
+    subscribe('updater:downloaded', () => cb()),
+  onNotAvailable: (cb: () => void) =>
+    subscribe('updater:not-available', () => cb()),
+  onError: (cb: (msg: string) => void) =>
+    subscribe('updater:error', (_e, msg) => cb(msg as string)),
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
   startDownload: () => ipcRenderer.invoke('updater:startDownload'),
   install: () => ipcRenderer.invoke('updater:install'),

@@ -55,8 +55,13 @@ function mapVolume(item: {
 async function fetchBooks(q: string, apiKey?: string): Promise<GoogleBookResult[]> {
   const params = new URLSearchParams({ q, maxResults: '10', printType: 'books' })
   if (apiKey) params.set('key', apiKey)
-  const res = await fetch(`${BASE_URL}/volumes?${params}`)
-  if (res.status === 429) throw new Error('검색 횟수 초과. 설정에서 Google Books API 키를 등록하면 해결됩니다.')
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}/volumes?${params}`, { signal: AbortSignal.timeout(10000) })
+  } catch {
+    throw new Error('검색 응답이 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')
+  }
+  if (res.status === 429) throw new Error('도서 검색 요청이 잠시 많아요. 1~2분 뒤 다시 시도해 주세요.')
   if (!res.ok) throw new Error(`Google Books API 오류: ${res.status}`)
   const data = await res.json() as { items?: unknown[] }
   return ((data.items ?? []) as Parameters<typeof mapVolume>[0][]).slice(0, 8).map(mapVolume)
@@ -80,10 +85,14 @@ export async function searchGoogleBooks(query: string, apiKey?: string): Promise
   if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data
 
   // intitle: gives better title-match results from Google Books
-  const [byTitle, byGeneral] = await Promise.all([
+  // 둘 중 하나만 실패해도 나머지 결과는 보여준다 (둘 다 실패하면 오류)
+  const settled = await Promise.allSettled([
     fetchBooks(`intitle:${q}`, apiKey),
     fetchBooks(q, apiKey)
   ])
+  const ok = settled.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : []))
+  if (ok.length === 0) throw (settled[0] as PromiseRejectedResult).reason
+  const [byTitle = [], byGeneral = []] = ok
 
   // Merge: deduplicate by google_books_id, intitle results first
   const seen = new Set<string>()
@@ -100,6 +109,6 @@ export async function searchGoogleBooks(query: string, apiKey?: string): Promise
     .sort((a, b) => scoreTitle(b.title, q) - scoreTitle(a.title, q))
     .slice(0, 8)
 
-  cache.set(cacheKey, { data: results, ts: Date.now() })
+  if (ok.length === settled.length) cache.set(cacheKey, { data: results, ts: Date.now() }) // 일부 실패한 결과는 캐시 안 함
   return results
 }

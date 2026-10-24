@@ -707,8 +707,10 @@ export function searchQuotes(query: string): (QuoteRow & { item_title: string; i
      FROM quotes q
      JOIN items i ON q.item_id = i.id
      WHERE (q.text LIKE :q OR q.note LIKE :q) AND q.is_deleted = 0 AND i.is_deleted = 0
+       AND ${currentUserId ? 'i.user_id = :uid' : 'i.user_id IS NULL'}
      ORDER BY q.created_at DESC`,
-    { ':q': `%${query}%` }
+    // 현재 화면(계정/비로그인)에 보이는 작품의 명대사만 검색 (getAllItems와 같은 범위)
+    currentUserId ? { ':q': `%${query}%`, ':uid': currentUserId } : { ':q': `%${query}%` }
   )
   return rows.map((r) => ({
     ...rowToQuote(r),
@@ -854,14 +856,15 @@ export function upsertItemFromCloud(cloudItem: {
 }): void {
   const cloudDeleted = cloudItem.is_deleted ? 1 : 0
   const cloudDeletedAt = cloudItem.deleted_at ?? null
-  const existing = queryOne('SELECT id, updated_at FROM items WHERE server_id = :sid', { ':sid': cloudItem.id })
+  const existing = queryOne('SELECT id, updated_at, is_dirty FROM items WHERE server_id = :sid', { ':sid': cloudItem.id })
   if (existing) {
     // 소유자 백필: 구버전에서 동기화된 항목은 user_id가 NULL일 수 있어
     // 로그인 후 계정 필터(getAllItems)에 안 잡히는 문제 방지
     db.run('UPDATE items SET user_id = :uid WHERE server_id = :sid', { ':uid': cloudItem.user_id, ':sid': cloudItem.id })
     // 로컬이 더 최신이면 나머지 필드는 덮어쓰지 않음 (로컬 변경사항 보호)
     const localUpdated = existing.updated_at as string
-    if (parseDateMs(localUpdated) >= parseDateMs(cloudItem.updated_at)) { save(); return }
+    // 아직 올리지 않은 로컬 변경(is_dirty)이 있으면 덮어쓰지 않음 → 다음 push에서 로컬이 반영됨
+    if (Number(existing.is_dirty) === 1 || parseDateMs(localUpdated) >= parseDateMs(cloudItem.updated_at)) { save(); return }
 
     db.run(
       `UPDATE items SET
@@ -938,11 +941,12 @@ export function upsertQuoteFromCloud(cloudQuote: {
   const updatedAt = cloudQuote.updated_at ?? cloudQuote.created_at
   const cloudDeleted = cloudQuote.is_deleted ? 1 : 0
   const cloudDeletedAt = cloudQuote.deleted_at ?? null
-  const existing = queryOne('SELECT id, updated_at FROM quotes WHERE server_id = :sid', { ':sid': cloudQuote.id })
+  const existing = queryOne('SELECT id, updated_at, is_dirty FROM quotes WHERE server_id = :sid', { ':sid': cloudQuote.id })
 
   if (existing) {
     const localUpdated = (existing.updated_at as string) || ''
-    if (parseDateMs(localUpdated) >= parseDateMs(updatedAt)) return
+    // 미전송 로컬 변경 보호 (위 아이템과 동일)
+    if (Number(existing.is_dirty) === 1 || parseDateMs(localUpdated) >= parseDateMs(updatedAt)) return
     db.run(
       `UPDATE quotes SET text=:text, page_number=:pn, episode_number=:en, note=:note, updated_at=:ua, is_dirty=0,
         is_deleted=:del, deleted_at=:da WHERE server_id=:sid`,

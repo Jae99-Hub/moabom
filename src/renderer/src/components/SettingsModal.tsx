@@ -71,14 +71,7 @@ export default function SettingsModal() {
     setUpdateState('idle')
     setUpdateVersion('')
 
-    if (window.updaterBridge) {
-      window.updaterBridge.onAvailable((v)   => { setUpdateVersion(v); setUpdateState('available') })
-      window.updaterBridge.onNotAvailable(()  => setUpdateState('not-available'))
-      window.updaterBridge.onError(()         => setUpdateState('error'))
-      window.updaterBridge.onProgress((pct)   => { setUpdateProgress(pct); setUpdateState('downloading') })
-      window.updaterBridge.onDownloaded(()    => setUpdateState('downloaded'))
-      window.updaterBridge.getVersion().then(setCurrentVersion).catch(() => {})
-    }
+    window.updaterBridge?.getVersion().then(setCurrentVersion).catch(() => {})
 
     // 웹 전용: 유저 정보 (Electron에서는 표시 안 함)
     if (isWebEnv && !isElectron) {
@@ -101,6 +94,20 @@ export default function SettingsModal() {
         }).catch(() => {})
       })
     }
+  }, [isSettingsOpen])
+
+  // ── 업데이트 이벤트 구독 (설정창이 열려 있는 동안만, 닫히면 해제) ──
+  useEffect(() => {
+    const b = window.updaterBridge
+    if (!isSettingsOpen || !b) return
+    const offs = [
+      b.onAvailable((v) => { setUpdateVersion(v); setUpdateState('available') }),
+      b.onNotAvailable(() => setUpdateState('not-available')),
+      b.onError(() => setUpdateState('error')),
+      b.onProgress((pct) => { setUpdateProgress(pct); setUpdateState('downloading') }),
+      b.onDownloaded(() => setUpdateState('downloaded')),
+    ]
+    return () => offs.forEach((off) => off())
   }, [isSettingsOpen])
 
   // ── 마운트 시 한 번: OAuth 콜백 리스너 ─────────────────────────────

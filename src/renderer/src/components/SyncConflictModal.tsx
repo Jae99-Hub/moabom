@@ -26,7 +26,7 @@ function ItemSide({
       {!!item.cover_path && (
         <img
           className="conflict-side-cover"
-          src={String(item.cover_path)}
+          src={String(item.cover_path).startsWith('http') || String(item.cover_path).startsWith('data:') ? String(item.cover_path) : `file://${String(item.cover_path)}`}
           alt=""
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
@@ -154,7 +154,7 @@ function ConflictCard({
 }
 
 export default function SyncConflictModal() {
-  const { syncConflicts, syncAutoMerged, removeSyncConflict, clearSyncResult, fetchAll } = useStore()
+  const { syncConflicts, syncAutoMerged, removeSyncConflict, clearSyncResult, fetchAll, requestSync } = useStore()
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [bulkResolving, setBulkResolving] = useState(false)
 
@@ -170,6 +170,7 @@ export default function SyncConflictModal() {
       await resolveConflict(conflict, resolution)
       removeSyncConflict(conflict.localId)
       await fetchAll()
+      requestSync() // 합치기 결과 등을 곧바로 이 기기에도 반영
     } catch (err) {
       console.error('[Conflict] 해결 오류:', err)
     } finally {
@@ -191,6 +192,7 @@ export default function SyncConflictModal() {
         removeSyncConflict(conflict.localId)
       }
       await fetchAll()
+      requestSync()
     } catch (err) {
       console.error('[Conflict] 일괄 해결 오류:', err)
     } finally {

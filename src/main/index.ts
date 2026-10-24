@@ -60,12 +60,12 @@ function setupAutoUpdater(win: BrowserWindow) {
 
   // 렌더러에서 업데이트 수동 확인 요청
   ipcMain.handle('updater:check', () => {
-    autoUpdater.checkForUpdates()
+    autoUpdater.checkForUpdates()?.catch(() => { /* 오류는 'error' 이벤트로 렌더러에 전달됨 */ })
   })
 
   // 렌더러에서 다운로드 시작 요청
   ipcMain.handle('updater:startDownload', () => {
-    autoUpdater.downloadUpdate()
+    autoUpdater.downloadUpdate().catch(() => { /* 오류는 'error' 이벤트로 렌더러에 전달됨 */ })
   })
 
   // 렌더러에서 설치 요청
@@ -74,7 +74,7 @@ function setupAutoUpdater(win: BrowserWindow) {
   })
 
   // 앱 시작 3초 후 업데이트 체크
-  setTimeout(() => autoUpdater.checkForUpdates(), 3000)
+  setTimeout(() => { autoUpdater.checkForUpdates()?.catch(() => { /* 오프라인 등 — 조용히 무시 */ }) }, 3000)
 }
 
 // ── 로컬 OAuth 수신 서버 (localhost:3000) ─────────────────────────

@@ -36,7 +36,7 @@ async function getDirector(mediaType: string, id: number, apiKey: string): Promi
   try {
     const endpoint = mediaType === 'movie' ? 'movie' : 'tv'
     const params = new URLSearchParams({ api_key: apiKey, language: 'ko-KR' })
-    const res = await fetch(`${BASE_URL}/${endpoint}/${id}/credits?${params}`)
+    const res = await fetch(`${BASE_URL}/${endpoint}/${id}/credits?${params}`, { signal: AbortSignal.timeout(8000) })
     if (!res.ok) return ''
     const data = await res.json() as { crew?: { job: string; name: string }[] }
     if (mediaType === 'movie') {
@@ -55,7 +55,12 @@ export async function searchTmdb(query: string, apiKey: string): Promise<TmdbRes
   if (!apiKey || !query.trim()) return []
 
   const params = new URLSearchParams({ api_key: apiKey, query: query.trim(), language: 'ko-KR', page: '1' })
-  const res = await fetch(`${BASE_URL}/search/multi?${params}`)
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}/search/multi?${params}`, { signal: AbortSignal.timeout(10000) })
+  } catch {
+    throw new Error('검색 응답이 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')
+  }
   if (!res.ok) throw new Error(`TMDB API error: ${res.status} ${res.statusText}`)
 
   const data = await res.json() as {

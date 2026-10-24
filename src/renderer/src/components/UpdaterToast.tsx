@@ -12,10 +12,15 @@ export default function UpdaterToast() {
     const bridge = window.updaterBridge
     if (!bridge) return
 
-    bridge.onAvailable((v) => { setVersion(v); setPhase('available') })
-    bridge.onProgress((pct) => { setProgress(pct); setPhase('downloading') })
-    bridge.onDownloaded(() => setPhase('downloaded'))
-    bridge.onError(() => setPhase('error')) // 실패 시 '다운로드 중'에 영원히 머무는 것 방지
+    const offs = [
+      bridge.onAvailable((v) => { setVersion(v); setPhase('available') }),
+      bridge.onProgress((pct) => { setProgress(pct); setPhase('downloading') }),
+      bridge.onDownloaded(() => { setPhase('downloaded'); setDismissed(false) }),
+      // 다운로드 중일 때만 실패로 전환 — 시작 시 백그라운드 확인 실패(오프라인 등)로
+      // 다운로드도 안 했는데 '다운로드 실패'가 뜨던 문제 방지
+      bridge.onError(() => setPhase((p) => (p === 'downloading' ? 'error' : p))),
+    ]
+    return () => offs.forEach((off) => off())
   }, [])
 
   async function handleDownload() {

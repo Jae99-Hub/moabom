@@ -136,7 +136,7 @@ export default function TrashModal() {
                   >
                     {item.cover_path ? (
                       <img
-                        src={item.cover_path}
+                        src={item.cover_path.startsWith('http') || item.cover_path.startsWith('data:') ? item.cover_path : `file://${item.cover_path}`}
                         alt=""
                         style={{ width: 36, height: 52, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

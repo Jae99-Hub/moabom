@@ -89,10 +89,17 @@ export function mergeItemFields(local: CloudRow, cloud: CloudRow): Partial<Cloud
   }
 }
 
-async function autoMergeExact(local: CloudRow, cloud: CloudRow, userId: string): Promise<void> {
+async function autoMergeExact(local: CloudRow, cloud: CloudRow, userId: string): Promise<boolean> {
   const merged = mergeItemFields(local, cloud)
-  await supabase.from('items').update(merged).eq('id', cloud.id).eq('user_id', userId)
+  // updated_at 갱신 → 다음 pull에서 합쳐진 결과가 이 기기에도 반영됨
+  const { error } = await supabase
+    .from('items')
+    .update({ ...merged, updated_at: new Date().toISOString() })
+    .eq('id', cloud.id)
+    .eq('user_id', userId)
+  if (error) return false // 실패 시 dirty 유지 → 다음 동기화에서 재시도
   await window.api.sync.markItemSynced(local.id as number, cloud.id as number)
+  return true
 }
 
 // ── 페이로드 빌더 ────────────────────────────────────────────────────
@@ -121,7 +128,8 @@ function buildItemPayload(item: CloudRow, userId: string): CloudRow {
     review: item.review ?? null,
     read_date: item.read_date ?? null,
     created_at: item.created_at,
-    updated_at: item.updated_at,
+    // push 시각으로 기록 → 오프라인 편집이 늦게 올라와도 다른 기기의 증분 pull에 잡힘
+    updated_at: new Date().toISOString(),
     is_deleted: !!item.is_deleted,
     deleted_at: item.deleted_at ?? null,
   }
@@ -178,9 +186,8 @@ async function pushDirtyItems(
       // 1) 완전히 같은 항목 → 자동 합치기
       for (const cloud of candidates) {
         if (isExactMatch(item, cloud)) {
-          await autoMergeExact(item, cloud, userId)
-          autoMerged++
-          handled = true
+          if (await autoMergeExact(item, cloud, userId)) autoMerged++
+          handled = true // 실패해도 새로 삽입하지 않음(중복 방지) — 다음 동기화에서 재시도
           break
         }
       }
@@ -228,7 +235,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       if (quote.server_id) {
         const { error } = await supabase
           .from('quotes')
-          .update({ is_deleted: true, deleted_at: quote.deleted_at ?? null, updated_at: quote.updated_at })
+          .update({ is_deleted: true, deleted_at: quote.deleted_at ?? null, updated_at: new Date().toISOString() })
           .eq('id', quote.server_id)
           .eq('user_id', userId)
         if (!error) await window.api.sync.markQuoteSynced(quote.id as number, quote.server_id as number)
@@ -251,7 +258,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       episode_number: quote.episode_number ?? null,
       note: quote.note ?? null,
       created_at: quote.created_at,
-      updated_at: quote.updated_at,
+      updated_at: new Date().toISOString(), // push 시각 기준 (증분 pull 누락 방지)
       is_deleted: false,
       deleted_at: null,
     }
@@ -341,6 +348,9 @@ export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<
 
   if (syncing) return { autoMerged: 0, conflicts: [] } // 이미 진행 중이면 즉시 반환
   syncing = true
+  // 다음 증분 pull 기준 시각 = 이번 동기화 '시작' 시점 − 여유 5분.
+  // (끝난 시각을 쓰면 동기화 도중 다른 기기가 올린 변경을 영영 놓치고, 기기 간 시계 오차도 흡수)
+  const nextSyncCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
   onStatus?.('syncing')
   try {
     const { autoMerged, conflicts } = await pushDirtyItems(user.id)
@@ -348,7 +358,7 @@ export async function runSync(onStatus?: (status: SyncStatus) => void): Promise<
     await pullCloudItems(user.id)
     await pullCloudQuotes(user.id)
     await purgeExpiredTrash(user.id)
-    await window.api.sync.setLastSyncAt(new Date().toISOString())
+    await window.api.sync.setLastSyncAt(nextSyncCursor)
     onStatus?.('success')
     return { autoMerged, conflicts }
   } catch (err) {
@@ -398,7 +408,7 @@ export async function resolveConflict(
       const merged = mergeItemFields(local, cloud)
       const { error } = await supabase
         .from('items')
-        .update(merged)
+        .update({ ...merged, updated_at: new Date().toISOString() }) // 다음 pull에서 이 기기에도 반영
         .eq('id', cloudId)
         .eq('user_id', user.id)
       if (!error) await window.api.sync.markItemSynced(localId, cloudId)

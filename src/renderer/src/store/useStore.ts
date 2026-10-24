@@ -58,6 +58,7 @@ interface AppState {
   syncStatus: SyncStatus
   setSyncStatus: (s: SyncStatus) => void
   triggerSync: () => Promise<void>
+  requestSync: () => void
   syncConflicts: SyncConflict[]
   syncAutoMerged: number
   setSyncResult: (conflicts: SyncConflict[], autoMerged: number) => void
@@ -235,6 +236,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setSyncStatus: (s) => set({ syncStatus: s }),
+  // 데이터 변경 후 3초 디바운스 동기화 예약 (명대사 등 스토어 밖에서 바뀐 데이터용)
+  requestSync: () => scheduleSync(get().triggerSync),
   setSyncResult: (conflicts, autoMerged) => set({ syncConflicts: conflicts, syncAutoMerged: autoMerged }),
   removeSyncConflict: (localId) =>
     set((s) => ({ syncConflicts: s.syncConflicts.filter((c) => c.localId !== localId) })),
@@ -270,6 +273,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
     await get().fetchAll()
     set({ checkedItems: failed, selectionMode: failed.length > 0, selectedId: null })
+    if (checkedItems.length > failed.length) scheduleSync(get().triggerSync) // 삭제를 클라우드에도 반영
     if (failed.length > 0) {
       alert(`${failed.length}개 항목 삭제에 실패했습니다. 다시 시도해주세요.`)
     }

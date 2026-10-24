@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore'
 import { Quote } from '../types'
 
 export default function QuotesModal() {
-  const { isQuotesModalOpen, closeQuotesModal, bumpQuotesVersion, selectedId, itemList } = useStore()
+  const { isQuotesModalOpen, closeQuotesModal, bumpQuotesVersion, selectedId, itemList, requestSync } = useStore()
   const item = itemList.find((i) => i.id === selectedId)
 
   const [quotes, setQuotes] = useState<Quote[]>([])
@@ -59,6 +59,7 @@ export default function QuotesModal() {
       setNewEpisode('')
       setNewNote('')
       await reload()
+      requestSync() // 명대사 추가를 클라우드에도 반영
     } catch {
       setMutError('추가에 실패했습니다. 다시 시도해주세요.')
     } finally {
@@ -87,6 +88,7 @@ export default function QuotesModal() {
       })
       setEditingId(null)
       await reload()
+      requestSync()
     } catch {
       setMutError('저장에 실패했습니다. 다시 시도해주세요.')
     } finally {
@@ -101,6 +103,7 @@ export default function QuotesModal() {
     try {
       await window.api.quotes.delete(id)
       await reload()
+      requestSync()
     } catch {
       setMutError('삭제에 실패했습니다. 다시 시도해주세요.')
     } finally {
