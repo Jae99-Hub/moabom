@@ -5,6 +5,7 @@
  */
 
 import { supabase, isSupabaseConfigured, storedUserId } from './supabaseClient'
+import { isExactMatch, mergeItemFields } from './syncMatch'
 
 // ── Anonymous localStorage 헬퍼 ──────────────────────────────────
 const ANON = {
@@ -120,7 +121,7 @@ async function fetchAllRows(table: 'items' | 'quotes', userId: string): Promise<
 // 검색 키를 브라우저 코드에 두지 않기 위해서 (서버가 키를 들고 대신 요청, 같은 검색어는 잠시 저장해 빠르게 돌려줌)
 async function searchViaServer(path: 'books' | 'tmdb', query: string): Promise<unknown[]> {
   // 서버와 같은 방식으로 검색어를 정리해서 보냄 → 같은 검색어는 서버에 저장된 결과를 바로 받음 (api/_shared.js)
-  const q = query.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 100)
+  const q = Array.from(query.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()).slice(0, 100).join('').trim()
   let res: Response
   try {
     res = await fetch(`/api/${path}?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(15000) })
@@ -191,8 +192,34 @@ async function pickImage(): Promise<string | null> {
 /** 작업을 limit개씩 동시에 (요청을 하나씩 기다리면 수백 개에 몇 분이 걸림). 하나라도 실패하면 그 오류를 던짐 */
 async function runLimited(tasks: (() => Promise<void>)[], limit = 8): Promise<void> {
   let next = 0
-  const worker = async () => { while (next < tasks.length) await tasks[next++]() }
+  let failed = false
+  let firstError: unknown
+  // 하나가 실패하면 나머지는 새로 시작하지 않음 (실패를 알린 뒤에도 뒤에서 계속 쓰지 않게)
+  const worker = async () => {
+    while (!failed && next < tasks.length) {
+      try { await tasks[next++]() } catch (e) { if (!failed) { failed = true; firstError = e } }
+    }
+  }
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
+  if (failed) throw firstError
+}
+
+/** 지금 기록을 JSON 파일로 내려받음 (설정의 '백업'과 백업으로 되돌리기 직전의 안전 백업) */
+async function downloadBackup(userId: string | null, label = '백업'): Promise<void> {
+  let items: Row[], quotes: Row[]
+  if (!userId) {
+    items = anonLoad<Row[]>(ANON.items, [])
+    quotes = anonLoad<Row[]>(ANON.quotes, [])
+  } else {
+    ;[items, quotes] = await Promise.all([fetchAllRows('items', userId), fetchAllRows('quotes', userId)])
+  }
+  const json = JSON.stringify({ app: 'moabom', exported_at: nowIso(), items, quotes }, null, 2)
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `모아봄-${label}-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 async function restoreCloudFromBackup(userId: string, items: Row[], quotes: Row[]): Promise<void> {
@@ -352,41 +379,54 @@ export async function setupWebApi(): Promise<void> {
         return { loggedIn, anon, otherAccount: 0 }
       },
 
-      // 로그인 없이 쓴 기록을 지금 계정으로 옮김. 계정에 같은 제목·종류가 있으면 건너뜀.
-      // 옮긴 것은 이 브라우저에서 지운다 (다시 옮겨져 두 번 생기지 않게). 실패한 것은 남겨 다음에 다시.
+      // 로그인 없이 쓴 기록을 지금 계정으로 옮김. 계정에 같은 작품(제목·종류, 둘 다 있으면 연도·번호까지)이 있으면
+      // 새로 만들지 않고 그 작품에 합친다(감상·별점·명대사 보존). 옮기거나 합친 것만 이 브라우저에서 지우고,
+      // 실패한 것은 남겨 다음에 다시. (예전엔 같은 제목이면 '건너뛰었다'면서 감상·명대사까지 지웠음)
       importOtherScope: async (source: 'anon' | 'otherAccount') => {
         const userId = await currentUserId()
         if (!userId || source !== 'anon') return { imported: 0, skipped: 0 }
         const localItems = anonLoad<Row[]>(ANON.items, []).filter((i) => !i.is_deleted)
         const localQuotes = anonLoad<Row[]>(ANON.quotes, []).filter((q) => !q.is_deleted)
-        const key = (r: Row) => `${String(r.title ?? '').trim().toLowerCase()}|${r.item_type}`
-        const existing = new Set((await fetchAllRows('items', userId)).filter((r) => !r.is_deleted).map(key))
+        const cloudItems = (await fetchAllRows('items', userId)).filter((r) => !r.is_deleted)
         const done = new Set<unknown>()
         let imported = 0
-        let skipped = 0
         for (const it of localItems) {
-          if (existing.has(key(it))) { skipped++; done.add(it.id); continue }
           const now = nowIso()
-          const { data, error } = await supabase.from('items')
-            .insert({ ...itemFields(it), user_id: userId, created_at: it.created_at ?? now, updated_at: now })
-            .select('id').single()
-          if (error || !data) continue
-          const quotes = localQuotes.filter((q) => q.item_id === it.id).map((q) => ({
-            user_id: userId, item_id: (data as Row).id, text: String(q.text ?? ''),
+          const quotesOf = (itemId: unknown) => localQuotes.filter((q) => q.item_id === it.id).map((q) => ({
+            user_id: userId, item_id: itemId, text: String(q.text ?? ''),
             page_number: q.page_number ?? null, episode_number: q.episode_number ?? null, note: q.note ?? null,
             created_at: q.created_at ?? now, updated_at: now,
           }))
-          if (quotes.length > 0) {
-            const { error: qError } = await supabase.from('quotes').insert(quotes)
-            if (qError) { await supabase.from('items').delete().eq('id', (data as Row).id).eq('user_id', userId); continue }
+          const same = cloudItems.find((c) => isExactMatch(it, c))
+          if (same) {
+            const { error } = await supabase.from('items')
+              .update({ ...mergeItemFields(it, same), updated_at: now }).eq('id', same.id).eq('user_id', userId)
+            if (error) continue
+            // 이미 계정에 있는 같은 문장은 빼고 넣음
+            const { data: have, error: haveError } = await supabase.from('quotes').select('text')
+              .eq('user_id', userId).eq('item_id', same.id).not('is_deleted', 'is', true)
+            if (haveError) continue
+            const known = new Set((have ?? []).map((q: Row) => String(q.text ?? '')))
+            const add = quotesOf(same.id).filter((q) => !known.has(q.text))
+            if (add.length > 0 && (await supabase.from('quotes').insert(add)).error) continue
+          } else {
+            const { data, error } = await supabase.from('items')
+              .insert({ ...itemFields(it), user_id: userId, created_at: it.created_at ?? now, updated_at: now })
+              .select('*').single()
+            if (error || !data) continue
+            const add = quotesOf((data as Row).id)
+            if (add.length > 0 && (await supabase.from('quotes').insert(add)).error) {
+              await supabase.from('items').delete().eq('id', (data as Row).id).eq('user_id', userId)
+              continue
+            }
+            cloudItems.push(data as Row) // 같은 브라우저 기록 안의 중복도 하나로 합쳐지게
           }
-          existing.add(key(it))
           done.add(it.id)
           imported++
         }
         anonSave(ANON.items, anonLoad<Row[]>(ANON.items, []).filter((i) => !done.has(i.id)))
         anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => !done.has(q.item_id)))
-        return { imported, skipped }
+        return { imported, skipped: 0 }
       },
     },
 
@@ -591,22 +631,7 @@ export async function setupWebApi(): Promise<void> {
 
     db: {
       backup: async () => {
-        const userId = await currentUserId()
-        let items: Row[], quotes: Row[]
-        if (!userId) {
-          items = anonLoad<Row[]>(ANON.items, [])
-          quotes = anonLoad<Row[]>(ANON.quotes, [])
-        } else {
-          ;[items, quotes] = await Promise.all([fetchAllRows('items', userId), fetchAllRows('quotes', userId)])
-        }
-        const json = JSON.stringify({ app: 'moabom', exported_at: nowIso(), items, quotes }, null, 2)
-        const blob = new Blob([json], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `모아봄-백업-${new Date().toISOString().slice(0, 10)}.json`
-        a.click()
-        setTimeout(() => URL.revokeObjectURL(url), 1000)
+        await downloadBackup(await currentUserId())
         return { success: true }
       },
 
@@ -615,8 +640,10 @@ export async function setupWebApi(): Promise<void> {
         if (!file) return { success: false, error: 'read-source' } // 취소
         let backup: { items: Row[]; quotes: Row[] }
         try { backup = readBackupFile(await file.text()) } catch { return { success: false, error: 'invalid-db' } }
+        const userId = await currentUserId()
+        // 되돌리기 전에 지금 기록을 파일로 내려받아 둠 — 잘못 고른 파일로 되돌려도 이 파일로 다시 돌아올 수 있게
+        try { await downloadBackup(userId, '되돌리기-전-백업') } catch { return { success: false, error: 'snapshot-failed' } }
         try {
-          const userId = await currentUserId()
           if (!userId) {
             anonSave(ANON.items, backup.items)
             anonSave(ANON.quotes, backup.quotes)

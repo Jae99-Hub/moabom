@@ -13,6 +13,13 @@ const isWebEnv =
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
 type Tab = 'account' | 'general' | 'data'
 
+/** 되돌리기에 실패했을 때 보여 줄 문구 */
+function restoreFailMessage(error?: string): string {
+  if (error === 'snapshot-failed') return '되돌리기 전에 지금 기록을 백업하지 못해서 되돌리지 않았어요. 백업 폴더를 확인해 주세요.'
+  if (error === 'swap-failed') return '되돌리는 도중에 문제가 생겼어요. 인터넷 연결을 확인하고 다시 시도해 주세요.'
+  return '파일이 손상됐거나 모아봄 백업 파일이 아니에요. 지금 기록은 그대로예요.'
+}
+
 /** moabom-auto-YYYY-MM-DD_HHMMSS.db → "YYYY-MM-DD HH:MM:SS" (같은 분에 만든 백업도 구별되게) */
 function fmtBackupLabel(b: AutoBackupInfo): string {
   const m = b.name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})/)
@@ -141,7 +148,10 @@ export default function SettingsModal() {
   const handleRestore = async () => {
     const ok = await confirmDialog({
       title: '백업 파일로 되돌릴까요?',
-      message: '지금 기록이 고른 파일의 내용으로 바뀌어요. 바꾸기 전 지금 기록은 자동 백업으로 남겨 둬요.',
+      message: isElectron
+        ? `지금 기록이 고른 파일의 내용으로 바뀌어요. 바꾸기 전 지금 기록은 자동 백업으로 남겨 둬요.${
+            scope.loggedIn ? '\n로그인 상태라서, 다음 동기화 때 다른 기기의 기록도 이 시점으로 돌아가요.' : ''}`
+        : '지금 기록이 고른 파일의 내용으로 바뀌어요. 바꾸기 전 지금 기록을 파일로 먼저 내려받아 둬요.',
       confirmText: '되돌리기',
       danger: true,
     })
@@ -150,10 +160,8 @@ export default function SettingsModal() {
     if (result.success) {
       await alertDialog('화면을 새로 불러올게요.', '되돌렸어요')
       window.location.reload()
-    } else if (result.error === 'swap-failed') {
-      void alertDialog('되돌리는 도중에 문제가 생겼어요. 인터넷 연결을 확인하고 다시 시도해 주세요.', '되돌리지 못했어요')
     } else if (result.error && result.error !== 'read-source') {
-      void alertDialog('파일이 손상됐거나 모아봄 백업 파일이 아니에요. 지금 기록은 그대로예요.', '되돌리지 못했어요')
+      void alertDialog(restoreFailMessage(result.error), '되돌리지 못했어요')
     }
   }
 
@@ -221,7 +229,7 @@ export default function SettingsModal() {
     try {
       const r = await window.api.backup.restoreFrom(b.path)
       if (r.success) { await alertDialog('화면을 새로 불러올게요.', '되돌렸어요'); window.location.reload() }
-      else void alertDialog('백업 파일이 손상됐거나 열 수 없어요. 지금 기록은 그대로예요.', '되돌리지 못했어요')
+      else void alertDialog(restoreFailMessage(r.error), '되돌리지 못했어요')
     } finally {
       setBusy(false)
     }

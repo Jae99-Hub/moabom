@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient'
 import {
-  CloudRow, normalizeTitle, isExactMatch, isSimilarMatch, conflictReason, mergeItemFields, buildItemPayload, ALIVE,
+  CloudRow, normalizeTitle, isExactMatch, isSimilarMatch, conflictReason, mergeItemFields, buildItemPayload, ALIVE, toIso,
 } from './syncMatch'
 
 export { mergeItemFields }
@@ -148,12 +148,16 @@ async function pushDirtyItems(
 async function pushCoverOnly(userId: string): Promise<void> {
   const rows = await window.api.sync.getCoverPushItems()
   for (const r of rows) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('items')
       .update({ cover_path: r.cover_path, updated_at: new Date().toISOString() })
       .eq('id', r.server_id)
       .eq('user_id', userId)
-    if (!error) await window.api.sync.markCoverPushed(r.id) // 클라우드에 행이 없어도(0행) 올릴 곳이 없으니 해제
+      .select('id')
+    if (error) continue
+    // 클라우드에 행이 없으면(0행) 올릴 곳이 없으니 해제 — 단, 계정이 바뀌어 0행이 된 것이면 멈춤
+    if (!data || data.length === 0) await assertSameUser(userId)
+    await window.api.sync.markCoverPushed(r.id)
   }
 }
 
@@ -168,7 +172,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       if (quote.server_id) {
         const { data, error } = await supabase
           .from('quotes')
-          .update({ is_deleted: true, deleted_at: quote.deleted_at ?? null, updated_at: new Date().toISOString() })
+          .update({ is_deleted: true, deleted_at: toIso(quote.deleted_at) ?? null, updated_at: new Date().toISOString() })
           .eq('id', quote.server_id)
           .eq('user_id', userId)
           .select('id')
@@ -196,7 +200,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       page_number: quote.page_number ?? null,
       episode_number: quote.episode_number ?? null,
       note: quote.note ?? null,
-      created_at: quote.created_at,
+      created_at: toIso(quote.created_at),
       updated_at: new Date().toISOString(), // push 시각 기준 (증분 pull 누락 방지)
       is_deleted: false,
       deleted_at: null,

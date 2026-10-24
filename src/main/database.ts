@@ -257,8 +257,12 @@ export async function restoreFromFile(srcPath: string): Promise<{ success: boole
     return { success: false, error: 'invalid-db' } // ← 라이브 DB 무손상
   }
 
-  // 되돌리기 전에 지금 기록을 자동 백업으로 남김 — 잘못 고른 파일로 되돌려도 이 시점으로 다시 돌아올 수 있게
-  runAutoBackup(true)
+  // 되돌리기 전에 지금 기록을 자동 백업으로 남김 — 잘못 고른 파일로 되돌려도 이 시점으로 다시 돌아올 수 있게.
+  // 남기지 못하면(백업 폴더에 쓸 수 없음 등) 되돌리지 않는다
+  if (!runAutoBackup(true).success) {
+    try { tmpDb?.close() } catch { /* ignore */ }
+    return { success: false, error: 'snapshot-failed' }
+  }
 
   // 2) 검증된 핸들에 스키마 보강 → 최종 바이트를 임시파일 기록 → 단 한 번의 rename으로만 커밋.
   //    커밋(rename) 이후엔 실패할 코드가 없어 '디스크는 새본인데 실패 반환' 불일치가 원천 차단됨.
@@ -267,10 +271,14 @@ export async function restoreFromFile(srcPath: string): Promise<{ success: boole
   try {
     db = validDb
     bootstrapSchema()                      // 구버전 백업 누락 컬럼 보강
-    // 되돌린 내용을 전부 '올릴 것'으로 표시 — 안 그러면 다음 동기화에서 클라우드의 최근 내용이 다시 덮어써
+    // 지금 로그인한 계정의 기록만 '올릴 것'으로 표시 — 안 그러면 다음 동기화에서 클라우드의 최근 내용이 다시 덮어써
     // 되돌리기가 사실상 취소됐음. 이제 이 시점의 기록이 클라우드(다른 기기)에도 반영된다.
-    db.run('UPDATE items SET is_dirty = 1')
-    db.run('UPDATE quotes SET is_dirty = 1')
+    // 다른 계정(또는 로그아웃 중 되돌린 경우 모든 계정)은 표시를 지워, 나중에 로그인했을 때
+    // 확인 없이 클라우드의 최근 기록을 덮어쓰지 않게 한다 (그 계정은 클라우드가 더 새로우면 클라우드를 따름).
+    const mine = { ':uid': currentUserId }
+    db.run('UPDATE items SET is_dirty = CASE WHEN :uid IS NOT NULL AND user_id = :uid THEN 1 ELSE 0 END', mine)
+    db.run(`UPDATE quotes SET is_dirty = CASE WHEN item_id IN
+      (SELECT id FROM items WHERE :uid IS NOT NULL AND user_id = :uid) THEN 1 ELSE 0 END`, mine)
     const bytes = Buffer.from(db.export())
     const tmpPath = dbPath + '.restoretmp'
     writeFileSync(tmpPath, bytes)          // 실패해도 dbPath는 아직 원본

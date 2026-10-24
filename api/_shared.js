@@ -28,7 +28,8 @@ export function json(body, status = 200, cache = false) {
 
 /** 검색어 정리 — 대소문자·띄어쓰기·한글 조합 방식이 달라도 같은 검색어로 (화면 쪽 webApi.ts와 같은 규칙) */
 export function normalizeQuery(q) {
-  return (q || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 100)
+  // 글자 단위로 자름 (이모지가 반으로 잘리지 않게), 자른 뒤 끝 공백도 정리
+  return Array.from((q || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()).slice(0, 100).join('').trim()
 }
 
 export function readQuery(req) {
@@ -39,7 +40,12 @@ export function readQuery(req) {
  *  주소에 아무 값이나 덧붙여 저장된 결과를 피해 가며 검색 사용량을 소모하는 것을 막는다 */
 export function canonicalRedirect(req) {
   const url = new URL(req.url)
-  const canonical = `${url.pathname}?q=${encodeURIComponent(readQuery(req))}`
-  if (url.pathname + url.search === canonical) return null
-  return Response.redirect(new URL(canonical, url).toString(), 308)
+  const params = url.searchParams
+  const q = readQuery(req)
+  // 글자 그대로(디코딩한 값)로 비교 — 주소 표기(%27 등)만 다른 경우는 그대로 처리 (예전엔 '가 든 검색어가 무한히 되돌려졌음)
+  const extra = [...params.keys()].some((k) => k !== 'q') || params.getAll('q').length !== 1
+  if (!extra && params.get('q') === q) return null
+  const target = new URL(url.pathname, url)
+  target.searchParams.set('q', q)
+  return Response.redirect(target.toString(), 308)
 }

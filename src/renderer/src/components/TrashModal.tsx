@@ -18,7 +18,9 @@ function daysLeft(deletedAt: string | null): number {
   return Math.max(0, left)
 }
 
-/** 휴지통 항목을 클라우드에서도 영구삭제 — 클라우드에서도 휴지통에 있을 때만 (다른 기기에서 복원했으면 그대로 둠) */
+/** 휴지통 항목을 클라우드에서도 영구삭제.
+ *  클라우드에서도 휴지통에 있거나, 아직 삭제가 올라가기 전이라 살아 있더라도 이 기기에서 지운 뒤로 아무도 고치지 않았을 때만.
+ *  (다른 기기에서 그 뒤에 복원·수정했으면 그대로 둠 — 다음 동기화 때 이 기기로 다시 내려옴) */
 async function cloudPurge(item: TrashItem): Promise<void> {
   if (!item.server_id) return
   try {
@@ -28,11 +30,16 @@ async function cloudPurge(item: TrashItem): Promise<void> {
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user
     if (!user) return
-    const { data: trashed } = await supabase.from('items').select('id')
-      .eq('id', item.server_id).eq('user_id', user.id).eq('is_deleted', true).maybeSingle()
-    if (!trashed) return
+    const { data: row } = await supabase.from('items').select('id, is_deleted, updated_at')
+      .eq('id', item.server_id).eq('user_id', user.id).maybeSingle()
+    if (!row) return
+    if (!row.is_deleted) {
+      const editedAt = parseDbDate(row.updated_at as string)?.getTime() ?? Infinity
+      const deletedAt = parseDbDate(item.deleted_at)?.getTime() ?? 0
+      if (editedAt > deletedAt) return
+    }
     await supabase.from('quotes').delete().eq('user_id', user.id).eq('item_id', item.server_id)
-    await supabase.from('items').delete().eq('id', item.server_id).eq('user_id', user.id).eq('is_deleted', true)
+    await supabase.from('items').delete().eq('id', item.server_id).eq('user_id', user.id)
   } catch { /* 오프라인이면 로컬만 삭제, 클라우드는 15일 후 자동 정리 */ }
 }
 

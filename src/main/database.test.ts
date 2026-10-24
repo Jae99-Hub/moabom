@@ -257,6 +257,25 @@ describe('파일·복구', () => {
     expect(db.listAutoBackups().length).toBe(before + 1)
   })
 
+  it('되돌린 다른 계정 기록은 올릴 것으로 표시하지 않음 (나중에 로그인해도 클라우드 최신본을 덮지 않게)', async () => {
+    db.setCurrentUserId(OTHER)
+    const other = newItem('남의 책')
+    db.setCurrentUserId(UID)
+    newItem('내 책')
+    db.flushSave()
+    const backup = join(env.dir, 'old.db')
+    writeFileSync(backup, readFileSync(db.getDbPath()))
+
+    db.setCurrentUserId(null) // 로그아웃한 채 되돌리면 어느 계정도 표시하지 않음
+    expect((await db.restoreFromFile(backup)).success).toBe(true)
+    expect(sql('SELECT COUNT(*) n FROM items WHERE is_dirty = 1')[0].n).toBe(0)
+
+    db.setCurrentUserId(UID)
+    expect((await db.restoreFromFile(backup)).success).toBe(true)
+    expect(db.getDirtyItems().map((i) => i.title)).toEqual(['내 책'])
+    expect(sql('SELECT is_dirty FROM items WHERE id = :id', { ':id': other.id })[0].is_dirty).toBe(0)
+  })
+
   it('DB 파일이 손상돼 있으면 최신 자동 백업으로 복구하고 원본은 따로 보관', async () => {
     newItem('백업된 책')
     db.runAutoBackup(true)

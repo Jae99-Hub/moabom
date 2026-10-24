@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useStorePick } from '../store/useStore'
 import { coverSrc } from '../utils/cover'
 import { confirmDialog, alertDialog } from '../store/dialogs'
 import { typeEmojiLabel, statusLabel } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { resolveConflict, SyncConflict, mergeItemFields } from '../api/syncService'
 
 function excerpt(text: unknown, max = 60): string {
@@ -164,6 +165,9 @@ export default function SyncConflictModal() {
 
   const visible = syncConflicts.length > 0 || syncAutoMerged > 0
   useEscapeKey(() => { void handleClose() }, visible)
+  // 설정·상세 창 위에 떠도 Tab이 이 창 안에서 돌게
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, visible)
   if (!visible) return null
 
   const handleResolve = async (
@@ -229,7 +233,7 @@ export default function SyncConflictModal() {
 
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) void handleClose() }}>
-      <div className="conflict-modal">
+      <div className="conflict-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="비슷한 작품 정리">
         {/* 헤더 */}
         <div className="modal-header">
           <span className="modal-title">🔄 비슷한 작품 정리</span>
