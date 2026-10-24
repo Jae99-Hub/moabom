@@ -1014,7 +1014,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 .reading-progress-pct { font-size: 12px; font-weight: 600; color: var(--text-accent); white-space: nowrap; }
 
 /* Rating row */
-.rating-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+
 .rating-value { font-size: 20px; font-weight: 700; color: var(--star); }
 
 /* Stars */
@@ -1119,14 +1119,6 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 
 .form-input:focus, .form-textarea:focus { border-color: var(--border-focus); }
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
-
-/* Search results */
-.search-results {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--bg-card);
-}
 
 .search-result-item {
   display: flex;
@@ -2831,13 +2823,12 @@ body:has(.modal-overlay, .dm-overlay, .dialog-overlay) .toast-stack { top: 16px;
 }
 .aim-link.muted { color: var(--text-muted); }
 .aim-link:hover { text-decoration: underline; text-underline-offset: 3px; }
-.aim-hint { margin-left: 8px; font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.form-label .aim-hint { margin-left: 8px; font-size: 11px; font-weight: 400; color: var(--text-muted); }
 .aim-details {
   display: flex; flex-direction: column; gap: 12px; padding: 16px;
   border-radius: 12px; background: var(--bg-primary); border: 1px solid var(--border);
 }
 .aim-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.aim-fields.aim-fields-year { grid-template-columns: 110px 1fr; align-items: start; }
 
 .aim-status { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .aim-status button {
@@ -2872,6 +2863,7 @@ body:has(.modal-overlay, .dm-overlay, .dialog-overlay) .toast-stack { top: 16px;
   .aim-body { padding: 14px 16px 20px; gap: 20px; }
   .aim-cover { width: 72px; height: 104px; }
   .aim-status { grid-template-columns: repeat(2, 1fr); }
-  .aim-fields, .aim-fields.aim-fields-year { grid-template-columns: 1fr; }
+  .aim-search-box input { font-size: 16px; } /* 16px보다 작으면 iPhone이 누를 때마다 확대함 */
+  .aim-fields { grid-template-columns: 1fr; }
   .aim-footer { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
 }

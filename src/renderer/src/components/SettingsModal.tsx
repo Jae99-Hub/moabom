@@ -95,6 +95,7 @@ export default function SettingsModal() {
     setUpdateState('idle')
     setUpdateVersion('')
     setShowAllBackups(false)
+    setSigningIn(false)
     loadData()
     window.updaterBridge?.getVersion().then(setCurrentVersion).catch(() => {})
 
@@ -235,8 +236,9 @@ export default function SettingsModal() {
   }
 
   const handleSignIn = async () => {
-    setSigningIn(true)
-    // 데스크톱: 브라우저에서 로그인이 끝나면 앱이 알아서 넘어감 / 웹: 이 창이 Google 로그인으로 이동
+    // 데스크톱: 브라우저에서 로그인이 끝나면 앱이 알아서 넘어감 (그동안 '기다리는 중')
+    // 웹: 이 창이 Google 로그인으로 이동 — 뒤로 가기로 돌아오면 버튼이 멈춰 있지 않게 표시하지 않음
+    if (window.authBridge) setSigningIn(true)
     const message = await startGoogleSignIn()
     if (message) { setSigningIn(false); void alertDialog(message, '로그인하지 못했어요') }
   }
@@ -279,7 +281,7 @@ export default function SettingsModal() {
   const updateText = {
     idle: '새 버전이 나왔는지 확인해요',
     checking: '확인하는 중…',
-    available: `새 버전 ${updateVersion}이 있어요`,
+    available: `새 버전 ${updateVersion}${josa(updateVersion, '이/가')} 있어요`,
     downloading: `내려받는 중… ${updateProgress}%`,
     downloaded: '내려받았어요. 다시 시작하면 바뀌어요',
     'not-available': '최신 버전이에요',

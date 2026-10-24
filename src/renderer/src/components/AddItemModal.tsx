@@ -437,9 +437,9 @@ export default function AddItemModal() {
               </div>
               {searchError && <div className="search-error-msg">{searchError}</div>}
               {hasResults && (
-                <div className="aim-results" role="list">
+                <div className="aim-results">
                   {bookResults.map((r) => (
-                    <button type="button" role="listitem" key={r.google_books_id} className="search-result-item" onClick={() => applyBook(r)}>
+                    <button type="button" key={r.google_books_id} className="search-result-item" onClick={() => applyBook(r)}>
                       {r.cover_path ? <img className="search-result-poster" src={r.cover_path} alt="" /> : <div className="search-result-poster" />}
                       <div className="search-result-info">
                         <div className="search-result-title">{r.title}</div>
@@ -448,7 +448,7 @@ export default function AddItemModal() {
                     </button>
                   ))}
                   {tmdbResults.map((r) => (
-                    <button type="button" role="listitem" key={r.tmdb_id} className="search-result-item" onClick={() => applyTmdb(r)}>
+                    <button type="button" key={r.tmdb_id} className="search-result-item" onClick={() => applyTmdb(r)}>
                       {r.cover_path ? <img className="search-result-poster" src={r.cover_path} alt="" /> : <div className="search-result-poster" />}
                       <div className="search-result-info">
                         <div className="search-result-title">{r.title}</div>
@@ -504,6 +504,15 @@ export default function AddItemModal() {
                 </div>
               </div>
 
+              {/* 장르는 접지 않음 — 왼쪽 목록의 장르별 보기에 쓰이고, 검색으로 고르면 추천이 바로 보임 */}
+              <div className="form-group">
+                <label className="form-label">
+                  장르
+                  <span className="aim-hint">Tab으로 하위 장르 · Enter로 추가</span>
+                </label>
+                <GenreTagInput value={form.genre ?? ''} onChange={(v) => set('genre', v)} suggestions={genreSuggestions} />
+              </div>
+
               {detailsOpen && (
                 <div className="aim-details">
                   <div className="form-group">
@@ -545,17 +554,10 @@ export default function AddItemModal() {
                       </div>
                     </div>
                   )}
-                  <div className="aim-fields aim-fields-year">
+                  <div className="aim-fields">
                     <div className="form-group">
                       <label className="form-label">연도</label>
                       <input className="form-input" type="number" inputMode="numeric" value={form.year ?? ''} onChange={(e) => set('year', e.target.value ? parseInt(e.target.value) : null)} placeholder="예: 2024" min={1000} max={2100} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">
-                        장르
-                        <span className="aim-hint">Tab으로 하위 장르 · Enter로 추가</span>
-                      </label>
-                      <GenreTagInput value={form.genre ?? ''} onChange={(v) => set('genre', v)} suggestions={genreSuggestions} />
                     </div>
                   </div>
                   <div className="form-group">
