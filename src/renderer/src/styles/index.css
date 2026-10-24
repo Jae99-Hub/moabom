@@ -2836,7 +2836,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 
 .stat-bar-label {
   position: absolute;
-  bottom: 0;
+  bottom: -22px; /* 그래프 아래 여백 칸에 (막대와 겹치지 않게) */
   font-size: 10px;
   color: var(--text-muted);
   height: 20px;
