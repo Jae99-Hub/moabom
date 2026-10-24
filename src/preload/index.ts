@@ -3,7 +3,6 @@ import { contextBridge, ipcRenderer } from 'electron'
 const api = {
   items: {
     getAll: () => ipcRenderer.invoke('items:getAll'),
-    getById: (id: number) => ipcRenderer.invoke('items:getById', id),
     insert: (data: unknown) => ipcRenderer.invoke('items:insert', data),
     update: (id: number, data: unknown) => ipcRenderer.invoke('items:update', id, data),
     delete: (id: number) => ipcRenderer.invoke('items:delete', id),
@@ -17,10 +16,7 @@ const api = {
     update: (id: number, data: unknown) => ipcRenderer.invoke('quotes:update', id, data),
     delete: (id: number) => ipcRenderer.invoke('quotes:delete', id)
   },
-  settings: {
-    get: (key: string) => ipcRenderer.invoke('settings:get', key),
-    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value)
-  },
+
   books: {
     search: (query: string) => ipcRenderer.invoke('books:search', query)
   },
@@ -28,9 +24,7 @@ const api = {
     search: (query: string) => ipcRenderer.invoke('tmdb:search', query)
   },
   image: {
-    pick: () => ipcRenderer.invoke('image:pick'),
-    saveCropped: (base64Data: string, fileName: string) =>
-      ipcRenderer.invoke('image:saveCropped', base64Data, fileName)
+    pick: () => ipcRenderer.invoke('image:pick')
   },
   db: {
     backup: () => ipcRenderer.invoke('db:backup'),
@@ -47,8 +41,7 @@ const api = {
     markCoverPushed: (localId: number) => ipcRenderer.invoke('sync:markCoverPushed', localId),
     upsertItemFromCloud: (cloudItem: unknown) =>
       ipcRenderer.invoke('sync:upsertItemFromCloud', cloudItem),
-    upsertQuoteFromCloud: (cloudQuote: unknown) =>
-      ipcRenderer.invoke('sync:upsertQuoteFromCloud', cloudQuote),
+
     upsertItemsFromCloud: (rows: unknown[]) => ipcRenderer.invoke('sync:upsertItemsFromCloud', rows),
     upsertQuotesFromCloud: (rows: unknown[]) => ipcRenderer.invoke('sync:upsertQuotesFromCloud', rows),
     getLastSyncAt: (userId?: string) => ipcRenderer.invoke('sync:getLastSyncAt', userId),
@@ -108,19 +101,7 @@ const authBridge = {
 }
 
 // 화면에는 앱이 쓰는 기능만 연다 (예전엔 쓰지 않는 ipcRenderer 전체(window.electron)까지 열려 있었음)
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('api', api)
-    contextBridge.exposeInMainWorld('authBridge', authBridge)
-    contextBridge.exposeInMainWorld('updaterBridge', updaterBridge)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore
-  window.api = api
-  // @ts-ignore
-  window.authBridge = authBridge
-  // @ts-ignore
-  window.updaterBridge = updaterBridge
-}
+// 창은 항상 contextIsolation + sandbox로 만든다 (src/main/index.ts)
+contextBridge.exposeInMainWorld('api', api)
+contextBridge.exposeInMainWorld('authBridge', authBridge)
+contextBridge.exposeInMainWorld('updaterBridge', updaterBridge)

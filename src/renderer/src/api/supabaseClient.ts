@@ -11,3 +11,16 @@ export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey)
 export const supabase: SupabaseClient = isSupabaseConfigured
   ? createClient(supabaseUrl!, supabaseAnonKey!, { auth: { flowType: 'pkce' } })
   : (null as unknown as SupabaseClient)
+
+/** 이 기기에 저장된 로그인 정보의 계정 id (네트워크 없이 읽음). 없으면 null */
+export function storedUserId(): string | null {
+  try {
+    if (!supabaseUrl) return null
+    // supabase-js 기본 저장 키: sb-<프로젝트 ref>-auth-token
+    const raw = localStorage.getItem(`sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`)
+    if (!raw) return null
+    const saved = JSON.parse(raw)
+    const uid = saved?.user?.id ?? saved?.currentSession?.user?.id
+    return typeof uid === 'string' ? uid : null
+  } catch { return null }
+}

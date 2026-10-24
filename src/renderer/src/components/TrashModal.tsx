@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useStorePick } from '../store/useStore'
 import { TrashItem } from '../types'
 import { coverSrc } from '../utils/cover'
-import { confirmDialog } from '../store/dialogs'
+import { confirmDialog, showToast } from '../store/dialogs'
 import { typeEmojiLabel } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { parseDbDate } from '../utils/date'
@@ -16,7 +16,7 @@ function daysLeft(deletedAt: string | null): number {
   return Math.max(0, left)
 }
 
-/** 휴지통 항목을 클라우드에서도 영구삭제 */
+/** 휴지통 항목을 클라우드에서도 영구삭제 — 클라우드에서도 휴지통에 있을 때만 (다른 기기에서 복원했으면 그대로 둠) */
 async function cloudPurge(item: TrashItem): Promise<void> {
   if (!item.server_id) return
   try {
@@ -26,8 +26,11 @@ async function cloudPurge(item: TrashItem): Promise<void> {
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user
     if (!user) return
+    const { data: trashed } = await supabase.from('items').select('id')
+      .eq('id', item.server_id).eq('user_id', user.id).eq('is_deleted', true).maybeSingle()
+    if (!trashed) return
     await supabase.from('quotes').delete().eq('user_id', user.id).eq('item_id', item.server_id)
-    await supabase.from('items').delete().eq('id', item.server_id).eq('user_id', user.id)
+    await supabase.from('items').delete().eq('id', item.server_id).eq('user_id', user.id).eq('is_deleted', true)
   } catch { /* 오프라인이면 로컬만 삭제, 클라우드는 15일 후 자동 정리 */ }
 }
 
@@ -39,15 +42,16 @@ export default function TrashModal() {
   const [emptying, setEmptying] = useState(false)
   useEscapeKey(closeTrash, isTrashOpen)
 
-  const refresh = async () => {
-    setLoading(true)
+  // quiet: 복원·삭제 뒤 목록만 다시 맞출 때 ('불러오는 중'으로 깜빡이지 않게)
+  const refresh = async (quiet = false) => {
+    if (!quiet) setLoading(true)
     try {
       const list = await window.api.trash.getAll()
       setItems(list)
     } catch {
-      setItems([])
+      if (!quiet) setItems([])
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
@@ -64,8 +68,11 @@ export default function TrashModal() {
       setItems((prev) => prev.filter((i) => i.id !== item.id))
       await fetchAll()
       triggerSync()
+    } catch {
+      showToast('복원하지 못했어요. 다시 시도해 주세요.')
     } finally {
       setBusyId(null)
+      void refresh(true)
     }
   }
 
@@ -79,11 +86,14 @@ export default function TrashModal() {
     if (!ok) return
     setBusyId(item.id)
     try {
-      await cloudPurge(item)
-      await window.api.trash.purge(item.id)
-      setItems((prev) => prev.filter((i) => i.id !== item.id))
+      // 이 기기에서 먼저 지우고(휴지통에 있을 때만), 지워졌을 때만 클라우드도 지운다
+      if (await window.api.trash.purge(item.id)) await cloudPurge(item)
+      else showToast('이미 복원됐거나 정리된 항목이에요.')
+    } catch {
+      showToast('삭제하지 못했어요. 다시 시도해 주세요.')
     } finally {
       setBusyId(null)
+      void refresh(true)
     }
   }
 
@@ -99,12 +109,13 @@ export default function TrashModal() {
     setEmptying(true)
     try {
       for (const item of [...items]) {
-        await cloudPurge(item)
-        await window.api.trash.purge(item.id)
+        try {
+          if (await window.api.trash.purge(item.id)) await cloudPurge(item)
+        } catch { /* 하나 실패해도 나머지는 계속 */ }
       }
-      setItems([])
     } finally {
       setEmptying(false)
+      await refresh(true)
     }
   }
 

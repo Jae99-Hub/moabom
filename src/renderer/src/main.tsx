@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import App from './App'
 import './styles/index.css'
-import { isSupabaseConfigured, supabase } from './api/supabaseClient'
+import { isSupabaseConfigured, supabase, storedUserId } from './api/supabaseClient'
 import * as Sentry from '@sentry/react'
 import { useStore } from './store/useStore'
 import { alertDialog } from './store/dialogs'
@@ -81,19 +81,6 @@ async function backendReachable(timeoutMs = 4000): Promise<boolean> {
   }
 }
 
-/** 이 PC에 저장된 로그인 정보의 계정 id (네트워크 없이 읽음). 없으면 null */
-function readCachedUserId(): string | null {
-  try {
-    const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
-    if (!url) return null
-    // supabase-js 기본 저장 키: sb-<프로젝트 ref>-auth-token
-    const raw = localStorage.getItem(`sb-${new URL(url).hostname.split('.')[0]}-auth-token`)
-    if (!raw) return null
-    const saved = JSON.parse(raw)
-    const uid = saved?.user?.id ?? saved?.currentSession?.user?.id
-    return typeof uid === 'string' ? uid : null
-  } catch { return null }
-}
 
 // ── 앱 진입 ────────────────────────────────────────────────────────
 // 지금 화면에 띄운 데이터 범위: 로그인 계정 id, null(로그인 없이), undefined(아직 앱 밖 — 로그인 화면 등)
@@ -122,6 +109,7 @@ function bgSync(): Promise<void> {
     // 이전 계정의 동기화가 아직 도는 중 → 끝난 뒤 지금 계정으로 다시
     return bgSyncRunning.then(() => bgSync())
   }
+  lastBgSyncAt = Date.now()
   const scope = enteredScope
   bgSyncFor = scope
   bgSyncRunning = (async () => {
@@ -138,6 +126,18 @@ function bgSync(): Promise<void> {
   })()
   return bgSyncRunning
 }
+
+// 다른 기기에서 고친 내용도 받아 오게: 창으로 돌아올 때(1분 넘게 지났으면)와 켜 둔 동안 10분마다 동기화.
+// 예전엔 앱을 켤 때·이 기기에서 고칠 때만 동기화해서, 켜 둔 채로는 다른 기기의 변경이 안 보였음
+const RESYNC_MIN_GAP_MS = 60_000
+let lastBgSyncAt = 0
+function syncIfStale(): void {
+  if (typeof enteredScope !== 'string' || document.hidden) return
+  if (Date.now() - lastBgSyncAt < RESYNC_MIN_GAP_MS) return
+  void bgSync()
+}
+window.addEventListener('focus', syncIfStale)
+setInterval(syncIfStale, 10 * 60_000)
 
 /** 저장된 로그인으로 먼저 연 뒤, 서버에 닿으면 세션을 확인(만료 시 갱신)하고 동기화 */
 async function confirmSessionAndSync(uid: string): Promise<void> {
@@ -219,7 +219,7 @@ async function bootstrap() {
 
     // 저장된 로그인이 있으면 네트워크를 기다리지 않고 바로 그 계정 데이터로 연다
     // (예전엔 서버 확인을 기다리느라 화면이 늦게 떴고, 오프라인이면 내 데이터 대신 '로그인 없이' 데이터가 보였음)
-    const cachedUid = readCachedUserId()
+    const cachedUid = storedUserId()
     if (cachedUid) {
       await enterApp(cachedUid)
       void confirmSessionAndSync(cachedUid)

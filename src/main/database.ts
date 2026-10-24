@@ -58,8 +58,6 @@ export async function initDatabase(): Promise<void> {
 
   bootstrapSchema()
 
-  runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('tmdb_api_key', '')")
-  runStmt("INSERT OR IGNORE INTO settings (key, value) VALUES ('last_sync_at', '')")
   // 시작 시 비로그인/미동기화 휴지통 중 15일 경과분 영구삭제 (로그인분은 동기화에서 처리)
   purgeExpiredTrash(15, true)
   save()
@@ -115,6 +113,9 @@ function renameWithRetry(from: string, to: string): void {
 }
 
 export function getDbPath(): string { return dbPath }
+
+/** 자동 테스트 전용 — 테스트가 내부 상태를 직접 확인할 때만 쓴다 */
+export function __dbForTests(): Database { return db }
 
 function quickCheckOk(d: Database): boolean {
   try {
@@ -256,6 +257,9 @@ export async function restoreFromFile(srcPath: string): Promise<{ success: boole
     return { success: false, error: 'invalid-db' } // ← 라이브 DB 무손상
   }
 
+  // 되돌리기 전에 지금 기록을 자동 백업으로 남김 — 잘못 고른 파일로 되돌려도 이 시점으로 다시 돌아올 수 있게
+  runAutoBackup(true)
+
   // 2) 검증된 핸들에 스키마 보강 → 최종 바이트를 임시파일 기록 → 단 한 번의 rename으로만 커밋.
   //    커밋(rename) 이후엔 실패할 코드가 없어 '디스크는 새본인데 실패 반환' 불일치가 원천 차단됨.
   const validDb = tmpDb as Database
@@ -263,6 +267,10 @@ export async function restoreFromFile(srcPath: string): Promise<{ success: boole
   try {
     db = validDb
     bootstrapSchema()                      // 구버전 백업 누락 컬럼 보강
+    // 되돌린 내용을 전부 '올릴 것'으로 표시 — 안 그러면 다음 동기화에서 클라우드의 최근 내용이 다시 덮어써
+    // 되돌리기가 사실상 취소됐음. 이제 이 시점의 기록이 클라우드(다른 기기)에도 반영된다.
+    db.run('UPDATE items SET is_dirty = 1')
+    db.run('UPDATE quotes SET is_dirty = 1')
     const bytes = Buffer.from(db.export())
     const tmpPath = dbPath + '.restoretmp'
     writeFileSync(tmpPath, bytes)          // 실패해도 dbPath는 아직 원본
@@ -648,10 +656,11 @@ export function insertItem(data: Omit<ItemRow, 'id' | 'created_at' | 'updated_at
   db.run(
     `INSERT INTO items (title, original_title, item_type, cover_path, backdrop_path, author, publisher,
       isbn, page_count, current_page, director, platform, tmdb_id, google_books_id, genre, year,
-      overview, rating, status, review, read_date, user_id, is_dirty)
+      overview, rating, status, review, read_date, user_id, is_dirty, created_at, updated_at)
      VALUES (:title, :original_title, :item_type, :cover_path, :backdrop_path, :author, :publisher,
       :isbn, :page_count, :current_page, :director, :platform, :tmdb_id, :google_books_id, :genre, :year,
-      :overview, :rating, :status, :review, :read_date, :user_id, 1)`,
+      :overview, :rating, :status, :review, :read_date, :user_id, 1,
+      strftime('%Y-%m-%d %H:%M:%f','now'), strftime('%Y-%m-%d %H:%M:%f','now'))`,
     {
       ':title': data.title,
       ':original_title': data.original_title ?? null,
@@ -756,38 +765,39 @@ export function restoreItem(id: number): void {
   save()
 }
 
-/** 휴지통에서 즉시 영구삭제 (로컬 하드 삭제). 클라우드 삭제는 호출측에서 처리. */
-export function purgeItem(id: number): void {
+/** 휴지통에서 즉시 영구삭제 (로컬 하드 삭제). 휴지통에 있는 항목만 지우고, 지웠으면 true.
+ *  열어 둔 휴지통 목록이 오래돼(그사이 '되돌리기'·다른 기기에서 복원) 살아 있는 항목을 지우는 일 방지.
+ *  클라우드 삭제는 호출측에서 처리. */
+export function purgeItem(id: number): boolean {
+  if (!queryOne('SELECT 1 AS ok FROM items WHERE id = :id AND is_deleted = 1', { ':id': id })) return false
   db.run('DELETE FROM quotes WHERE item_id = :id', { ':id': id })
-  db.run('DELETE FROM items WHERE id = :id', { ':id': id })
+  db.run('DELETE FROM items WHERE id = :id AND is_deleted = 1', { ':id': id })
   save()
+  return true
 }
 
 /** 만료된 휴지통 항목 로컬 영구삭제 (deleted_at이 days일 이전).
- *  onlyLocalOnly=true면 클라우드에 올라간 적 없는(server_id IS NULL) 항목만 — 시작 시 비로그인 정리용 */
+ *  onlyLocalOnly=true (시작 시): 클라우드에 올라간 적 없는(server_id IS NULL) 것만, 모든 계정.
+ *  onlyLocalOnly=false (동기화 후): 지금 계정의 것 중 삭제 표시를 클라우드에 이미 올린(is_dirty=0) 것만 —
+ *  아직 못 올린 삭제를 먼저 지우면 다른 기기에서는 영영 살아 있게 됨. 다른 계정 기록은 건드리지 않음. */
 export function purgeExpiredTrash(days = 15, onlyLocalOnly = false): void {
   // 일수는 정수로 고정해 바인딩 (렌더러가 넘긴 값을 SQL 문자열에 그대로 넣지 않음)
   const n = Math.max(1, Math.floor(Number(days)) || 15)
-  const p = { ':mod': `-${n} days` }
-  const cutoff = `datetime('now', :mod)`
-  const cond = onlyLocalOnly ? 'AND server_id IS NULL' : ''
+  const p = { ':mod': `-${n} days`, ':uid': currentUserId }
   // datetime(deleted_at): 로컬('YYYY-MM-DD HH:MM:SS')과 클라우드 pull(ISO+TZ) 포맷을 모두 UTC로 정규화
+  const expired = `is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < datetime('now', :mod)`
+  const itemScope = onlyLocalOnly ? 'AND server_id IS NULL' : 'AND is_dirty = 0 AND user_id IS :uid'
+  // 따로 지운 명대사(부모는 살아 있음)
+  const quoteScope = onlyLocalOnly
+    ? 'AND server_id IS NULL'
+    : 'AND is_dirty = 0 AND item_id IN (SELECT id FROM items WHERE user_id IS :uid)'
   let changed = 0
-  db.run(
-    `DELETE FROM quotes WHERE item_id IN (
-       SELECT id FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}
-     )`, p
-  )
+  db.run(`DELETE FROM quotes WHERE item_id IN (SELECT id FROM items WHERE ${expired} ${itemScope})`, p)
   changed += db.getRowsModified()
-  db.run(
-    `DELETE FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}`, p
-  )
+  db.run(`DELETE FROM items WHERE ${expired} ${itemScope}`, p)
   changed += db.getRowsModified()
-  // 개별 삭제된 명문장(부모는 살아있음)도 만료 시 정리
-  if (!onlyLocalOnly) {
-    db.run(`DELETE FROM quotes WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff}`, p)
-    changed += db.getRowsModified()
-  }
+  db.run(`DELETE FROM quotes WHERE ${expired} ${quoteScope}`, p)
+  changed += db.getRowsModified()
   if (changed > 0) save()
 }
 
@@ -822,8 +832,9 @@ export function searchQuotes(query: string): (QuoteRow & { item_title: string; i
 
 export function insertQuote(data: Omit<QuoteRow, 'id' | 'created_at' | 'updated_at' | 'server_id' | 'is_dirty' | 'is_deleted'>): QuoteRow {
   db.run(
-    `INSERT INTO quotes (item_id, text, page_number, episode_number, note, is_dirty)
-     VALUES (:item_id, :text, :page_number, :episode_number, :note, 1)`,
+    `INSERT INTO quotes (item_id, text, page_number, episode_number, note, is_dirty, created_at, updated_at)
+     VALUES (:item_id, :text, :page_number, :episode_number, :note, 1,
+       strftime('%Y-%m-%d %H:%M:%f','now'), strftime('%Y-%m-%d %H:%M:%f','now'))`,
     {
       ':item_id': data.item_id,
       ':text': data.text,
@@ -856,9 +867,11 @@ export function updateQuote(id: number, data: Partial<Pick<QuoteRow, 'text' | 'p
 
 export function deleteQuote(id: number): void {
   const row = queryOne('SELECT server_id FROM quotes WHERE id = :id', { ':id': id })
-  if (row?.server_id) {
+  // 로그인 중이면 클라우드에 아직 없어 보여도 '삭제 표시'로 — 올리는 도중인 명대사를 바로 지우면
+  // 클라우드에만 살아남아 다른 기기에 계속 보임. 표시만 남긴 것은 15일 뒤 정리된다.
+  if (row?.server_id || currentUserId) {
     db.run(
-      "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
+      "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = strftime('%Y-%m-%d %H:%M:%f','now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
       { ':id': id }
     )
   } else {

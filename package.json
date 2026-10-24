@@ -10,7 +10,10 @@
     "package:win": "electron-vite build && electron-builder --win",
     "package:mac": "electron-vite build && electron-builder --mac",
     "dev:web": "vite --config vite.web.config.ts",
-    "build:web": "vite build --config vite.web.config.ts"
+    "build:web": "vite build --config vite.web.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
@@ -32,6 +35,7 @@
     "react-dom": "^18.2.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
+    "vitest": "^3.2.7",
     "zustand": "^4.5.0"
   }
 }

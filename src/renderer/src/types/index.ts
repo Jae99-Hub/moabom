@@ -112,7 +112,6 @@ declare global {
     api: {
       items: {
         getAll: () => Promise<Item[]>
-        getById: (id: number) => Promise<Item | undefined>
         insert: (data: ItemFormData) => Promise<Item>
         update: (id: number, data: Partial<ItemFormData>) => Promise<Item | undefined>
         delete: (id: number) => Promise<void>
@@ -126,10 +125,6 @@ declare global {
         update: (id: number, data: Partial<Pick<Quote, 'text' | 'page_number' | 'episode_number' | 'note'>>) => Promise<Quote | undefined>
         delete: (id: number) => Promise<void>
       }
-      settings: {
-        get: (key: string) => Promise<string>
-        set: (key: string, value: string) => Promise<void>
-      }
       books: {
         search: (query: string) => Promise<GoogleBookResult[]>
       }
@@ -138,7 +133,6 @@ declare global {
       }
       image: {
         pick: () => Promise<string | null>
-        saveCropped: (base64Data: string, fileName: string) => Promise<string>
       }
       db: {
         backup: () => Promise<{ success: boolean; path?: string }>
@@ -160,7 +154,6 @@ declare global {
         getCoverPushItems: () => Promise<{ id: number; server_id: number; cover_path: string }[]>
         markCoverPushed: (localId: number) => Promise<void>
         upsertItemFromCloud: (cloudItem: unknown) => Promise<void>
-        upsertQuoteFromCloud: (cloudQuote: unknown) => Promise<void>
         upsertItemsFromCloud: (rows: unknown[]) => Promise<void>
         upsertQuotesFromCloud: (rows: unknown[]) => Promise<void>
         getLastSyncAt: (userId?: string) => Promise<string>
@@ -171,7 +164,8 @@ declare global {
       trash: {
         getAll: () => Promise<TrashItem[]>
         restore: (id: number) => Promise<void>
-        purge: (id: number) => Promise<void>
+        /** 휴지통에 있던 항목만 지우고 지웠으면 true (그사이 복원된 항목은 false) */
+        purge: (id: number) => Promise<boolean>
         purgeExpired: (days: number) => Promise<void>
       }
     }

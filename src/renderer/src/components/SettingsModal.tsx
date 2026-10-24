@@ -133,7 +133,7 @@ export default function SettingsModal() {
   const handleRestore = async () => {
     const ok = await confirmDialog({
       title: '백업 파일로 되돌릴까요?',
-      message: '지금 기록이 고른 파일의 내용으로 바뀌어요.',
+      message: '지금 기록이 고른 파일의 내용으로 바뀌어요. 바꾸기 전 지금 기록은 자동 백업으로 남겨 둬요.',
       confirmText: '되돌리기',
       danger: true,
     })
@@ -197,10 +197,10 @@ export default function SettingsModal() {
 
   const handleRestoreFrom = async (b: AutoBackupInfo) => {
     const extra = scope.loggedIn
-      ? '\n로그인 상태라서, 다음 동기화 때 다른 기기의 최근 변경도 이 시점으로 돌아갈 수 있어요.' : ''
+      ? '\n로그인 상태라서, 다음 동기화 때 다른 기기의 기록도 이 시점으로 돌아가요.' : ''
     const ok = await confirmDialog({
       title: `'${fmtBackupLabel(b)}' 시점으로 되돌릴까요?`,
-      message: `지금 기록이 그 시점의 내용으로 바뀌어요.${extra}`,
+      message: `지금 기록이 그 시점의 내용으로 바뀌어요. 바꾸기 전 지금 기록은 자동 백업으로 남겨 둬요.${extra}`,
       confirmText: '되돌리기',
       danger: true,
     })

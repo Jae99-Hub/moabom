@@ -1,16 +1,15 @@
 /**
  * 웹(브라우저) 환경에서 window.api를 구현합니다.
- * - 로그인 시: Supabase (PostgreSQL + Storage)
+ * - 로그인 시: Supabase (PostgreSQL)
  * - 비로그인 시: localStorage
  */
 
-import { supabase, isSupabaseConfigured } from './supabaseClient'
+import { supabase, isSupabaseConfigured, storedUserId } from './supabaseClient'
 
 // ── Anonymous localStorage 헬퍼 ──────────────────────────────────
 const ANON = {
   items:   'moabom_items',
   quotes:  'moabom_quotes',
-  settings:'moabom_settings',
   nextId:  'moabom_next_id',
 }
 
@@ -18,7 +17,12 @@ function anonLoad<T>(key: string, def: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? def } catch { return def }
 }
 function anonSave(key: string, val: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(val)) } catch {}
+  try {
+    localStorage.setItem(key, JSON.stringify(val))
+  } catch {
+    // 브라우저 저장 공간(보통 5MB)이 가득 참 — 직접 넣은 표지가 많으면 생김. 조용히 버리면 기록이 사라지므로 알린다
+    throw new Error('이 브라우저의 저장 공간이 가득 찼어요. 로그인하면 공간 걱정 없이 기록할 수 있어요.')
+  }
 }
 function anonNextId(): number {
   const id = anonLoad<number>(ANON.nextId, 0) + 1
@@ -28,12 +32,45 @@ function anonNextId(): number {
 
 const nowIso = (): string => new Date().toISOString()
 const TRASH_DAYS = 15
+const PAGE = 1000 // Supabase가 한 번에 돌려주는 최대 행 수
 type Row = Record<string, unknown>
+
+// 작품 칸 (클라우드·브라우저 저장 공통) — 화면이 보낸 값 중 이것만 저장
+const ITEM_FIELDS = [
+  'title', 'original_title', 'item_type', 'cover_path', 'backdrop_path',
+  'author', 'publisher', 'isbn', 'page_count', 'current_page',
+  'director', 'platform', 'tmdb_id', 'google_books_id', 'genre',
+  'year', 'overview', 'rating', 'status', 'review', 'read_date',
+] as const
+
+function itemFields(src: Row): Row {
+  const out: Row = {}
+  for (const k of ITEM_FIELDS) out[k] = src[k] ?? null
+  out.title = String(src.title ?? '')
+  out.item_type = src.item_type ?? 'book'
+  out.status = src.status ?? 'want'
+  out.current_page = Number(src.current_page ?? 0) || 0
+  return out
+}
+
+/** 바꾼 칸만 (부분 수정용) */
+function changedItemFields(src: Row): Row {
+  const out: Row = {}
+  for (const k of ITEM_FIELDS) if (k in src) out[k] = src[k] ?? null
+  return out
+}
+
+/** 명대사 정렬 — 데스크톱과 같게: 쪽/회차 순, 같으면 쓴 순서 */
+function sortQuotes(list: Row[]): Row[] {
+  const pos = (q: Row) => Number(q.page_number ?? q.episode_number ?? Infinity)
+  return list.sort((a, b) => (pos(a) - pos(b)) || String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
+}
 
 /** 휴지통 15일 지난 항목 영구삭제 (휴지통을 열 때 정리) */
 async function purgeExpiredTrash(days = TRASH_DAYS): Promise<void> {
   const cutoff = new Date(Date.now() - days * 86400000).toISOString()
-  if (!(await isAuthenticated())) {
+  const userId = await currentUserId()
+  if (!userId) {
     const items = anonLoad<Row[]>(ANON.items, [])
     const expired = new Set(items.filter((i) => i.is_deleted && String(i.deleted_at ?? '') < cutoff).map((i) => i.id))
     if (expired.size === 0) return
@@ -41,24 +78,42 @@ async function purgeExpiredTrash(days = TRASH_DAYS): Promise<void> {
     anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => !expired.has(q.item_id)))
     return
   }
-  const userId = await getUserId()
   await supabase.from('quotes').delete().eq('user_id', userId).eq('is_deleted', true).lt('deleted_at', cutoff)
   await supabase.from('items').delete().eq('user_id', userId).eq('is_deleted', true).lt('deleted_at', cutoff)
 }
 
-async function isAuthenticated(): Promise<boolean> {
-  if (!isSupabaseConfigured) return false
+/** 지금 로그인한 계정 id. 이 기기에 저장된 로그인으로 판단해 작업마다 서버에 묻지 않는다.
+ *  (예전엔 매번 서버에 물어 느렸고, 연결이 잠깐 끊기면 '로그인 안 됨'으로 보고 이 브라우저의 비로그인 기록을 보여 줬음) */
+async function currentUserId(): Promise<string | null> {
+  if (!isSupabaseConfigured) return null
   try {
-    const { data: { user } } = await supabase.auth.getUser()
-    return !!user
-  } catch { return false }
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (session) return session.user.id
+    // 만료된 로그인을 연결 문제로 갱신하지 못함 → 로그인 상태로 두고, 요청이 실패하면 그 오류를 보여 준다
+    return error ? storedUserId() : null
+  } catch { return storedUserId() }
 }
 
-// ── 현재 유저 ID 조회 ────────────────────────────────────────────
+async function isAuthenticated(): Promise<boolean> {
+  return (await currentUserId()) !== null
+}
+
 async function getUserId(): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('로그인이 필요합니다')
-  return user.id
+  const id = await currentUserId()
+  if (!id) throw new Error('로그인이 필요합니다')
+  return id
+}
+
+/** 내 행 전부 (1,000행씩 나눠 받음 — 한 번에 받으면 1,000행 넘는 부분이 잘림) */
+async function fetchAllRows(table: 'items' | 'quotes', userId: string): Promise<Row[]> {
+  const rows: Row[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase.from(table).select('*').eq('user_id', userId)
+      .order('id', { ascending: true }).range(from, from + PAGE - 1)
+    if (error) throw error
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE) return rows
+  }
 }
 
 // ── 도서·영화 검색 — 모아봄 웹 서버(/api)를 거친다 ──────────────────
@@ -78,76 +133,129 @@ async function searchViaServer(path: 'books' | 'tmdb', query: string): Promise<u
   return Array.isArray(data) ? data : []
 }
 
-const searchGoogleBooks = (query: string): Promise<unknown[]> => searchViaServer('books', query)
-const searchTmdb = (query: string): Promise<unknown[]> => searchViaServer('tmdb', query)
-
-// ── 이미지 선택 + 리사이즈 ────────────────────────────────────────
-function pickImageRaw(): Promise<string | null> {
+// ── 파일 고르기 ───────────────────────────────────────────────────
+function pickFile(accept: string): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = 'image/*'
+    input.accept = accept
     let resolved = false
-
-    const done = (val: string | null) => {
+    const done = (file: File | null) => {
       if (resolved) return
       resolved = true
-      resolve(val)
+      resolve(file)
     }
-
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) { done(null); return }
-      const reader = new FileReader()
-      reader.onload = () => {
-        const dataUrl = reader.result as string
-        const img = new Image()
-        img.onload = () => {
-          const MAX = 1200
-          const scale = img.width > MAX || img.height > MAX
-            ? Math.min(MAX / img.width, MAX / img.height) : 1
-          const canvas = document.createElement('canvas')
-          canvas.width = Math.round(img.width * scale)
-          canvas.height = Math.round(img.height * scale)
-          const ctx = canvas.getContext('2d')!
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-          done(canvas.toDataURL('image/jpeg', 0.85))
-        }
-        img.onerror = () => done(dataUrl)
-        img.src = dataUrl
-      }
-      reader.onerror = () => done(null)
-      reader.readAsDataURL(file)
-    }
-
-    // 취소 이벤트 (모던 브라우저 지원)
+    input.onchange = () => done(input.files?.[0] ?? null)
+    // 취소 이벤트 (최신 브라우저). 지원하지 않는 브라우저에서 취소하면 다음 고르기 때까지 그냥 기다린다
+    // — 예전의 '창으로 돌아오면 1.5초 뒤 취소로 보기'는 휴대폰에서 사진을 고르는 중에 취소돼 버렸음
     input.addEventListener('cancel', () => done(null))
-
-    // 폴백: focus 복귀 후 충분한 시간 대기 (모바일 대응 1500ms)
-    window.addEventListener('focus', () => {
-      setTimeout(() => done(null), 1500)
-    }, { once: true })
-
     input.click()
   })
 }
 
-// ── Supabase Storage 업로드 ────────────────────────────────────────
-async function uploadCover(dataUrl: string, userId: string): Promise<string> {
-  try {
-    const res = await fetch(dataUrl)
-    const blob = await res.blob()
-    const ext = blob.type.includes('png') ? 'png' : 'jpg'
-    const path = `${userId}/${Date.now()}.${ext}`
-    const { data, error } = await supabase.storage
-      .from('covers')
-      .upload(path, blob, { contentType: blob.type, upsert: false })
-    if (error) return dataUrl
-    const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(data.path)
-    return publicUrl
-  } catch {
-    return dataUrl
+// ── 이미지 선택 + 리사이즈 (표지는 data URL로 기록에 함께 저장) ─────
+async function pickImage(): Promise<string | null> {
+  const file = await pickFile('image/*')
+  if (!file) return null
+  const dataUrl = await new Promise<string | null>((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
+  })
+  if (!dataUrl) return null
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 1200
+      const scale = Math.min(1, MAX / img.width, MAX / img.height)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(dataUrl); return }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    img.onerror = () => resolve(null) // 이미지가 아니거나 브라우저가 못 여는 형식(HEIC 등)
+    img.src = dataUrl
+  })
+}
+
+// ── 백업 파일로 되돌리기 (로그인) ────────────────────────────────────
+// 지우고 다시 넣지 않고, 같은 항목은 그 자리에서 고치고 백업에 없는 항목은 휴지통으로 옮긴다.
+// 예전엔 클라우드의 내 기록을 모두 지우고 새로 넣어서 ① 데스크톱 앱이 가진 연결이 모두 끊겨 같은 작품이 두 번씩 생기고
+// ② 회차·삭제 상태·기록한 날짜가 빠졌으며 ③ 중간에 실패하면 기록이 사라질 수 있었음.
+/** 작업을 limit개씩 동시에 (요청을 하나씩 기다리면 수백 개에 몇 분이 걸림). 하나라도 실패하면 그 오류를 던짐 */
+async function runLimited(tasks: (() => Promise<void>)[], limit = 8): Promise<void> {
+  let next = 0
+  const worker = async () => { while (next < tasks.length) await tasks[next++]() }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
+}
+
+async function restoreCloudFromBackup(userId: string, items: Row[], quotes: Row[]): Promise<void> {
+  const ts = nowIso()
+  const [curItems, curQuotes] = await Promise.all([fetchAllRows('items', userId), fetchAllRows('quotes', userId)])
+  const curItemIds = new Set(curItems.map((r) => r.id))
+  const curQuoteIds = new Set(curQuotes.map((r) => r.id))
+
+  // 같은 계정의 백업이면 id로 그 자리를 고치고, 아니면(다른 계정·비로그인 백업) 새로 넣는다
+  const sameRow = (r: Row, ids: Set<unknown>) => r.user_id === userId && ids.has(r.id)
+  const check = ({ error }: { error: unknown }) => { if (error) throw error }
+  const idMap = new Map<unknown, unknown>()
+  await runLimited(items.map((it) => async () => {
+    const row: Row = {
+      ...itemFields(it), user_id: userId, updated_at: ts,
+      created_at: it.created_at ?? ts, is_deleted: !!it.is_deleted, deleted_at: it.is_deleted ? (it.deleted_at ?? ts) : null,
+    }
+    if (sameRow(it, curItemIds)) {
+      check(await supabase.from('items').update(row).eq('id', it.id).eq('user_id', userId))
+      idMap.set(it.id, it.id)
+      return
+    }
+    const { data, error } = await supabase.from('items').insert(row).select('id').single()
+    if (error) throw error
+    idMap.set(it.id, (data as Row).id)
+  }))
+
+  const restoredQuoteIds = new Set<unknown>()
+  await runLimited(quotes.map((q) => async () => {
+    const itemId = idMap.get(q.item_id)
+    if (itemId == null) return
+    const row: Row = {
+      user_id: userId, item_id: itemId, text: String(q.text ?? ''),
+      page_number: q.page_number ?? null, episode_number: q.episode_number ?? null, note: q.note ?? null,
+      created_at: q.created_at ?? ts, updated_at: ts,
+      is_deleted: !!q.is_deleted, deleted_at: q.is_deleted ? (q.deleted_at ?? ts) : null,
+    }
+    if (sameRow(q, curQuoteIds)) {
+      check(await supabase.from('quotes').update(row).eq('id', q.id).eq('user_id', userId))
+      restoredQuoteIds.add(q.id)
+      return
+    }
+    check(await supabase.from('quotes').insert(row))
+  }))
+
+  // 백업에 없던 지금 기록은 휴지통으로 (15일 안에 되살릴 수 있음)
+  const keptItems = new Set(idMap.values())
+  const extraItems = curItems.filter((r) => !r.is_deleted && !keptItems.has(r.id)).map((r) => r.id)
+  const extraQuotes = curQuotes.filter((r) => !r.is_deleted && !restoredQuoteIds.has(r.id) && keptItems.has(r.item_id)).map((r) => r.id)
+  const trash = { is_deleted: true, deleted_at: ts, updated_at: ts }
+  for (let i = 0; i < extraQuotes.length; i += 200) {
+    check(await supabase.from('quotes').update(trash).eq('user_id', userId).in('id', extraQuotes.slice(i, i + 200)))
   }
+  for (let i = 0; i < extraItems.length; i += 200) {
+    const ids = extraItems.slice(i, i + 200)
+    check(await supabase.from('items').update(trash).eq('user_id', userId).in('id', ids))
+    check(await supabase.from('quotes').update(trash).eq('user_id', userId).in('item_id', ids).not('is_deleted', 'is', true))
+  }
+}
+
+function readBackupFile(text: string): { items: Row[]; quotes: Row[] } {
+  const parsed = JSON.parse(text) as { items?: unknown; quotes?: unknown }
+  if (!Array.isArray(parsed?.items) || !Array.isArray(parsed?.quotes)) throw new Error('invalid-backup')
+  const isRow = (v: unknown): v is Row => !!v && typeof v === 'object'
+  return { items: parsed.items.filter(isRow), quotes: parsed.quotes.filter(isRow) }
 }
 
 // ── window.api 구현 ───────────────────────────────────────────────
@@ -155,136 +263,61 @@ export async function setupWebApi(): Promise<void> {
   const api = {
     items: {
       getAll: async () => {
-        if (!(await isAuthenticated())) {
-          return anonLoad<Record<string, unknown>[]>(ANON.items, [])
+        const userId = await currentUserId()
+        if (!userId) {
+          return anonLoad<Row[]>(ANON.items, [])
             .filter((i) => !i.is_deleted)
             .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
         }
-        const userId = await getUserId()
         // 휴지통 항목은 빼고 (데스크톱 앱이 휴지통으로 옮긴 것도 클라우드엔 '삭제 표시'로 남아 있음)
-        const { data, error } = await supabase
-          .from('items')
-          .select('*')
-          .eq('user_id', userId)
-          .not('is_deleted', 'is', true)
-          .order('created_at', { ascending: false })
-        if (error) throw error
-        return data ?? []
-      },
-
-      getById: async (id: number) => {
-        if (!(await isAuthenticated())) {
-          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
-          return items.find((i) => i.id === id) ?? null
+        const rows: Row[] = []
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await supabase
+            .from('items')
+            .select('*')
+            .eq('user_id', userId)
+            .not('is_deleted', 'is', true)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, from + PAGE - 1)
+          if (error) throw error
+          rows.push(...(data ?? []))
+          if (!data || data.length < PAGE) return rows
         }
-        const { data, error } = await supabase
-          .from('items')
-          .select('*')
-          .eq('id', id)
-          .maybeSingle()
-        if (error) throw error
-        return data
       },
 
-      insert: async (data: Record<string, unknown>) => {
-        if (!(await isAuthenticated())) {
-          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
-          const now = new Date().toISOString()
-          const newItem: Record<string, unknown> = {
-            id: anonNextId(),
-            title: data.title ?? '',
-            original_title: data.original_title ?? null,
-            item_type: data.item_type ?? 'book',
-            cover_path: data.cover_path ?? null,
-            backdrop_path: data.backdrop_path ?? null,
-            author: data.author ?? null,
-            publisher: data.publisher ?? null,
-            isbn: data.isbn ?? null,
-            page_count: data.page_count ?? null,
-            current_page: data.current_page ?? 0,
-            director: data.director ?? null,
-            platform: data.platform ?? null,
-            tmdb_id: data.tmdb_id ?? null,
-            google_books_id: data.google_books_id ?? null,
-            genre: data.genre ?? null,
-            year: data.year ?? null,
-            overview: data.overview ?? null,
-            rating: data.rating ?? null,
-            status: data.status ?? 'want',
-            review: data.review ?? null,
-            read_date: data.read_date ?? null,
-            created_at: now,
-            updated_at: now,
-          }
+      insert: async (data: Row) => {
+        const userId = await currentUserId()
+        const now = nowIso()
+        if (!userId) {
+          const items = anonLoad<Row[]>(ANON.items, [])
+          const newItem: Row = { id: anonNextId(), ...itemFields(data), created_at: now, updated_at: now }
           items.unshift(newItem)
           anonSave(ANON.items, items)
           return newItem
         }
-        const userId = await getUserId()
-        const insertPayload: Record<string, unknown> = {
-            user_id: userId,
-            title: data.title ?? '',
-            original_title: data.original_title ?? null,
-            item_type: data.item_type ?? 'book',
-            cover_path: data.cover_path ?? null,
-            backdrop_path: data.backdrop_path ?? null,
-            author: data.author ?? null,
-            publisher: data.publisher ?? null,
-            isbn: data.isbn ?? null,
-            page_count: data.page_count ?? null,
-            current_page: data.current_page ?? 0,
-            director: data.director ?? null,
-            platform: data.platform ?? null,
-            tmdb_id: data.tmdb_id ?? null,
-            google_books_id: data.google_books_id ?? null,
-            genre: data.genre ?? null,
-            year: data.year ?? null,
-            overview: data.overview ?? null,
-            rating: data.rating ?? null,
-            status: data.status ?? 'want',
-            review: data.review ?? null,
-            read_date: data.read_date ?? null,
-          }
-        // 마이그레이션 등 created_at이 명시된 경우 보존
-        if (data.created_at) insertPayload.created_at = data.created_at
+        // updated_at을 꼭 넣는다 — 데스크톱 앱은 이 시각 이후 바뀐 것만 받아 가므로 비어 있으면 영영 안 내려감
         const { data: row, error } = await supabase
           .from('items')
-          .insert(insertPayload)
+          .insert({ ...itemFields(data), user_id: userId, created_at: now, updated_at: now })
           .select()
           .single()
         if (error) throw error
         return row
       },
 
-      update: async (id: number, data: Record<string, unknown>) => {
-        if (!(await isAuthenticated())) {
-          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
+      update: async (id: number, data: Row) => {
+        const userId = await currentUserId()
+        const payload = { ...changedItemFields(data), updated_at: nowIso() }
+        if (!userId) {
+          const items = anonLoad<Row[]>(ANON.items, [])
           const idx = items.findIndex((i) => i.id === id)
           if (idx === -1) return
-          const allowed = [
-            'title', 'original_title', 'item_type', 'cover_path', 'backdrop_path',
-            'author', 'publisher', 'isbn', 'page_count', 'current_page',
-            'director', 'platform', 'tmdb_id', 'google_books_id', 'genre',
-            'year', 'overview', 'rating', 'status', 'review', 'read_date'
-          ]
-          for (const key of allowed) {
-            if (key in data) items[idx][key] = data[key] ?? null
-          }
-          items[idx].updated_at = new Date().toISOString()
+          items[idx] = { ...items[idx], ...payload }
           anonSave(ANON.items, items)
           return
         }
-        const allowed = [
-          'title', 'original_title', 'item_type', 'cover_path', 'backdrop_path',
-          'author', 'publisher', 'isbn', 'page_count', 'current_page',
-          'director', 'platform', 'tmdb_id', 'google_books_id', 'genre',
-          'year', 'overview', 'rating', 'status', 'review', 'read_date'
-        ]
-        const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
-        for (const key of allowed) {
-          if (key in data) payload[key] = data[key] ?? null
-        }
-        const { error } = await supabase.from('items').update(payload).eq('id', id)
+        const { error } = await supabase.from('items').update(payload).eq('id', id).eq('user_id', userId)
         if (error) throw error
       },
 
@@ -292,7 +325,8 @@ export async function setupWebApi(): Promise<void> {
       // 클라우드에 '삭제 표시'로 남기므로 데스크톱 앱도 동기화 때 휴지통으로 옮긴다.
       delete: async (id: number) => {
         const ts = nowIso()
-        if (!(await isAuthenticated())) {
+        const userId = await currentUserId()
+        if (!userId) {
           const items = anonLoad<Row[]>(ANON.items, []).map((i) =>
             i.id === id ? { ...i, is_deleted: true, deleted_at: ts, updated_at: ts } : i)
           anonSave(ANON.items, items)
@@ -302,23 +336,27 @@ export async function setupWebApi(): Promise<void> {
           return
         }
         const { error } = await supabase.from('items')
-          .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id)
+          .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id).eq('user_id', userId)
         if (error) throw error
         await supabase.from('quotes')
           .update({ is_deleted: true, deleted_at: ts, updated_at: ts })
-          .eq('item_id', id).not('is_deleted', 'is', true)
-      }
+          .eq('item_id', id).eq('user_id', userId).not('is_deleted', 'is', true)
+      },
+
+      // 웹에는 데스크톱처럼 '다른 범위의 기록'이 없음 (설정 화면 호환용)
+      scopeInfo: async () => ({ loggedIn: await isAuthenticated(), anon: 0, otherAccount: 0 }),
+      importOtherScope: async () => ({ imported: 0, skipped: 0 }),
     },
 
     trash: {
       getAll: async () => {
         try { await purgeExpiredTrash() } catch { /* 정리 실패는 목록 표시에 영향 없음 */ }
-        if (!(await isAuthenticated())) {
+        const userId = await currentUserId()
+        if (!userId) {
           return anonLoad<Row[]>(ANON.items, [])
             .filter((i) => i.is_deleted)
             .sort((a, b) => String(b.deleted_at ?? '').localeCompare(String(a.deleted_at ?? '')))
         }
-        const userId = await getUserId()
         const { data, error } = await supabase
           .from('items').select('*')
           .eq('user_id', userId).eq('is_deleted', true)
@@ -329,7 +367,8 @@ export async function setupWebApi(): Promise<void> {
 
       restore: async (id: number) => {
         const ts = nowIso()
-        if (!(await isAuthenticated())) {
+        const userId = await currentUserId()
+        if (!userId) {
           const items = anonLoad<Row[]>(ANON.items, [])
           const deletedAt = items.find((i) => i.id === id)?.deleted_at
           anonSave(ANON.items, items.map((i) =>
@@ -338,28 +377,37 @@ export async function setupWebApi(): Promise<void> {
             q.item_id === id && q.is_deleted && q.deleted_at === deletedAt ? { ...q, is_deleted: false, deleted_at: null } : q))
           return
         }
-        const { data: item } = await supabase.from('items').select('deleted_at').eq('id', id).maybeSingle()
+        const { data: item } = await supabase.from('items').select('deleted_at').eq('id', id).eq('user_id', userId).maybeSingle()
         const deletedAt = (item?.deleted_at as string | null) ?? null
         // 항목과 함께 휴지통에 들어간 명대사만 되살림 (따로 지운 명대사는 그대로)
         let quotes = supabase.from('quotes')
           .update({ is_deleted: false, deleted_at: null, updated_at: ts })
-          .eq('item_id', id).eq('is_deleted', true)
+          .eq('item_id', id).eq('user_id', userId).eq('is_deleted', true)
         quotes = deletedAt ? quotes.eq('deleted_at', deletedAt) : quotes.is('deleted_at', null)
         await quotes
         const { error } = await supabase.from('items')
-          .update({ is_deleted: false, deleted_at: null, updated_at: ts }).eq('id', id)
+          .update({ is_deleted: false, deleted_at: null, updated_at: ts }).eq('id', id).eq('user_id', userId)
         if (error) throw error
       },
 
-      purge: async (id: number) => {
-        if (!(await isAuthenticated())) {
-          anonSave(ANON.items, anonLoad<Row[]>(ANON.items, []).filter((i) => i.id !== id))
+      // 휴지통에 있는 것만 지우고, 지웠으면 true (열어 둔 목록이 오래돼 그사이 복원된 항목을 지우는 일 방지)
+      purge: async (id: number): Promise<boolean> => {
+        const userId = await currentUserId()
+        if (!userId) {
+          const items = anonLoad<Row[]>(ANON.items, [])
+          if (!items.some((i) => i.id === id && i.is_deleted)) return false
+          anonSave(ANON.items, items.filter((i) => i.id !== id))
           anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => q.item_id !== id))
-          return
+          return true
         }
-        await supabase.from('quotes').delete().eq('item_id', id)
-        const { error } = await supabase.from('items').delete().eq('id', id)
+        const { data: trashed, error: findError } = await supabase.from('items').select('id')
+          .eq('id', id).eq('user_id', userId).eq('is_deleted', true).maybeSingle()
+        if (findError) throw findError
+        if (!trashed) return false
+        await supabase.from('quotes').delete().eq('item_id', id).eq('user_id', userId)
+        const { error } = await supabase.from('items').delete().eq('id', id).eq('user_id', userId).eq('is_deleted', true)
         if (error) throw error
+        return true
       },
 
       purgeExpired: async (days: number) => purgeExpiredTrash(days),
@@ -367,340 +415,179 @@ export async function setupWebApi(): Promise<void> {
 
     quotes: {
       getByItemId: async (itemId: number) => {
-        if (!(await isAuthenticated())) {
-          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
-          return quotes
-            .filter((q) => q.item_id === itemId && !q.is_deleted)
-            .sort((a, b) => (Number(a.page_number ?? 0) - Number(b.page_number ?? 0)))
+        const userId = await currentUserId()
+        if (!userId) {
+          return sortQuotes(anonLoad<Row[]>(ANON.quotes, []).filter((q) => q.item_id === itemId && !q.is_deleted))
         }
         const { data, error } = await supabase
           .from('quotes')
           .select('*')
           .eq('item_id', itemId)
+          .eq('user_id', userId)
           .not('is_deleted', 'is', true)
-          .order('page_number', { ascending: true, nullsFirst: false })
         if (error) throw error
-        return data ?? []
+        return sortQuotes(data ?? [])
       },
 
       search: async (query: string) => {
-        if (!(await isAuthenticated())) {
-          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
-          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+        const q = query.trim()
+        if (!q) return []
+        const userId = await currentUserId()
+        if (!userId) {
+          const items = anonLoad<Row[]>(ANON.items, [])
+          const quotes = anonLoad<Row[]>(ANON.quotes, [])
           const itemMap = new Map(items.map((i) => [i.id, i]))
-          const q = query.toLowerCase()
+          const lower = q.toLowerCase()
           return quotes
-            .filter((qt) => !qt.is_deleted && !(itemMap.get(qt.item_id) as Row | undefined)?.is_deleted)
-            .filter((qt) => String(qt.text ?? '').toLowerCase().includes(q) || String(qt.note ?? '').toLowerCase().includes(q))
+            .filter((qt) => !qt.is_deleted && itemMap.has(qt.item_id) && !itemMap.get(qt.item_id)?.is_deleted)
+            .filter((qt) => String(qt.text ?? '').toLowerCase().includes(lower) || String(qt.note ?? '').toLowerCase().includes(lower))
+            .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
             .map((qt) => {
-              const item = itemMap.get(qt.item_id) as Record<string, unknown> | undefined
+              const item = itemMap.get(qt.item_id)
               return { ...qt, item_title: item?.title ?? '', item_type: item?.item_type ?? '', cover_path: item?.cover_path ?? null }
             })
         }
-        const userId = await getUserId()
-        const { data: userItems } = await supabase
-          .from('items')
-          .select('id, title, item_type, cover_path')
-          .eq('user_id', userId)
-          .not('is_deleted', 'is', true)
-        if (!userItems || userItems.length === 0) return []
-        const itemIds = userItems.map((i: Record<string, unknown>) => i.id)
-        const itemMap = new Map(userItems.map((i: Record<string, unknown>) => [i.id, i]))
-
-        const { data: quotes, error } = await supabase
-          .from('quotes')
-          .select('*')
-          .in('item_id', itemIds)
-          .not('is_deleted', 'is', true)
-          .or(`text.ilike.%${query}%,note.ilike.%${query}%`)
-          .order('created_at', { ascending: false })
+        // 검색어의 %·_는 글자 그대로 찾게 이스케이프. 문장·메모를 따로 찾아 합침
+        // (예전엔 검색어를 필터 문법에 그대로 끼워 넣어 쉼표·괄호가 든 검색어에서 오류가 났음)
+        const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`
+        const find = (col: 'text' | 'note') => supabase.from('quotes').select('*')
+          .eq('user_id', userId).not('is_deleted', 'is', true).ilike(col, pattern)
+          .order('created_at', { ascending: false }).limit(200)
+        const [byText, byNote] = await Promise.all([find('text'), find('note')])
+        if (byText.error) throw byText.error
+        if (byNote.error) throw byNote.error
+        const found = new Map<unknown, Row>()
+        for (const r of [...(byText.data ?? []), ...(byNote.data ?? [])]) found.set(r.id, r)
+        const itemIds = [...new Set([...found.values()].map((r) => r.item_id))]
+        if (itemIds.length === 0) return []
+        const { data: items, error } = await supabase.from('items').select('id, title, item_type, cover_path')
+          .eq('user_id', userId).in('id', itemIds).not('is_deleted', 'is', true)
         if (error) throw error
-
-        return (quotes ?? []).map((q: Record<string, unknown>) => {
-          const item = itemMap.get(q.item_id) as Record<string, unknown> | undefined
-          return {
-            ...q,
-            item_title: item?.title ?? '',
-            item_type: item?.item_type ?? '',
-            cover_path: item?.cover_path ?? null,
-          }
-        })
+        const itemMap = new Map((items ?? []).map((i: Row) => [i.id, i]))
+        return [...found.values()]
+          .filter((r) => itemMap.has(r.item_id)) // 휴지통에 있는 작품의 명대사는 빼고
+          .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+          .map((r) => {
+            const item = itemMap.get(r.item_id)
+            return { ...r, item_title: item?.title ?? '', item_type: item?.item_type ?? '', cover_path: item?.cover_path ?? null }
+          })
       },
 
-      insert: async (data: Record<string, unknown>) => {
-        if (!(await isAuthenticated())) {
-          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
-          const newQuote: Record<string, unknown> = {
-            id: anonNextId(),
-            item_id: data.item_id,
-            text: data.text,
-            page_number: data.page_number ?? null,
-            episode_number: data.episode_number ?? null,
-            note: data.note ?? null,
-            created_at: new Date().toISOString(),
-          }
+      insert: async (data: Row) => {
+        const now = nowIso()
+        const quote = {
+          item_id: data.item_id,
+          text: data.text,
+          page_number: data.page_number ?? null,
+          episode_number: data.episode_number ?? null, // 드라마·다큐 회차
+          note: data.note ?? null,
+          created_at: now,
+          updated_at: now, // 비어 있으면 데스크톱 앱이 이 명대사를 받아 가지 못함
+        }
+        const userId = await currentUserId()
+        if (!userId) {
+          const quotes = anonLoad<Row[]>(ANON.quotes, [])
+          const newQuote: Row = { id: anonNextId(), ...quote }
           quotes.push(newQuote)
           anonSave(ANON.quotes, quotes)
           return newQuote
         }
-        const userId = await getUserId()
         const { data: row, error } = await supabase
           .from('quotes')
-          .insert({
-            user_id: userId,
-            item_id: data.item_id,
-            text: data.text,
-            page_number: data.page_number ?? null,
-            episode_number: data.episode_number ?? null, // 드라마·다큐 회차 (예전엔 웹에서 빠졌음)
-            note: data.note ?? null,
-          })
+          .insert({ ...quote, user_id: userId })
           .select()
           .single()
         if (error) throw error
         return row
       },
 
-      update: async (id: number, data: Record<string, unknown>) => {
-        if (!(await isAuthenticated())) {
-          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
+      update: async (id: number, data: Row) => {
+        const payload: Row = {}
+        for (const k of ['text', 'page_number', 'episode_number', 'note']) {
+          if (data[k] !== undefined) payload[k] = data[k] ?? null
+        }
+        if (Object.keys(payload).length === 0) return
+        payload.updated_at = nowIso() // 데스크톱 앱이 바뀐 걸 알아채게
+        const userId = await currentUserId()
+        if (!userId) {
+          const quotes = anonLoad<Row[]>(ANON.quotes, [])
           const idx = quotes.findIndex((q) => q.id === id)
           if (idx === -1) return
-          if (data.text !== undefined) quotes[idx].text = data.text
-          if (data.page_number !== undefined) quotes[idx].page_number = data.page_number
-          if (data.episode_number !== undefined) quotes[idx].episode_number = data.episode_number
-          if (data.note !== undefined) quotes[idx].note = data.note
+          quotes[idx] = { ...quotes[idx], ...payload }
           anonSave(ANON.quotes, quotes)
           return
         }
-        const payload: Record<string, unknown> = {}
-        if (data.text !== undefined) payload.text = data.text
-        if (data.page_number !== undefined) payload.page_number = data.page_number
-        if (data.episode_number !== undefined) payload.episode_number = data.episode_number
-        if (data.note !== undefined) payload.note = data.note
-        if (Object.keys(payload).length === 0) return
-        payload.updated_at = nowIso() // 데스크톱 앱이 바뀐 걸 알아채게
-        const { error } = await supabase.from('quotes').update(payload).eq('id', id)
+        const { error } = await supabase.from('quotes').update(payload).eq('id', id).eq('user_id', userId)
         if (error) throw error
       },
 
       delete: async (id: number) => {
-        if (!(await isAuthenticated())) {
-          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
-          anonSave(ANON.quotes, quotes.filter((q) => q.id !== id))
+        const userId = await currentUserId()
+        if (!userId) {
+          anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => q.id !== id))
           return
         }
         // 지우지 않고 '삭제 표시' — 그래야 데스크톱 앱도 동기화 때 지운 걸 알 수 있음 (15일 뒤 정리)
         const ts = nowIso()
         const { error } = await supabase.from('quotes')
-          .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id)
+          .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id).eq('user_id', userId)
         if (error) throw error
       }
     },
 
-    settings: {
-      get: async (key: string) => {
-        if (!(await isAuthenticated())) {
-          const settings = anonLoad<Record<string, string>>(ANON.settings, {})
-          return settings[key] ?? ''
-        }
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return ''
-        const { data } = await supabase
-          .from('settings')
-          .select('value')
-          .eq('user_id', user.id)
-          .eq('key', key)
-          .maybeSingle()
-        return (data?.value as string) ?? ''
-      },
-      set: async (key: string, value: string) => {
-        if (!(await isAuthenticated())) {
-          const settings = anonLoad<Record<string, string>>(ANON.settings, {})
-          settings[key] = value
-          anonSave(ANON.settings, settings)
-          return
-        }
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        await supabase.from('settings').upsert({ user_id: user.id, key, value })
-      }
-    },
-
     books: {
-      search: async (query: string) => searchGoogleBooks(query)
+      search: async (query: string) => searchViaServer('books', query)
     },
 
     tmdb: {
-      search: async (query: string) => searchTmdb(query)
+      search: async (query: string) => searchViaServer('tmdb', query)
     },
 
     image: {
-      pick: async (): Promise<string | null> => {
-        const dataUrl = await pickImageRaw()
-        if (!dataUrl) return null
-        // 비로그인: data URL 그대로 반환 (localStorage에 저장됨)
-        if (!(await isAuthenticated())) return dataUrl
-        try {
-          const userId = await getUserId()
-          return await uploadCover(dataUrl, userId)
-        } catch {
-          return dataUrl
-        }
-      },
-      saveCropped: async (base64Data: string, _fileName: string): Promise<string> => {
-        if (!(await isAuthenticated())) return base64Data
-        try {
-          const userId = await getUserId()
-          return await uploadCover(base64Data, userId)
-        } catch {
-          return base64Data
-        }
-      }
+      pick: pickImage,
     },
 
     db: {
       backup: async () => {
-        let items: unknown[], quotes: unknown[]
-        if (!(await isAuthenticated())) {
-          items = anonLoad<unknown[]>(ANON.items, [])
-          quotes = anonLoad<unknown[]>(ANON.quotes, [])
+        const userId = await currentUserId()
+        let items: Row[], quotes: Row[]
+        if (!userId) {
+          items = anonLoad<Row[]>(ANON.items, [])
+          quotes = anonLoad<Row[]>(ANON.quotes, [])
         } else {
-          const userId = await getUserId()
-          const [{ data: i }, { data: q }] = await Promise.all([
-            supabase.from('items').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
-            supabase.from('quotes').select('*').eq('user_id', userId).order('created_at', { ascending: true })
-          ])
-          items = i ?? []
-          quotes = q ?? []
+          ;[items, quotes] = await Promise.all([fetchAllRows('items', userId), fetchAllRows('quotes', userId)])
         }
-        const json = JSON.stringify({ items, quotes }, null, 2)
+        const json = JSON.stringify({ app: 'moabom', exported_at: nowIso(), items, quotes }, null, 2)
         const blob = new Blob([json], { type: 'application/json' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `moabom-backup-${new Date().toISOString().slice(0, 10)}.json`
+        a.download = `모아봄-백업-${new Date().toISOString().slice(0, 10)}.json`
         a.click()
         setTimeout(() => URL.revokeObjectURL(url), 1000)
         return { success: true }
       },
 
-      restore: async () => {
-        return new Promise<{ success: boolean }>((resolve) => {
-          const input = document.createElement('input')
-          input.type = 'file'
-          input.accept = '.json'
-          input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0]
-            if (!file) { resolve({ success: false }); return }
-            // 롤백용: catch 블록에서도 접근 가능하도록 try 밖에서 선언
-            let oldItems: Record<string, unknown>[] | null = null
-            let oldQuotes: Record<string, unknown>[] | null = null
-            try {
-              const text = await file.text()
-              const { items, quotes } = JSON.parse(text) as {
-                items: Record<string, unknown>[]
-                quotes: Record<string, unknown>[]
-              }
-
-              if (!(await isAuthenticated())) {
-                // 비로그인: localStorage에 덮어쓰기 (유효성 검사 후)
-                if (!Array.isArray(items) || !Array.isArray(quotes)) {
-                  throw new Error('올바르지 않은 백업 파일 형식입니다.')
-                }
-                anonSave(ANON.items, items)
-                anonSave(ANON.quotes, quotes)
-                resolve({ success: true })
-                return
-              }
-
-              // 유효성 검사: 삭제 전 먼저 구조 확인 (데이터 손실 방지)
-              if (!Array.isArray(items) || !Array.isArray(quotes)) {
-                throw new Error('올바르지 않은 백업 파일 형식입니다. items/quotes 배열이 없습니다.')
-              }
-
-              const userId = await getUserId()
-
-              // 삭제 전 현재 데이터 백업 (복원 실패 시 롤백용)
-              const [itemsRes, quotesRes] = await Promise.all([
-                supabase.from('items').select('*').eq('user_id', userId),
-                supabase.from('quotes').select('*').eq('user_id', userId)
-              ])
-              oldItems = itemsRes.data
-              oldQuotes = quotesRes.data
-
-              await supabase.from('quotes').delete().eq('user_id', userId)
-              await supabase.from('items').delete().eq('user_id', userId)
-
-              const idMap = new Map<number, number>()
-              for (const item of items) {
-                const oldId = item.id as number
-                const { data: newItem } = await supabase
-                  .from('items')
-                  .insert({
-                    user_id: userId,
-                    title: item.title ?? '',
-                    original_title: item.original_title ?? null,
-                    item_type: item.item_type ?? 'book',
-                    cover_path: item.cover_path ?? null,
-                    backdrop_path: item.backdrop_path ?? null,
-                    author: item.author ?? null,
-                    publisher: item.publisher ?? null,
-                    isbn: item.isbn ?? null,
-                    page_count: item.page_count ?? null,
-                    current_page: item.current_page ?? 0,
-                    director: item.director ?? null,
-                    platform: item.platform ?? null,
-                    tmdb_id: item.tmdb_id ?? null,
-                    google_books_id: item.google_books_id ?? null,
-                    genre: item.genre ?? null,
-                    year: item.year ?? null,
-                    overview: item.overview ?? null,
-                    rating: item.rating ?? null,
-                    status: item.status ?? 'want',
-                    review: item.review ?? null,
-                    read_date: item.read_date ?? null,
-                  })
-                  .select('id')
-                  .single()
-                if (newItem) idMap.set(oldId, (newItem as Record<string, unknown>).id as number)
-              }
-
-              for (const q of quotes) {
-                const newItemId = idMap.get(q.item_id as number)
-                if (!newItemId) continue
-                await supabase.from('quotes').insert({
-                  user_id: userId,
-                  item_id: newItemId,
-                  text: q.text,
-                  page_number: q.page_number ?? null,
-                  note: q.note ?? null,
-                })
-              }
-
-              resolve({ success: true })
-            } catch (err) {
-              console.error('복원 실패:', err)
-              // 복원 실패 시 원래 데이터 복구 시도
-              try {
-                const userId2 = await getUserId()
-                if (oldItems && oldItems.length > 0) {
-                  await supabase.from('quotes').delete().eq('user_id', userId2)
-                  await supabase.from('items').delete().eq('user_id', userId2)
-                  for (const item of oldItems) {
-                    await supabase.from('items').insert({ ...item })
-                  }
-                  for (const quote of (oldQuotes ?? [])) {
-                    await supabase.from('quotes').insert({ ...quote })
-                  }
-                }
-              } catch (rollbackErr) {
-                console.error('롤백 실패:', rollbackErr)
-              }
-              resolve({ success: false })
-            }
+      restore: async (): Promise<{ success: boolean; error?: string }> => {
+        const file = await pickFile('.json,application/json')
+        if (!file) return { success: false, error: 'read-source' } // 취소
+        let backup: { items: Row[]; quotes: Row[] }
+        try { backup = readBackupFile(await file.text()) } catch { return { success: false, error: 'invalid-db' } }
+        try {
+          const userId = await currentUserId()
+          if (!userId) {
+            anonSave(ANON.items, backup.items)
+            anonSave(ANON.quotes, backup.quotes)
+            const maxId = Math.max(0, ...[...backup.items, ...backup.quotes].map((r) => Number(r.id) || 0))
+            if (maxId > anonLoad<number>(ANON.nextId, 0)) anonSave(ANON.nextId, maxId) // 새 기록 id가 겹치지 않게
+          } else {
+            await restoreCloudFromBackup(userId, backup.items, backup.quotes)
           }
-          input.click()
-        })
+          return { success: true }
+        } catch (err) {
+          console.error('복원 실패:', err)
+          return { success: false, error: 'swap-failed' }
+        }
       }
     }
   }

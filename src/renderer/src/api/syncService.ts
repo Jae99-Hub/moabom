@@ -1,8 +1,10 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient'
+import {
+  CloudRow, normalizeTitle, isExactMatch, isSimilarMatch, conflictReason, mergeItemFields, buildItemPayload, ALIVE,
+} from './syncMatch'
 
+export { mergeItemFields }
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error'
-
-type CloudRow = Record<string, unknown>
 
 // ── 타입 정의 ────────────────────────────────────────────────────────
 export interface SyncConflict {
@@ -18,88 +20,6 @@ export interface SyncResult {
   conflicts: SyncConflict[]
 }
 
-// ── 유사도 판별 ───────────────────────────────────────────────────────
-function normalizeTitle(t: unknown): string {
-  return String(t ?? '').toLowerCase().trim()
-}
-
-/** 완전히 같은 항목 판별 (자동 합치기 대상) */
-function isExactMatch(local: CloudRow, cloud: CloudRow): boolean {
-  if (normalizeTitle(local.title) !== normalizeTitle(cloud.title)) return false
-  if (local.item_type !== cloud.item_type) return false
-  // 둘 다 연도 있으면 같아야 함
-  if (local.year != null && cloud.year != null) {
-    if (String(local.year) !== String(cloud.year)) return false
-  }
-  // 고유 ID 둘 다 있으면 같아야 함
-  if (local.tmdb_id && cloud.tmdb_id && local.tmdb_id !== cloud.tmdb_id) return false
-  if (local.isbn && cloud.isbn && local.isbn !== cloud.isbn) return false
-  if (local.google_books_id && cloud.google_books_id && local.google_books_id !== cloud.google_books_id) return false
-  return true
-}
-
-/** 비슷한 항목 판별 (사용자 판단 필요) */
-function isSimilarMatch(local: CloudRow, cloud: CloudRow): boolean {
-  const titleMatch = normalizeTitle(local.title) === normalizeTitle(cloud.title)
-  if (titleMatch) return true  // 제목 같음 (연도/타입 달라도)
-  // 고유 ID 일치
-  if (local.tmdb_id && local.tmdb_id === cloud.tmdb_id) return true
-  if (local.isbn && local.isbn === cloud.isbn) return true
-  if (local.google_books_id && local.google_books_id === cloud.google_books_id) return true
-  return false
-}
-
-function conflictReason(local: CloudRow, cloud: CloudRow): string {
-  const titleMatch = normalizeTitle(local.title) === normalizeTitle(cloud.title)
-  if (titleMatch && local.item_type !== cloud.item_type) return '같은 제목이지만 유형이 달라요'
-  if (titleMatch && local.year != null && cloud.year != null && String(local.year) !== String(cloud.year)) {
-    return `같은 제목, 연도 다름 (로컬 ${local.year} / 클라우드 ${cloud.year})`
-  }
-  if (titleMatch) return '같은 제목의 항목이 이미 있어요'
-  if (local.tmdb_id && local.tmdb_id === cloud.tmdb_id) return '같은 TMDB ID의 항목이 있어요'
-  if (local.isbn && local.isbn === cloud.isbn) return '같은 ISBN의 책이 있어요'
-  return '비슷한 항목이 발견됐어요'
-}
-
-// ── 스마트 합치기 ─────────────────────────────────────────────────────
-function mergeStatus(a: string, b: string): string {
-  const priority: Record<string, number> = { done: 4, reading: 3, want: 2, dropped: 1 }
-  return (priority[a] ?? 0) >= (priority[b] ?? 0) ? a : b
-}
-
-export function mergeItemFields(local: CloudRow, cloud: CloudRow): Partial<CloudRow> {
-  return {
-    // 더 긴 리뷰 우선
-    review: ((local.review as string) || '').length >= ((cloud.review as string) || '').length
-      ? (local.review ?? cloud.review)
-      : (cloud.review ?? local.review),
-    // 더 많이 읽은 페이지
-    current_page: Math.max(Number(local.current_page ?? 0), Number(cloud.current_page ?? 0)),
-    // 평점: 로컬 우선 (최근 변경)
-    rating: local.rating ?? cloud.rating,
-    // 완료일: 있는 것 우선
-    read_date: local.read_date ?? cloud.read_date,
-    // 상태: 더 진행된 것
-    status: mergeStatus(String(local.status ?? 'want'), String(cloud.status ?? 'want')),
-    // 메타데이터: 클라우드 우선 (API 검색으로 가져온 정확한 정보)
-    overview: cloud.overview ?? local.overview,
-    genre: cloud.genre ?? local.genre,
-    cover_path: pickCover(cloud.cover_path, local.cover_path),
-    backdrop_path: cloud.backdrop_path ?? local.backdrop_path,
-  }
-}
-
-/** 표지: 어느 기기에서나 보이는 것(URL·이미지 데이터)을 우선. 다른 PC의 파일 경로는 여기서 안 보임 */
-function pickCover(cloud: unknown, local: unknown): unknown {
-  const portable = (v: unknown) => typeof v === 'string' && /^(https?:|data:)/.test(v)
-  if (portable(cloud)) return cloud
-  if (portable(local)) return local
-  return cloud ?? local
-}
-
-// 합치기 결과는 항상 '살아 있는' 항목 — 휴지통 상태의 클라우드 행과 합쳐져 새 항목이 휴지통으로 가는 일 방지
-const ALIVE = { is_deleted: false, deleted_at: null }
-
 async function autoMergeExact(local: CloudRow, cloud: CloudRow, userId: string): Promise<boolean> {
   const merged = mergeItemFields(local, cloud)
   // updated_at 갱신 → 다음 pull에서 합쳐진 결과가 이 기기에도 반영됨
@@ -111,39 +31,6 @@ async function autoMergeExact(local: CloudRow, cloud: CloudRow, userId: string):
   if (error) return false // 실패 시 dirty 유지 → 다음 동기화에서 재시도
   await window.api.sync.markItemSynced(local.id as number, cloud.id as number, local.updated_at as string)
   return true
-}
-
-// ── 페이로드 빌더 ────────────────────────────────────────────────────
-function buildItemPayload(item: CloudRow, userId: string): CloudRow {
-  return {
-    user_id: userId,
-    title: item.title,
-    original_title: item.original_title ?? null,
-    item_type: item.item_type,
-    cover_path: item.cover_path ?? null,
-    backdrop_path: item.backdrop_path ?? null,
-    author: item.author ?? null,
-    publisher: item.publisher ?? null,
-    isbn: item.isbn ?? null,
-    page_count: item.page_count ?? null,
-    current_page: item.current_page ?? 0,
-    director: item.director ?? null,
-    platform: item.platform ?? null,
-    tmdb_id: item.tmdb_id ?? null,
-    google_books_id: item.google_books_id ?? null,
-    genre: item.genre ?? null,
-    year: item.year != null ? String(item.year) : null, // Supabase → TEXT
-    overview: item.overview ?? null,
-    rating: item.rating ?? null,
-    status: item.status,
-    review: item.review ?? null,
-    read_date: item.read_date ?? null,
-    created_at: item.created_at,
-    // push 시각으로 기록 → 오프라인 편집이 늦게 올라와도 다른 기기의 증분 pull에 잡힘
-    updated_at: new Date().toISOString(),
-    is_deleted: !!item.is_deleted,
-    deleted_at: item.deleted_at ?? null,
-  }
 }
 
 // ── 푸시: 로컬 dirty 아이템 → Supabase ──────────────────────────────
@@ -168,7 +55,11 @@ async function pushDirtyItems(
           .select('id')
         if (!error) {
           if (data && data.length > 0) await window.api.sync.markItemSynced(item.id as number, item.server_id as number, seen)
-          else await window.api.sync.clearItemDirty(item.id as number, seen) // 클라우드에선 이미 영구삭제됨
+          else {
+            // 0행 = 클라우드에서 이미 영구삭제됨. 단, 그사이 로그아웃·계정 전환이어도 0행이므로 먼저 확인
+            await assertSameUser(userId)
+            await window.api.sync.clearItemDirty(item.id as number, seen)
+          }
         }
       } else {
         // 클라우드에 올린 적 없는 항목 → 로컬 휴지통에만 보관, dirty 해제
@@ -192,16 +83,20 @@ async function pushDirtyItems(
       }
       // 클라우드에 이 항목이 없음(다른 기기에서 휴지통 15일 경과로 영구삭제 등).
       // 예전엔 0행 수정을 성공으로 보고 넘어가 영영 업로드되지 않았음 → 아래에서 새 항목으로 다시 올린다.
+      // (그사이 계정이 바뀌어 0행이 된 것이면 여기서 멈춤)
+      await assertSameUser(userId)
     }
 
     // ── 새 항목: 클라우드에서 중복 검사 ──────────────────────────────
-    const escapedTitle = normalizeTitle(item.title).replace(/[%_]/g, '\\$&')
-    const { data: candidates } = await supabase
+    const escapedTitle = normalizeTitle(item.title).replace(/[\\%_]/g, '\\$&')
+    const { data: candidates, error: findError } = await supabase
       .from('items')
       .select('*')
       .eq('user_id', userId)
       .ilike('title', escapedTitle)
       .not('is_deleted', 'is', true) // 휴지통의 클라우드 행과 합치지 않음 (합치면 새 항목이 휴지통으로 감)
+    // 중복 검사를 못 했으면 이번엔 올리지 않음 — 확인 없이 넣으면 같은 작품이 두 번 생김
+    if (findError) continue
 
     let handled = false
 
@@ -279,7 +174,10 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
           .select('id')
         if (!error) {
           if (data && data.length > 0) await window.api.sync.markQuoteSynced(quote.id as number, quote.server_id as number, seen)
-          else await window.api.sync.clearQuoteDirty(quote.id as number, seen) // 클라우드에선 이미 영구삭제됨
+          else {
+            await assertSameUser(userId) // 0행이 계정 전환 때문이 아닌지 확인
+            await window.api.sync.clearQuoteDirty(quote.id as number, seen) // 클라우드에선 이미 영구삭제됨
+          }
         }
       } else {
         await window.api.sync.clearQuoteDirty(quote.id as number, seen)
@@ -317,10 +215,11 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
         continue
       }
       // 클라우드에서 사라진 명대사 → 아래에서 새로 올린다
+      await assertSameUser(userId)
     }
 
     // 완전히 같은 명문장이 이미 있으면 자동 연결 (같은 문장이 여러 개여도 첫 번째에 연결)
-    const { data: existing } = await supabase
+    const { data: existing, error: findError } = await supabase
       .from('quotes')
       .select('id')
       .eq('user_id', userId)
@@ -328,6 +227,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       .eq('text', String(quote.text))
       .not('is_deleted', 'is', true) // 휴지통의 명대사에 연결하면 다른 기기에 안 보임
       .limit(1)
+    if (findError) continue // 확인 못 했으면 다음에 (확인 없이 넣으면 같은 문장이 두 번 생김)
 
     if (existing && existing.length > 0) {
       await window.api.sync.markQuoteSynced(quote.id as number, (existing[0] as { id: number }).id, seen)
