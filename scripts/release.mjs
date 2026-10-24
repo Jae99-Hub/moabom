@@ -42,6 +42,9 @@ for (const key of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'MAIN_VITE_TMD
   if (!new RegExp(`^${key}=\\S+`, 'm').test(env)) fail(`.env에 ${key}가 없어요.`)
 }
 
+step('Supabase 표 확인')
+run('node scripts/check-schema.mjs')
+
 step('타입 검사·자동 테스트')
 run('npm run check')
 

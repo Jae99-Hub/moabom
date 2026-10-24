@@ -9,7 +9,10 @@ from pg_policies
 where schemaname = 'public'
 order by tablename, cmd;
 
--- ② 바뀐 시각(updated_at) 자동 기록
+-- ② 앱이 쓰는 칸 — 명대사 회차. 없으면 명대사 저장이 모두 실패함 (npm run check:schema로 확인)
+alter table public.quotes add column if not exists episode_number integer;
+
+-- ③ 바뀐 시각(updated_at) 자동 기록
 --    어느 기기·웹에서 고치든 서버가 시각을 남겨, 다른 기기가 '이 시각 이후 바뀐 것'으로 빠짐없이 받아 간다.
 --    (예전 웹 버전이 넣은 명대사는 시각이 비어 있어 데스크톱 앱이 받아 가지 못했음)
 create or replace function public.moabom_touch_updated_at()

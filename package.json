@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test",
+    "check:schema": "node scripts/check-schema.mjs",
     "release": "node scripts/release.mjs",
     "deploy:web": "node scripts/deploy-web.mjs"
   },

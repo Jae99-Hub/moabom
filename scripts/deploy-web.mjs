@@ -10,6 +10,9 @@ import { readFileSync } from 'node:fs'
 const SECOND_PROJECT_ID = 'prj_G4cPcFwDsbxmvQcfvLqOFI7rHSZk' // moabom → moabom-app.vercel.app
 const run = (cmd, env) => execSync(cmd, { stdio: 'inherit', env: { ...process.env, ...env } })
 
+console.log('\n▶ Supabase 표 확인')
+run('node scripts/check-schema.mjs')
+
 console.log('\n▶ 타입 검사·자동 테스트')
 run('npm run check')
 

@@ -31,5 +31,7 @@
 - **테스트는 실제 데이터에 손대지 않는다.** 앱을 띄워 볼 때는 `MOABOM_USER_DATA=<임시 폴더>`
   (그 폴더에 `backup-dir.txt`로 백업 폴더도 따로). 자동 테스트는 Supabase 주소를 비워 둔 채 돈다(`src/test/setup.ts`).
 - **키는 코드·채팅에 쓰지 않는다.** 데스크톱 검색 키는 빌드할 때 `.env`의 `MAIN_VITE_*`에서 들어간다(없으면 빌드가 멈춤).
+- **Supabase에 칸을 새로 쓰면 먼저 표에 칸을 추가한다.** 없는 칸을 보내면 그 저장이 통째로 실패한다.
+  `scripts/check-schema.mjs`의 목록에도 넣는다(배포 스크립트가 먼저 검사함). 표 변경 SQL은 `supabase/hardening.sql`에.
 - 로그인은 PKCE(`supabaseClient.ts`의 `flowType: 'pkce'`)만 받는다.
 - 데스크톱 로그인은 `http://localhost:3000`(앱이 띄우는 작은 서버) → `moabom://`로 돌아온다. Supabase Site URL이 이 주소다.
