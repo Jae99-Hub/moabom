@@ -299,6 +299,17 @@ describe('파일·복구', () => {
     expect(list[0].path).toBe(b.path) // 나중에 만든 것이 맨 앞
   })
 
+  it('오래된 백업만 있어도 최근 5개는 남기고, 그보다 오래된 것은 정리', () => {
+    newItem('책')
+    const dir = db.getAutoBackupDir()
+    const old = ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01']
+    for (const d of old) writeFileSync(join(dir, `moabom-auto-${d}_120000.db`), 'x')
+    db.runAutoBackup(true) // 새 백업 1개 + 정리
+    const names = db.listAutoBackups().map((b) => b.name)
+    expect(names).toHaveLength(5)
+    expect(names.slice(1)).toEqual(['2026-06-01', '2026-05-01', '2026-04-01', '2026-03-01'].map((d) => `moabom-auto-${d}_120000.db`))
+  })
+
   it('바뀐 게 없으면 자동 백업을 건너뜀', () => {
     newItem('책')
     expect(db.runAutoBackup(false).skipped).toBeFalsy()

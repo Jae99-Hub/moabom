@@ -293,7 +293,7 @@ export async function restoreFromFile(srcPath: string): Promise<{ success: boole
   }
 }
 
-// ── 자동 로컬 백업 (최근 14일 보관, 데이터 변경 시에만 기록) ──────────
+// ── 자동 로컬 백업 (데이터가 바뀌었을 때만 기록 · 최근 5개는 항상, 그 밖엔 14일 보관) ──
 const AUTO_BACKUP_PREFIX = 'moabom-auto-'
 // 같은 초에 여러 개를 만들면 뒤에 -2, -3 …이 붙음
 const AUTO_BACKUP_RE = /^moabom-auto-\d{4}-\d{2}-\d{2}_\d{6}(-\d+)?\.db$/
@@ -304,6 +304,9 @@ function backupSortKey(name: string): string {
   return m ? m[1] + '#' + String(Number(m[2] ?? 1)).padStart(4, '0') : name
 }
 const AUTO_BACKUP_KEEP_DAYS = 14
+// 날짜와 상관없이 항상 남기는 최근 백업 수 — 오랜만에 앱을 쓰면 14일 지난 백업이 모두 지워져
+// 방금 만든 하나만 남던 것 (기록이 바뀔 때만 백업하므로 오래 안 쓰면 새 백업이 생기지 않음)
+const AUTO_BACKUP_KEEP_MIN = 5
 export interface AutoBackupInfo { name: string; path: string; size: number; mtime: number }
 
 // 사용자 지정 백업 경로는 DB가 아니라 별도 파일에 저장.
@@ -415,15 +418,16 @@ export function listAutoBackups(): AutoBackupInfo[] {
     .sort((a, b) => backupSortKey(b.name).localeCompare(backupSortKey(a.name))) // 파일명(=시간) 최신순
 }
 
-/** 회전: 14일 지난 것 삭제 + 지난 날짜는 하루 1개만 유지(오늘은 전부 보존) */
+/** 회전: 가장 최근 5개는 항상 남기고, 나머지는 14일 지난 것 삭제 + 지난 날짜는 하루 1개만 유지(오늘은 전부 보존) */
 function pruneAutoBackups(): void {
   const cutoff = todayStamp(new Date(Date.now() - AUTO_BACKUP_KEEP_DAYS * 86400000))
   const today = todayStamp()
   const keptDays = new Set<string>()
-  for (const b of listAutoBackups()) { // 최신순
+  for (const [i, b] of listAutoBackups().entries()) { // 최신순
     const day = backupDay(b.name)
     let del = false
-    if (day < cutoff) del = true          // 14일 초과 → 삭제
+    if (i < AUTO_BACKUP_KEEP_MIN) keptDays.add(day) // 최근 몇 개는 날짜와 상관없이 보존
+    else if (day < cutoff) del = true     // 14일 초과 → 삭제
     else if (day === today) del = false   // 오늘 → 전부 보존
     else if (keptDays.has(day)) del = true // 지난 날짜 2개째부터 삭제
     else keptDays.add(day)                // 지난 날짜 최신 1개 보존

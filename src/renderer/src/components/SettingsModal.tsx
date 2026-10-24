@@ -20,24 +20,36 @@ function restoreFailMessage(error?: string): string {
   return '파일이 손상됐거나 모아봄 백업 파일이 아니에요. 지금 기록은 그대로예요.'
 }
 
-/** moabom-auto-YYYY-MM-DD_HHMMSS.db → "YYYY-MM-DD HH:MM:SS" (같은 분에 만든 백업도 구별되게) */
-function fmtBackupLabel(b: AutoBackupInfo): string {
+/** 읽기 쉬운 시각 — '오늘 오후 3:05', '어제 오전 9:10', '10월 3일 오후 1:00' (같은 분에 여러 개면 초까지) */
+function friendlyTime(d: Date, withSeconds = false): string {
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  const same = (a: Date, b: Date): boolean => a.toDateString() === b.toDateString()
+  const p = (n: number): string => String(n).padStart(2, '0')
+  const h = d.getHours()
+  const time = `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${p(d.getMinutes())}${withSeconds ? `:${p(d.getSeconds())}` : ''}`
+  const day = same(d, now) ? '오늘'
+    : same(d, yesterday) ? '어제'
+    : d.getFullYear() === now.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일`
+    : `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
+  return `${day} ${time}`
+}
+
+/** moabom-auto-YYYY-MM-DD_HHMMSS(-N).db → 만든 시각 (이 컴퓨터 시간) */
+function backupDate(b: AutoBackupInfo): Date | null {
   const m = b.name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})/)
-  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}` : b.name
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null
+}
+
+function fmtBackupLabel(b: AutoBackupInfo, withSeconds = false): string {
+  const d = backupDate(b)
+  return d ? friendlyTime(d, withSeconds) : b.name
 }
 
 function fmtSize(bytes: number): string {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`
 }
-
-/** ISO → "YYYY.M.D HH:MM" (짧게) */
-function fmtWhen(iso: string): string {
-  const d = new Date(iso)
-  const p = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-const BACKUPS_SHOWN = 3 // 되돌리기 시점은 최근 몇 개만 보이고 나머지는 '더 보기'
 
 /** 한 줄 설정 — 왼쪽에 이름·설명, 오른쪽에 버튼 */
 function Row({ label, desc, children, tone }: {
@@ -74,7 +86,9 @@ export default function SettingsModal() {
   // 백업 / 다른 범위의 기록
   const [scope, setScope] = useState<OtherScopeInfo>({ loggedIn: false, anon: 0, otherAccount: 0 })
   const [autoBackups, setAutoBackups] = useState<AutoBackupInfo[]>([])
-  const [showAllBackups, setShowAllBackups] = useState(false)
+  // 되돌리기 목록·파일 관리는 자주 쓰지 않아 접어 둠 (예전엔 모두 펼쳐져 있어 백업 묶음이 정신없었음)
+  const [showRestoreList, setShowRestoreList] = useState(false)
+  const [showManage, setShowManage] = useState(false)
   const [backupStatus, setBackupStatus] = useState<{ lastAt: string; dir: string }>({ lastAt: '', dir: '' })
   const [busy, setBusy] = useState(false)
 
@@ -94,7 +108,8 @@ export default function SettingsModal() {
     if (!isSettingsOpen) return
     setUpdateState('idle')
     setUpdateVersion('')
-    setShowAllBackups(false)
+    setShowRestoreList(false)
+    setShowManage(false)
     setSigningIn(false)
     loadData()
     window.updaterBridge?.getVersion().then(setCurrentVersion).catch(() => {})
@@ -268,7 +283,10 @@ export default function SettingsModal() {
 
   const loggedIn = !!account.email
   const backupStale = isElectron && (!backupStatus.lastAt || Date.now() - Date.parse(backupStatus.lastAt) > 8 * 864e5)
-  const backupsShown = showAllBackups ? autoBackups : autoBackups.slice(0, BACKUPS_SHOWN)
+  // 같은 분에 만든 백업이 있으면 그것들만 초까지 보여 구별
+  const minuteLabels = autoBackups.map((b) => fmtBackupLabel(b))
+  const backupLabel = (b: AutoBackupInfo, i: number): string =>
+    minuteLabels.filter((l) => l === minuteLabels[i]).length > 1 ? fmtBackupLabel(b, true) : minuteLabels[i]
   const hasOtherScope = scope.anon > 0 || scope.otherAccount > 0
 
   const syncText = {
@@ -385,45 +403,70 @@ export default function SettingsModal() {
                     label="자동 백업"
                     desc={backupStale
                       ? '최근 백업이 없어요. 지금 한 번 백업해 두세요'
-                      : `30분마다 · 14일 보관${backupStatus.lastAt ? ` · 마지막 ${fmtWhen(backupStatus.lastAt)}` : ''}`}
+                      : backupStatus.lastAt
+                        ? `마지막 백업 ${friendlyTime(new Date(backupStatus.lastAt))} · 기록이 바뀌면 30분마다 만들어요`
+                        : '기록이 바뀌면 30분마다 만들어요'}
                     tone={backupStale ? 'warn' : undefined}
                   >
                     <button className="st-btn" disabled={busy} onClick={handleAutoBackupNow}>지금 백업</button>
                   </Row>
-                  <Row label="백업 폴더" desc={<span className="st-path" title={backupStatus.dir}>{backupStatus.dir || '…'}</span>}>
-                    <button className="st-btn" onClick={handleOpenBackupFolder}>열기</button>
-                    <button className="st-btn" disabled={busy} onClick={handleChooseDir}>바꾸기</button>
-                  </Row>
                   {autoBackups.length > 0 && (
                     <div className="st-row st-row-block">
-                      <div className="st-row-text">
-                        <div className="st-row-label">백업 시점으로 되돌리기</div>
-                        <div className="st-row-desc">고른 시점의 기록으로 바뀌어요. 그 전에 지금 기록을 자동으로 백업해요</div>
+                      <div className="st-row-inline">
+                        <div className="st-row-text">
+                          <div className="st-row-label">이전 시점으로 되돌리기</div>
+                          <div className="st-row-desc">백업 {autoBackups.length}개</div>
+                        </div>
+                        <div className="st-row-actions">
+                          <button className="st-btn" onClick={() => setShowRestoreList((v) => !v)} aria-expanded={showRestoreList}>
+                            {showRestoreList ? '닫기' : '고르기'}
+                          </button>
+                        </div>
                       </div>
-                      <ul className="st-list">
-                        {backupsShown.map((b) => (
-                          <li key={b.name} className="st-list-item">
-                            <span className="st-list-main">{fmtBackupLabel(b)}</span>
-                            <span className="st-list-sub">{fmtSize(b.size)}</span>
-                            <button className="st-btn small" disabled={busy} onClick={() => handleRestoreFrom(b)}>되돌리기</button>
-                          </li>
-                        ))}
-                      </ul>
-                      {autoBackups.length > BACKUPS_SHOWN && (
-                        <button className="st-more" onClick={() => setShowAllBackups((v) => !v)} aria-expanded={showAllBackups}>
-                          {showAllBackups ? '접기' : `${autoBackups.length - BACKUPS_SHOWN}개 더 보기`}
-                        </button>
+                      {showRestoreList && (
+                        <>
+                          <ul className="st-list st-list-scroll">
+                            {autoBackups.map((b, i) => (
+                              <li key={b.name} className="st-list-item">
+                                <span className="st-list-main">{backupLabel(b, i)}</span>
+                                <span className="st-list-sub">{fmtSize(b.size)}</span>
+                                <button className="st-btn small" disabled={busy} onClick={() => handleRestoreFrom(b)}>되돌리기</button>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="st-row-desc">고른 시점의 기록으로 바뀌어요. 바꾸기 전 지금 기록은 자동으로 백업해요</div>
+                        </>
                       )}
                     </div>
                   )}
                 </>
               )}
-              <Row label="파일로 내보내기" desc={`모든 기록을 ${isElectron ? '.db' : '.json'} 파일 하나로 저장해요`}>
-                <button className="st-btn" onClick={handleBackup}>내보내기</button>
-              </Row>
-              <Row label="파일에서 되돌리기" desc={`내보낸 ${isElectron ? '.db' : '.json'} 파일의 기록으로 바꿔요`}>
-                <button className="st-btn danger" onClick={handleRestore}>파일 고르기</button>
-              </Row>
+              {/* 폴더·파일 관리는 자주 쓰지 않아 접어 둠 (웹은 이 두 줄뿐이라 그대로 보임) */}
+              {(showManage || !isElectron) && (
+                <>
+                  {isElectron && (
+                    <Row label="백업 폴더" desc={<span className="st-path" title={backupStatus.dir}>{backupStatus.dir || '…'}</span>}>
+                      <button className="st-btn" onClick={handleOpenBackupFolder}>열기</button>
+                      <button className="st-btn" disabled={busy} onClick={handleChooseDir}>바꾸기</button>
+                    </Row>
+                  )}
+                  <Row label="파일로 내보내기" desc={`모든 기록을 ${isElectron ? '.db' : '.json'} 파일 하나로 저장해요`}>
+                    <button className="st-btn" onClick={handleBackup}>내보내기</button>
+                  </Row>
+                  <Row label="파일에서 되돌리기" desc={`내보낸 ${isElectron ? '.db' : '.json'} 파일의 기록으로 바꿔요`}>
+                    <button className="st-btn danger" onClick={handleRestore}>파일 고르기</button>
+                  </Row>
+                </>
+              )}
+              {isElectron && (
+                <button className="st-disclosure" onClick={() => setShowManage((v) => !v)} aria-expanded={showManage}>
+                  {showManage ? '접기' : '백업 폴더·파일 관리'}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                    style={{ transform: showManage ? 'rotate(180deg)' : undefined }} aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              )}
             </div>
           </section>
 
