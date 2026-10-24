@@ -175,6 +175,36 @@ async function bootstrap() {
 
 bootstrap()
 
+// ── 새 버전 알림 ──────────────────────────────────────────────
+// 탭을 열어 둔 채로는 새로 배포해도 예전 화면이 계속 돌았음 (새로고침해야만 바뀜).
+// 탭으로 돌아올 때와 30분마다, 배포된 첫 화면이 부르는 스크립트 이름을 지금 것과 비교해 다르면 알려 줌.
+// 쓰던 내용이 날아가지 않게 저절로 새로고침하지는 않고, 알림을 넘겼으면 나중에 돌아왔을 때 다시 알려 준다.
+const BUILD_SCRIPT_RE = /<script[^>]*type="module"[^>]*src="(\/assets\/[^"]+\.js)"/
+const currentBuild = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/"]')?.getAttribute('src')
+let lastVersionCheck = 0
+let newerBuildFound = false
+
+async function checkForNewVersion(): Promise<void> {
+  if (!currentBuild || document.hidden || Date.now() - lastVersionCheck < 5 * 60_000) return
+  lastVersionCheck = Date.now()
+  try {
+    if (!newerBuildFound) {
+      const res = await fetch('/', { cache: 'no-store' })
+      if (!res.ok) return
+      const latest = BUILD_SCRIPT_RE.exec(await res.text())?.[1]
+      if (!latest || latest === currentBuild) return
+      newerBuildFound = true
+    }
+    showToast('새 버전이 나왔어요', { text: '새로고침', onClick: () => window.location.reload() }, 60_000)
+  } catch { /* 오프라인 — 다음에 */ }
+}
+
+if (import.meta.env.PROD) {
+  document.addEventListener('visibilitychange', () => { void checkForNewVersion() })
+  window.addEventListener('focus', () => { void checkForNewVersion() })
+  setInterval(() => { void checkForNewVersion() }, 30 * 60_000)
+}
+
 // 휴대폰·PC에서 앱처럼 설치하고, 인터넷이 잠깐 끊겨도 화면은 열리게 (배포판에서만)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
