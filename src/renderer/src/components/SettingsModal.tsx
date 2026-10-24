@@ -44,7 +44,10 @@ function backupDate(b: AutoBackupInfo): Date | null {
 
 function fmtBackupLabel(b: AutoBackupInfo, withSeconds = false): string {
   const d = backupDate(b)
-  return d ? friendlyTime(d, withSeconds) : b.name
+  if (!d) return b.name
+  // 같은 초에 만든 백업은 이름 끝의 -2, -3 …으로 구별
+  const n = b.name.match(/-(\d+)\.db$/)?.[1]
+  return friendlyTime(d, withSeconds) + (n ? ` (${n})` : '')
 }
 
 function fmtSize(bytes: number): string {
@@ -230,11 +233,12 @@ export default function SettingsModal() {
     } finally { setBusy(false) }
   }
 
-  const handleRestoreFrom = async (b: AutoBackupInfo) => {
+  // label: 목록에 보이는 이름 그대로 (같은 분 백업이면 초까지 — 확인창에서도 구별되게)
+  const handleRestoreFrom = async (b: AutoBackupInfo, label = fmtBackupLabel(b, true)) => {
     const extra = scope.loggedIn
       ? '\n로그인 상태라서, 다음 동기화 때 다른 기기의 기록도 이 시점으로 돌아가요.' : ''
     const ok = await confirmDialog({
-      title: `'${fmtBackupLabel(b)}' 시점으로 되돌릴까요?`,
+      title: `'${label}' 시점으로 되돌릴까요?`,
       message: `지금 기록이 그 시점의 내용으로 바뀌어요. 바꾸기 전 지금 기록은 자동 백업으로 남겨 둬요.${extra}`,
       confirmText: '되돌리기',
       danger: true,
@@ -430,7 +434,7 @@ export default function SettingsModal() {
                               <li key={b.name} className="st-list-item">
                                 <span className="st-list-main">{backupLabel(b, i)}</span>
                                 <span className="st-list-sub">{fmtSize(b.size)}</span>
-                                <button className="st-btn small" disabled={busy} onClick={() => handleRestoreFrom(b)}>되돌리기</button>
+                                <button className="st-btn small" disabled={busy} onClick={() => handleRestoreFrom(b, backupLabel(b, i))}>되돌리기</button>
                               </li>
                             ))}
                           </ul>
