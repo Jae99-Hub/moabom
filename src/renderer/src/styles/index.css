@@ -491,9 +491,9 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 
 .filter-divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 
-/* 상태 묶음과 도구 묶음 — 큰 화면에선 한 줄로 이어지고, 휴대폰에선 두 줄로 나뉨 (아래 휴대폰 부분) */
-.filter-chips, .filter-tools { display: contents; }
-.filter-count { display: none; }
+/* 상태 묶음과 도구 묶음 — 큰 화면에선 그냥 한 줄로 이어짐 (휴대폰 모양은 아래 휴대폰 부분) */
+.filter-chips, .filter-tools, .sort-wrap { display: contents; }
+.sort-icon { display: none; }
 
 .sort-select {
   height: 30px;
@@ -1919,26 +1919,56 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   }
   .media-grid-wrapper { padding: 10px; }
 
-  /* 필터바 - 위 줄은 상태(옆으로 밀어 보기), 아래 줄은 개수 · 정렬 · 보기 · 선택
-     (예전엔 한 줄에 다 넣어 정렬 칸이 '최근 ㅊ'처럼 잘리고 '선택'이 화면 밖으로 밀렸음) */
-  .filter-bar { flex-direction: column; align-items: stretch; flex-wrap: nowrap; padding: 8px 0 6px; gap: 6px; }
+  /* 필터바 - 한 줄: 상태는 한 덩어리 버튼(설정의 밝게/어둡게와 같은 모양), 오른쪽에 정렬·보기·선택 작은 단추
+     (예전엔 칩과 칸을 한 줄에 다 넣어 정렬 칸이 '최근 ㅊ'처럼 잘리고 '선택'이 화면 밖으로 밀렸음) */
+  .filter-bar { flex-wrap: nowrap; padding: 8px 12px; gap: 8px; }
   .filter-chips {
     display: flex;
-    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    background: var(--bg-active);
     overflow-x: auto;
-    padding: 0 12px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
   .filter-chips::-webkit-scrollbar { display: none; }
-  .filter-chips .filter-chip { flex-shrink: 0; }
-  .filter-tools { display: flex; align-items: center; gap: 6px; padding: 0 12px; }
-  .filter-count { display: block; margin-right: auto; font-size: 13px; color: var(--text-muted); }
-  .grid-count { display: none; } /* 개수는 필터 아래 줄에 */
+  .filter-chips .filter-chip {
+    flex: 1 0 auto;
+    height: 30px;
+    min-height: 30px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    font-size: 13px;
+  }
+  .filter-chips .filter-chip.active {
+    background: var(--bg-card);
+    color: var(--text-accent);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+  .filter-tools { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .filter-divider { display: none; }
-  /* 글씨는 16px이어야 iPhone이 누를 때 확대하지 않음 — 대신 테두리 없이 가볍게 */
-  .sort-select { height: 34px; padding: 0 4px; font-size: 16px; margin-left: 0; border-color: transparent; background: transparent; }
-  .view-toggle-btn { width: 34px; height: 34px; }
+  .sort-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+  }
+  .sort-wrap.sorted { border-color: var(--accent); background: var(--accent-soft); color: var(--text-accent); } /* 기본(최근 추가순)이 아닐 때 */
+  .sort-icon { display: block; }
+  /* 투명하게 겹친 정렬 칸 — 글씨는 16px이어야 iPhone이 누를 때 확대하지 않음 */
+  .sort-wrap .sort-select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; font-size: 16px; cursor: pointer; }
+  .view-toggle-btn { width: 36px; height: 36px; }
+  .filter-tools .filter-chip { height: 36px; min-height: 36px; padding: 0 12px; border-radius: var(--radius-sm); }
   .filter-chip { white-space: nowrap; }
 
   /* 모바일: 짧은 라벨 표시 */
