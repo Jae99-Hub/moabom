@@ -1,7 +1,8 @@
 // 도서 검색 (Google Books) — 검색 키를 브라우저 코드에 두지 않으려고 서버에서 대신 요청한다
 import { fromOurSite, json, readQuery } from './_shared.js'
 
-export const config = { runtime: 'edge' } // 사용자와 가까운 곳(한국이면 서울)에서 실행
+// Google Books 서버(미국) 가까이에서 실행 — 서버끼리 주고받아 빠르고, 결과만 한 번에 돌려줌
+export const config = { runtime: 'edge', regions: ['iad1'] }
 
 function mapVolume(item) {
   const v = item.volumeInfo || {}

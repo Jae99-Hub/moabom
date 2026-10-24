@@ -2,7 +2,8 @@
 // 감독 정보까지 서버에서 한 번에 모아 돌려줘서, 휴대폰에서 요청을 여러 번 보내지 않아도 된다.
 import { fromOurSite, json, readQuery } from './_shared.js'
 
-export const config = { runtime: 'edge' } // 사용자와 가까운 곳(한국이면 서울)에서 실행
+// TMDB 서버(미국) 가까이에서 실행 — 검색 1번 + 감독 정보 여러 번을 서버끼리 빠르게 주고받고, 결과만 한 번에 돌려줌
+export const config = { runtime: 'edge', regions: ['iad1'] }
 
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500'
 const MOVIE_GENRES = {
