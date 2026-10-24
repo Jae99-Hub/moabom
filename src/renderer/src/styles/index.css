@@ -311,31 +311,41 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   background: var(--bg-hover);
 }
 
-.sidebar-genre-group {
+/* 종류 아래 장르: 종류 아이콘 밑으로 들여 쓰고 세로 안내선으로 단계를 보여 줌 */
+.sidebar-genre-group,
+.sidebar-genre-children {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-bottom: 2px;
+  border-left: 1px solid var(--border);
 }
+.sidebar-genre-group { margin: 1px 0 6px 20px; padding-left: 6px; }
+.sidebar-genre-children { margin: 1px 0 2px 14px; padding-left: 6px; }
 
-.sidebar-genre-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.sidebar-genre-item {
-  padding-left: 12px;
-  font-size: 12px;
+/* .sidebar-nav-item보다 뒤에 와도 지지 않게 두 클래스로 (예전엔 덮여서 종류와 같은 크기로 보였음) */
+.sidebar-nav-item.sidebar-genre-item {
+  gap: 4px;
+  padding: 5px 8px 5px 4px;
+  border-radius: 8px;
+  font-size: 12.5px;
   font-weight: 400;
   color: var(--text-secondary);
 }
-
-.sidebar-genre-hash {
-  color: var(--text-muted);
-  font-size: 11px;
-  margin-right: 2px;
+.sidebar-nav-item.sidebar-genre-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sidebar-nav-item.sidebar-genre-item.active {
+  background: var(--accent-soft);
+  color: var(--text-accent);
+  font-weight: 600;
+  box-shadow: none; /* 굵은 막대는 종류에만 */
+}
+.sidebar-nav-item.sidebar-genre-item .nav-count { background: transparent; padding: 0 2px; }
+.sidebar-genre-chevron {
+  width: 12px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
 }
 
 .sidebar-genre-name {
@@ -350,7 +360,8 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 .sidebar-stats {
   display: flex;
   justify-content: space-between;
-  padding: 12px 12px 8px;
+  gap: 2px;
+  padding: 8px 4px 8px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
 }
@@ -361,7 +372,17 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   align-items: center;
   gap: 2px;
   flex: 1;
+  padding: 6px 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.sidebar-stat:hover { background: var(--bg-hover); }
+.sidebar-stat.active { background: var(--accent-soft); }
+.sidebar-stat.active .sidebar-stat-number, .sidebar-stat.active .sidebar-stat-label { color: var(--text-accent); }
 
 .sidebar-stat-number {
   font-size: 16px;

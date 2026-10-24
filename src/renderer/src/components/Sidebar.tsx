@@ -42,12 +42,13 @@ function sorted(map: Map<string, GenreNode>): [string, GenreNode][] {
   return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'ko'))
 }
 
+// 장르 나무 — 단계마다 들여 쓰고 세로 안내선을 그어(.sidebar-genre-group / -children) 종류 아래에 있는 것이 보이게.
+// 예전엔 장르 줄이 종류 줄과 같은 크기·굵기로 보여서 '드라마 > 한국 > 드라마'가 모두 같은 단계처럼 보였음
 function GenreNodes({
-  nodes, type, depth, expanded, onToggle, onSelect, activeGenre, activeType
+  nodes, type, expanded, onToggle, onSelect, activeGenre, activeType
 }: {
   nodes: Map<string, GenreNode>
   type: ItemType
-  depth: number
   expanded: Set<string>
   onToggle: (path: string) => void
   onSelect: (type: ItemType, path: string) => void
@@ -62,32 +63,33 @@ function GenreNodes({
         const isOpen = expanded.has(node.path)
         return (
           <div key={node.path}>
-            <div className="sidebar-genre-row">
-              <button
-                className={`sidebar-nav-item sidebar-genre-item${isActive ? ' active' : ''}`}
-                style={{ paddingLeft: 12 + Math.min(depth, 4) * 14 }}
-                onClick={() => { onSelect(type, node.path); if (hasChildren) onToggle(node.path) }}
-              >
+            <button
+              className={`sidebar-nav-item sidebar-genre-item${isActive ? ' active' : ''}`}
+              onClick={() => { onSelect(type, node.path); if (hasChildren) onToggle(node.path) }}
+              aria-expanded={hasChildren ? isOpen : undefined}
+            >
+              <span className="sidebar-genre-chevron" aria-hidden="true">
                 {hasChildren && (
                   <svg
-                    width="12" height="12" viewBox="0 0 24 24"
-                    fill="none" stroke="currentColor" strokeWidth="2.5"
-                    style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}
+                    width="10" height="10" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="3"
+                    style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
                   >
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                 )}
-                {!hasChildren && <span className="sidebar-genre-hash">{depth === 0 ? '#' : '·'}</span>}
-                <span className="sidebar-genre-name">{name}</span>
-                <span className="nav-count">{node.itemIds.size}</span>
-              </button>
-            </div>
+              </span>
+              <span className="sidebar-genre-name" title={name}>{name}</span>
+              <span className="nav-count">{node.itemIds.size}</span>
+            </button>
             {isOpen && hasChildren && (
-              <GenreNodes
-                nodes={node.children} type={type} depth={depth + 1}
-                expanded={expanded} onToggle={onToggle} onSelect={onSelect}
-                activeGenre={activeGenre} activeType={activeType}
-              />
+              <div className="sidebar-genre-children">
+                <GenreNodes
+                  nodes={node.children} type={type}
+                  expanded={expanded} onToggle={onToggle} onSelect={onSelect}
+                  activeGenre={activeGenre} activeType={activeType}
+                />
+              </div>
             )}
           </div>
         )
@@ -144,28 +146,28 @@ export default function Sidebar() {
       )}
     <div className={`sidebar${isSidebarOpen ? ' sidebar-open' : ''}`} data-tour="sidebar">
 
-      {/* Stats row */}
+      {/* 종류별 개수 — 누르면 그 종류만 보기, 한 번 더 누르면 전체 (예전엔 숫자만 보이고 눌러도 반응이 없었음) */}
       <div className="sidebar-stats">
-        <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.book }} />
-          <span className="sidebar-stat-number">{bookCount}</span>
-          <span className="sidebar-stat-label">도서</span>
-        </div>
-        <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.movie }} />
-          <span className="sidebar-stat-number">{movieCount}</span>
-          <span className="sidebar-stat-label">영화</span>
-        </div>
-        <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.drama }} />
-          <span className="sidebar-stat-number">{dramaCount}</span>
-          <span className="sidebar-stat-label">드라마</span>
-        </div>
-        <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.documentary }} />
-          <span className="sidebar-stat-number">{docCount}</span>
-          <span className="sidebar-stat-label">다큐</span>
-        </div>
+        {([
+          ['book', bookCount], ['movie', movieCount], ['drama', dramaCount], ['documentary', docCount],
+        ] as const).map(([type, count]) => {
+          const t = TYPES.find((x) => x.value === type)!
+          const active = filters.type === type && filters.genre === 'all'
+          return (
+            <button
+              key={type}
+              className={`sidebar-stat${active ? ' active' : ''}`}
+              onClick={() => handleSelectType(active ? 'all' : type)}
+              aria-pressed={active}
+              aria-label={`${t.label} ${count}개${active ? ' (전체 보기로 돌아가기)' : ' 보기'}`}
+              title={active ? '전체 보기' : `${t.label}만 보기`}
+            >
+              <span className="sidebar-stat-dot" style={{ background: t.color }} />
+              <span className="sidebar-stat-number">{count}</span>
+              <span className="sidebar-stat-label">{t.label}</span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="sidebar-section-header">라이브러리</div>
@@ -259,7 +261,7 @@ export default function Sidebar() {
             {isOpen && forest.size > 0 && (
               <div className="sidebar-genre-group">
                 <GenreNodes
-                  nodes={forest} type={t.value} depth={0}
+                  nodes={forest} type={t.value}
                   expanded={expanded} onToggle={toggle} onSelect={selectGenre}
                   activeGenre={filters.genre} activeType={filters.type}
                 />
