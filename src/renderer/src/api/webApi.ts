@@ -61,131 +61,25 @@ async function getUserId(): Promise<string> {
   return user.id
 }
 
-// ── API 키 (설정에 저장된 키 우선, 없으면 기본값) ─────────────────
-const DEFAULT_GOOGLE_BOOKS_KEY = 'AIzaSyB2CqQVMkx89-S3xAAfG85Qk-LycoKNA0o'
-const DEFAULT_TMDB_KEY = '2231c307ea12a6d255fca6d45014212b'
-
-async function getApiKey(settingKey: string, defaultKey: string): Promise<string> {
+// ── 도서·영화 검색 — 모아봄 웹 서버(/api)를 거친다 ──────────────────
+// 검색 키를 브라우저 코드에 두지 않기 위해서 (서버가 키를 들고 대신 요청, 같은 검색어는 잠시 저장해 빠르게 돌려줌)
+async function searchViaServer(path: 'books' | 'tmdb', query: string): Promise<unknown[]> {
+  let res: Response
   try {
-    if (!(await isAuthenticated())) {
-      const settings = anonLoad<Record<string, string>>(ANON.settings, {})
-      return settings[settingKey]?.trim() || defaultKey
-    }
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return defaultKey
-    const { data } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('user_id', user.id)
-      .eq('key', settingKey)
-      .maybeSingle()
-    return (data?.value as string)?.trim() || defaultKey
+    res = await fetch(`/api/${path}?q=${encodeURIComponent(query.trim())}`, { signal: AbortSignal.timeout(15000) })
   } catch {
-    return defaultKey
+    throw new Error('검색 응답이 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')
   }
-}
-
-// ── Google Books ──────────────────────────────────────────────────
-async function searchGoogleBooks(query: string): Promise<unknown[]> {
-  const GOOGLE_BOOKS_API_KEY = await getApiKey('google_books_api_key', DEFAULT_GOOGLE_BOOKS_KEY)
-  const fetchBooks = async (q: string) => {
-    const params = new URLSearchParams({ q, maxResults: '10', printType: 'books', key: GOOGLE_BOOKS_API_KEY })
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?${params}`)
-    if (!res.ok) throw new Error(`Google Books API 오류: ${res.status}`)
-    const data = await res.json() as { items?: unknown[] }
-    return data.items ?? []
+  const data = await res.json().catch(() => null) as unknown
+  if (!res.ok) {
+    const message = (data as { error?: string } | null)?.error
+    throw new Error(message || `검색 서버에 문제가 있어요. 잠시 뒤 다시 시도해 주세요. (${res.status})`)
   }
-
-  const mapVolume = (item: Record<string, unknown>) => {
-    const v = item.volumeInfo as Record<string, unknown>
-    const ids = (v.industryIdentifiers as Array<{ type: string; identifier: string }> | undefined) ?? []
-    const isbn = ids.find((i) => i.type === 'ISBN_13')?.identifier ?? ids.find((i) => i.type === 'ISBN_10')?.identifier ?? ''
-    const imageLinks = v.imageLinks as Record<string, string> | undefined
-    const rawThumb = imageLinks?.thumbnail ?? imageLinks?.smallThumbnail ?? null
-    const coverPath = rawThumb ? rawThumb.replace('http://', 'https://') : null
-    return {
-      google_books_id: item.id,
-      title: v.title ?? '',
-      original_title: '',
-      author: ((v.authors as string[] | undefined) ?? []).join(', '),
-      publisher: v.publisher ?? '',
-      isbn,
-      page_count: v.pageCount ?? null,
-      year: v.publishedDate ? String(v.publishedDate).slice(0, 4) : null,
-      overview: v.description ?? '',
-      cover_path: coverPath,
-      genre: ((v.categories as string[] | undefined) ?? []).join(', ')
-    }
-  }
-
-  const [byTitle, byGeneral] = await Promise.all([
-    fetchBooks(`intitle:${query}`),
-    fetchBooks(query)
-  ])
-  const seen = new Set<string>()
-  const merged: ReturnType<typeof mapVolume>[] = []
-  for (const item of [...byTitle, ...byGeneral] as Record<string, unknown>[]) {
-    const id = item.id as string
-    if (!seen.has(id)) { seen.add(id); merged.push(mapVolume(item)) }
-  }
-  return merged.slice(0, 8)
+  return Array.isArray(data) ? data : []
 }
 
-// ── TMDB ──────────────────────────────────────────────────────────
-const MOVIE_GENRES: Record<number, string> = {
-  28: '액션', 12: '모험', 16: '애니메이션', 35: '코미디', 80: '범죄',
-  99: '다큐멘터리', 18: '드라마', 10751: '가족', 14: '판타지', 36: '역사',
-  27: '공포', 10402: '음악', 9648: '미스터리', 10749: '로맨스', 878: 'SF',
-  53: '스릴러', 10752: '전쟁', 37: '서부'
-}
-const TV_GENRES: Record<number, string> = {
-  10759: '액션어드벤처', 16: '애니메이션', 35: '코미디', 80: '범죄',
-  99: '다큐멘터리', 18: '드라마', 10751: '가족', 10762: '키즈',
-  9648: '미스터리', 10765: 'SF판타지', 10768: '전쟁정치', 37: '서부'
-}
-
-async function searchTmdb(query: string): Promise<unknown[]> {
-  const TMDB_API_KEY = await getApiKey('tmdb_api_key', DEFAULT_TMDB_KEY)
-  const params = new URLSearchParams({ api_key: TMDB_API_KEY, query, language: 'ko-KR', page: '1' })
-  const res = await fetch(`https://api.themoviedb.org/3/search/multi?${params}`)
-  if (!res.ok) throw new Error(`TMDB API 오류: ${res.status}`)
-  const data = await res.json() as { results?: Record<string, unknown>[] }
-  const items = (data.results ?? []).filter((r) => ['movie', 'tv'].includes(r.media_type as string)).slice(0, 6)
-
-  return Promise.all(items.map(async (item) => {
-    const mediaType = item.media_type as string
-    let director = ''
-    try {
-      const endpoint = mediaType === 'movie' ? 'movie' : 'tv'
-      const cp = new URLSearchParams({ api_key: TMDB_API_KEY, language: 'ko-KR' })
-      const cr = await fetch(`https://api.themoviedb.org/3/${endpoint}/${item.id}/credits?${cp}`)
-      if (cr.ok) {
-        const cd = await cr.json() as { crew?: Array<{ job: string; name: string }> }
-        director = mediaType === 'movie'
-          ? cd.crew?.find((c) => c.job === 'Director')?.name ?? ''
-          : cd.crew?.filter((c) => ['Creator', 'Executive Producer', 'Series Director'].includes(c.job))?.[0]?.name ?? ''
-      }
-    } catch { /* ignore */ }
-
-    const genreIds = (item.genre_ids as number[] | undefined) ?? []
-    const genreMap = mediaType === 'movie' ? MOVIE_GENRES : TV_GENRES
-    const genre = genreIds.map((id) => genreMap[id]).filter(Boolean).slice(0, 3).join(', ')
-
-    return {
-      tmdb_id: item.id,
-      title: item.title ?? item.name ?? '',
-      original_title: item.original_title ?? item.original_name ?? '',
-      item_type: mediaType === 'movie' ? 'movie' : 'drama',
-      cover_path: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
-      backdrop_path: item.backdrop_path ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}` : null,
-      year: ((item.release_date ?? item.first_air_date ?? '') as string).slice(0, 4) || null,
-      overview: item.overview ?? '',
-      genre,
-      director,
-      vote_average: item.vote_average ?? 0
-    }
-  }))
-}
+const searchGoogleBooks = (query: string): Promise<unknown[]> => searchViaServer('books', query)
+const searchTmdb = (query: string): Promise<unknown[]> => searchViaServer('tmdb', query)
 
 // ── 이미지 선택 + 리사이즈 ────────────────────────────────────────
 function pickImageRaw(): Promise<string | null> {

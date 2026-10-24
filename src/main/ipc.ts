@@ -19,10 +19,12 @@ import {
 import { searchTmdb } from './tmdb'
 import { searchGoogleBooks } from './googlebooks'
 
-const DEFAULT_TMDB_API_KEY = '2231c307ea12a6d255fca6d45014212b'
+// 검색 키는 코드에 두지 않고 빌드할 때 .env(MAIN_VITE_*)에서 넣는다 — 저장소가 공개라 코드에 있으면 누구나 볼 수 있음
+const TMDB_API_KEY = import.meta.env.MAIN_VITE_TMDB_API_KEY ?? ''
+const GOOGLE_BOOKS_API_KEY = import.meta.env.MAIN_VITE_GOOGLE_BOOKS_API_KEY ?? ''
 
 function getTmdbApiKey(): string {
-  return getSetting('tmdb_api_key') || DEFAULT_TMDB_API_KEY
+  return getSetting('tmdb_api_key') || TMDB_API_KEY
 }
 
 function getCoversDir(): string {
@@ -65,7 +67,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('settings:set', (_, key: string, value: string) => setSetting(key, value))
 
   ipcMain.handle('books:search', async (_, query: string) => {
-    const apiKey = getSetting('google_books_api_key') || 'AIzaSyB2CqQVMkx89-S3xAAfG85Qk-LycoKNA0o'
+    const apiKey = getSetting('google_books_api_key') || GOOGLE_BOOKS_API_KEY
     return searchGoogleBooks(query, apiKey)
   })
 
