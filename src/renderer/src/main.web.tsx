@@ -182,3 +182,10 @@ async function bootstrap() {
 }
 
 bootstrap()
+
+// 휴대폰·PC에서 앱처럼 설치하고, 인터넷이 잠깐 끊겨도 화면은 열리게 (배포판에서만)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* 지원하지 않는 환경은 그냥 웹으로 */ })
+  })
+}

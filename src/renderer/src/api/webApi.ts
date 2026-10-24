@@ -26,6 +26,26 @@ function anonNextId(): number {
   return id
 }
 
+const nowIso = (): string => new Date().toISOString()
+const TRASH_DAYS = 15
+type Row = Record<string, unknown>
+
+/** 휴지통 15일 지난 항목 영구삭제 (휴지통을 열 때 정리) */
+async function purgeExpiredTrash(days = TRASH_DAYS): Promise<void> {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString()
+  if (!(await isAuthenticated())) {
+    const items = anonLoad<Row[]>(ANON.items, [])
+    const expired = new Set(items.filter((i) => i.is_deleted && String(i.deleted_at ?? '') < cutoff).map((i) => i.id))
+    if (expired.size === 0) return
+    anonSave(ANON.items, items.filter((i) => !expired.has(i.id)))
+    anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => !expired.has(q.item_id)))
+    return
+  }
+  const userId = await getUserId()
+  await supabase.from('quotes').delete().eq('user_id', userId).eq('is_deleted', true).lt('deleted_at', cutoff)
+  await supabase.from('items').delete().eq('user_id', userId).eq('is_deleted', true).lt('deleted_at', cutoff)
+}
+
 async function isAuthenticated(): Promise<boolean> {
   if (!isSupabaseConfigured) return false
   try {
@@ -243,13 +263,16 @@ export async function setupWebApi(): Promise<void> {
       getAll: async () => {
         if (!(await isAuthenticated())) {
           return anonLoad<Record<string, unknown>[]>(ANON.items, [])
+            .filter((i) => !i.is_deleted)
             .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
         }
         const userId = await getUserId()
+        // 휴지통 항목은 빼고 (데스크톱 앱이 휴지통으로 옮긴 것도 클라우드엔 '삭제 표시'로 남아 있음)
         const { data, error } = await supabase
           .from('items')
           .select('*')
           .eq('user_id', userId)
+          .not('is_deleted', 'is', true)
           .order('created_at', { ascending: false })
         if (error) throw error
         return data ?? []
@@ -371,20 +394,81 @@ export async function setupWebApi(): Promise<void> {
         if (error) throw error
       },
 
+      // 휴지통으로 옮김 (15일 뒤 영구삭제). 함께 옮긴 명대사는 같은 삭제 시각을 받아 복원할 때 함께 되살아남.
+      // 클라우드에 '삭제 표시'로 남기므로 데스크톱 앱도 동기화 때 휴지통으로 옮긴다.
       delete: async (id: number) => {
+        const ts = nowIso()
         if (!(await isAuthenticated())) {
-          const items = anonLoad<Record<string, unknown>[]>(ANON.items, [])
-          anonSave(ANON.items, items.filter((i) => i.id !== id))
-          // 관련 quotes도 삭제
-          const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
-          anonSave(ANON.quotes, quotes.filter((q) => q.item_id !== id))
+          const items = anonLoad<Row[]>(ANON.items, []).map((i) =>
+            i.id === id ? { ...i, is_deleted: true, deleted_at: ts, updated_at: ts } : i)
+          anonSave(ANON.items, items)
+          const quotes = anonLoad<Row[]>(ANON.quotes, []).map((q) =>
+            q.item_id === id && !q.is_deleted ? { ...q, is_deleted: true, deleted_at: ts } : q)
+          anonSave(ANON.quotes, quotes)
           return
         }
-        // CASCADE가 없는 환경을 대비해 명시적으로 quotes 먼저 삭제
+        const { error } = await supabase.from('items')
+          .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id)
+        if (error) throw error
+        await supabase.from('quotes')
+          .update({ is_deleted: true, deleted_at: ts, updated_at: ts })
+          .eq('item_id', id).not('is_deleted', 'is', true)
+      }
+    },
+
+    trash: {
+      getAll: async () => {
+        try { await purgeExpiredTrash() } catch { /* 정리 실패는 목록 표시에 영향 없음 */ }
+        if (!(await isAuthenticated())) {
+          return anonLoad<Row[]>(ANON.items, [])
+            .filter((i) => i.is_deleted)
+            .sort((a, b) => String(b.deleted_at ?? '').localeCompare(String(a.deleted_at ?? '')))
+        }
+        const userId = await getUserId()
+        const { data, error } = await supabase
+          .from('items').select('*')
+          .eq('user_id', userId).eq('is_deleted', true)
+          .order('deleted_at', { ascending: false })
+        if (error) throw error
+        return data ?? []
+      },
+
+      restore: async (id: number) => {
+        const ts = nowIso()
+        if (!(await isAuthenticated())) {
+          const items = anonLoad<Row[]>(ANON.items, [])
+          const deletedAt = items.find((i) => i.id === id)?.deleted_at
+          anonSave(ANON.items, items.map((i) =>
+            i.id === id ? { ...i, is_deleted: false, deleted_at: null, updated_at: ts } : i))
+          anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).map((q) =>
+            q.item_id === id && q.is_deleted && q.deleted_at === deletedAt ? { ...q, is_deleted: false, deleted_at: null } : q))
+          return
+        }
+        const { data: item } = await supabase.from('items').select('deleted_at').eq('id', id).maybeSingle()
+        const deletedAt = (item?.deleted_at as string | null) ?? null
+        // 항목과 함께 휴지통에 들어간 명대사만 되살림 (따로 지운 명대사는 그대로)
+        let quotes = supabase.from('quotes')
+          .update({ is_deleted: false, deleted_at: null, updated_at: ts })
+          .eq('item_id', id).eq('is_deleted', true)
+        quotes = deletedAt ? quotes.eq('deleted_at', deletedAt) : quotes.is('deleted_at', null)
+        await quotes
+        const { error } = await supabase.from('items')
+          .update({ is_deleted: false, deleted_at: null, updated_at: ts }).eq('id', id)
+        if (error) throw error
+      },
+
+      purge: async (id: number) => {
+        if (!(await isAuthenticated())) {
+          anonSave(ANON.items, anonLoad<Row[]>(ANON.items, []).filter((i) => i.id !== id))
+          anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => q.item_id !== id))
+          return
+        }
         await supabase.from('quotes').delete().eq('item_id', id)
         const { error } = await supabase.from('items').delete().eq('id', id)
         if (error) throw error
-      }
+      },
+
+      purgeExpired: async (days: number) => purgeExpiredTrash(days),
     },
 
     quotes: {
@@ -392,13 +476,14 @@ export async function setupWebApi(): Promise<void> {
         if (!(await isAuthenticated())) {
           const quotes = anonLoad<Record<string, unknown>[]>(ANON.quotes, [])
           return quotes
-            .filter((q) => q.item_id === itemId)
+            .filter((q) => q.item_id === itemId && !q.is_deleted)
             .sort((a, b) => (Number(a.page_number ?? 0) - Number(b.page_number ?? 0)))
         }
         const { data, error } = await supabase
           .from('quotes')
           .select('*')
           .eq('item_id', itemId)
+          .not('is_deleted', 'is', true)
           .order('page_number', { ascending: true, nullsFirst: false })
         if (error) throw error
         return data ?? []
@@ -411,6 +496,7 @@ export async function setupWebApi(): Promise<void> {
           const itemMap = new Map(items.map((i) => [i.id, i]))
           const q = query.toLowerCase()
           return quotes
+            .filter((qt) => !qt.is_deleted && !(itemMap.get(qt.item_id) as Row | undefined)?.is_deleted)
             .filter((qt) => String(qt.text ?? '').toLowerCase().includes(q) || String(qt.note ?? '').toLowerCase().includes(q))
             .map((qt) => {
               const item = itemMap.get(qt.item_id) as Record<string, unknown> | undefined
@@ -422,6 +508,7 @@ export async function setupWebApi(): Promise<void> {
           .from('items')
           .select('id, title, item_type, cover_path')
           .eq('user_id', userId)
+          .not('is_deleted', 'is', true)
         if (!userItems || userItems.length === 0) return []
         const itemIds = userItems.map((i: Record<string, unknown>) => i.id)
         const itemMap = new Map(userItems.map((i: Record<string, unknown>) => [i.id, i]))
@@ -430,6 +517,7 @@ export async function setupWebApi(): Promise<void> {
           .from('quotes')
           .select('*')
           .in('item_id', itemIds)
+          .not('is_deleted', 'is', true)
           .or(`text.ilike.%${query}%,note.ilike.%${query}%`)
           .order('created_at', { ascending: false })
         if (error) throw error
@@ -453,6 +541,7 @@ export async function setupWebApi(): Promise<void> {
             item_id: data.item_id,
             text: data.text,
             page_number: data.page_number ?? null,
+            episode_number: data.episode_number ?? null,
             note: data.note ?? null,
             created_at: new Date().toISOString(),
           }
@@ -468,6 +557,7 @@ export async function setupWebApi(): Promise<void> {
             item_id: data.item_id,
             text: data.text,
             page_number: data.page_number ?? null,
+            episode_number: data.episode_number ?? null, // 드라마·다큐 회차 (예전엔 웹에서 빠졌음)
             note: data.note ?? null,
           })
           .select()
@@ -483,6 +573,7 @@ export async function setupWebApi(): Promise<void> {
           if (idx === -1) return
           if (data.text !== undefined) quotes[idx].text = data.text
           if (data.page_number !== undefined) quotes[idx].page_number = data.page_number
+          if (data.episode_number !== undefined) quotes[idx].episode_number = data.episode_number
           if (data.note !== undefined) quotes[idx].note = data.note
           anonSave(ANON.quotes, quotes)
           return
@@ -490,8 +581,10 @@ export async function setupWebApi(): Promise<void> {
         const payload: Record<string, unknown> = {}
         if (data.text !== undefined) payload.text = data.text
         if (data.page_number !== undefined) payload.page_number = data.page_number
+        if (data.episode_number !== undefined) payload.episode_number = data.episode_number
         if (data.note !== undefined) payload.note = data.note
         if (Object.keys(payload).length === 0) return
+        payload.updated_at = nowIso() // 데스크톱 앱이 바뀐 걸 알아채게
         const { error } = await supabase.from('quotes').update(payload).eq('id', id)
         if (error) throw error
       },
@@ -502,7 +595,10 @@ export async function setupWebApi(): Promise<void> {
           anonSave(ANON.quotes, quotes.filter((q) => q.id !== id))
           return
         }
-        const { error } = await supabase.from('quotes').delete().eq('id', id)
+        // 지우지 않고 '삭제 표시' — 그래야 데스크톱 앱도 동기화 때 지운 걸 알 수 있음 (15일 뒤 정리)
+        const ts = nowIso()
+        const { error } = await supabase.from('quotes')
+          .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id)
         if (error) throw error
       }
     },
