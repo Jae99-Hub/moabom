@@ -1,24 +1,3 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
-
-declare global {
-  interface Window {
-    electron: ElectronAPI
-    api: unknown
-    authBridge?: {
-      openExternal: (url: string) => Promise<void>
-      onCallback: (callback: (url: string) => void) => void
-      setCurrentUser: (userId: string | null) => Promise<void>
-    }
-    updaterBridge?: {
-      onAvailable: (cb: (version: string) => void) => void
-      onProgress: (cb: (pct: number) => void) => void
-      onDownloaded: (cb: () => void) => void
-      onNotAvailable: (cb: () => void) => void
-      onError: (cb: (msg: string) => void) => void
-      checkForUpdates: () => Promise<void>
-      startDownload: () => Promise<void>
-      install: () => Promise<void>
-      getVersion: () => Promise<string>
-    }
-  }
-}
+// 렌더러에서 쓰는 window.api / authBridge / updaterBridge 타입은 src/renderer/src/types/index.ts 한 곳에서 정의한다
+// (여기 따로 두면 실제 브릿지와 어긋나기 쉬움 — 예: 업데이트 구독 함수가 해제 함수를 돌려주는 것)
+export {}

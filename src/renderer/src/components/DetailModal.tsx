@@ -3,10 +3,8 @@ import { useStore, useStorePick, selectFilteredItems } from '../store/useStore'
 import { Item, ItemType, ItemStatus, Quote } from '../types'
 import StarRating from './StarRating'
 import { coverSrc } from '../utils/cover'
-
-const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
-const STATUS_LABEL: Record<string, string> = { want: '읽고 싶다', reading: '읽는 중', done: '완독', dropped: '중단' }
-const STATUS_LABEL_MEDIA: Record<string, string> = { want: '볼 예정', reading: '보는 중', done: '시청 완료', dropped: '중단' }
+import { TYPE_LABEL, statusLabels, quoteWord } from '../constants/itemMeta'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
   if (!total || total <= 0) return null
@@ -27,7 +25,7 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
 function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) {
   const [quotes, setQuotes] = useState<Quote[]>([])
   const { openQuotesModal, quotesVersion } = useStorePick('openQuotesModal', 'quotesVersion')
-  const label = itemType === 'book' ? '명문장' : '명대사'
+  const label = quoteWord(itemType)
 
   useEffect(() => {
     window.api.quotes.getByItemId(itemId).then(setQuotes).catch(() => {})
@@ -40,7 +38,7 @@ function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) 
         <button className="btn-text" onClick={openQuotesModal}>관리</button>
       </div>
       {quotes.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록된 {label}이 없습니다</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록한 {label}{itemType === 'book' ? '이' : '가'} 없어요</div>
       ) : (
         quotes.slice(0, 3).map((q) => (
           <div key={q.id} className="quote-item">
@@ -71,9 +69,12 @@ function DetailContent({ item }: { item: Item }) {
   const [showStatusMenu, setShowStatusMenu] = useState(false)
   const [coverFailed, setCoverFailed] = useState(false)
   useEffect(() => setCoverFailed(false), [item.cover_path]) // 표지를 바꾸면 다시 시도
+  // 열리면 포커스를 상세창 안으로 — 키 입력이 뒤의 카드로 가지 않고, 스페이스로 내용을 스크롤
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { rootRef.current?.focus({ preventScroll: true }) }, [])
   const statusMenuRef = useRef<HTMLDivElement>(null)
   const isBook = item.item_type === 'book'
-  const statusMap = isBook ? STATUS_LABEL : STATUS_LABEL_MEDIA
+  const statusMap = statusLabels(item.item_type)
 
   // 외부 클릭 시 드롭다운 닫기
   useEffect(() => {
@@ -95,15 +96,14 @@ function DetailContent({ item }: { item: Item }) {
 
   const coverUrl = coverSrc(item.cover_path)
 
+  // 바로 휴지통으로 옮기고 '되돌리기' 알림을 띄움 (15일 동안 휴지통에서도 복원 가능)
   const handleDelete = () => {
-    if (window.confirm(`"${item.title}"을(를) 휴지통으로 옮길까요?\n15일 안에 휴지통에서 되돌릴 수 있어요.`)) {
-      deleteItem(item.id)
-      selectItem(null)
-    }
+    void deleteItem(item.id)
+    selectItem(null)
   }
 
   return (
-    <div className="detail-modal-inner" onClick={(e) => e.stopPropagation()}>
+    <div className="detail-modal-inner" onClick={(e) => e.stopPropagation()} ref={rootRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={item.title}>
       {/* 상단 배경 */}
       {item.backdrop_path && (
         <div className="dm-backdrop" style={{ backgroundImage: `url(${item.backdrop_path})` }} />
@@ -117,7 +117,7 @@ function DetailContent({ item }: { item: Item }) {
       </button>
 
       {/* 헤더: 커버 + 제목 정보 */}
-      <div className="dm-header">
+      <div className={`dm-header${item.backdrop_path ? '' : ' no-backdrop'}`}>
         <div className="dm-cover-wrap">
           {coverUrl && !coverFailed ? (
             <img className="dm-cover" src={coverUrl} alt={item.title} onError={() => setCoverFailed(true)} />
@@ -291,20 +291,20 @@ export default function DetailModal() {
   // 필터가 바뀌어도 선택 아이템이 사라지지 않도록 전체 목록에서 조회
   const selected = useMemo(() => itemList.find((m) => m.id === selectedId), [itemList, selectedId])
 
+  // Esc는 맨 위 창부터 닫힘 (명대사 창이 위에 있으면 그것 먼저)
+  useEscapeKey(() => selectItem(null), !!selected)
+
   useEffect(() => {
     if (!selectedId) return // 상세창이 닫혀 있으면 키를 가로채지 않음
     const onKey = (e: KeyboardEvent) => {
-      // 위에 다른 창이 떠 있으면 무시 — 명대사 창에서 Esc를 누르면 뒤의 상세창이 닫히고,
-      // ←/→를 누르면 뒤에서 다른 작품으로 바뀌던 문제
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      // 위에 다른 창이 떠 있으면 무시 — ←/→를 누르면 뒤에서 다른 작품으로 바뀌던 문제
       const s = useStore.getState()
       if (s.isAddModalOpen || s.isQuotesModalOpen || s.isSettingsOpen || s.isStatsOpen ||
           s.isTrashOpen || s.isTourOpen || s.syncConflicts.length > 0 || s.syncAutoMerged > 0) return
       // 입력창에 포커스 중이면 무시
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
-
-      if (e.key === 'Escape') { selectItem(null); return }
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
       const filtered = selectFilteredItems(s)
       const idx = filtered.findIndex((m) => m.id === selectedId)
       if (e.key === 'ArrowRight') {

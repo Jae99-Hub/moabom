@@ -712,13 +712,15 @@ export function updateItem(id: number, data: Partial<Omit<ItemRow, 'id' | 'creat
 export function deleteItem(id: number): void {
   // 항상 소프트 삭제(휴지통). deleted_at 기록 → 15일 후 자동 영구삭제.
   // 클라우드 동기화 시 tombstone(is_deleted=true)으로 올려 다른 기기에도 삭제 전파.
+  // 항목과 함께 휴지통에 들어간 명대사는 같은 deleted_at을 받는다 → 복원할 때 이것만 되살림
+  const ts = (queryOne("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t") as { t: string }).t
   db.run(
-    "UPDATE items SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
-    { ':id': id }
+    'UPDATE items SET is_deleted = 1, is_dirty = 1, deleted_at = :ts, updated_at = :ts WHERE id = :id',
+    { ':id': id, ':ts': ts }
   )
   db.run(
-    "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE item_id = :id AND is_deleted = 0",
-    { ':id': id }
+    'UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = :ts, updated_at = :ts WHERE item_id = :id AND is_deleted = 0',
+    { ':id': id, ':ts': ts }
   )
   save()
 }
@@ -740,12 +742,15 @@ export function getTrashedItems(): ItemRow[] {
 
 /** 휴지통에서 복원 (dirty 마킹 → 다음 동기화 시 클라우드도 복원) */
 export function restoreItem(id: number): void {
+  // 항목과 함께 휴지통에 들어간 명대사만 되살림 — 그 전에 따로 지운 명대사까지 살아나던 문제 방지
+  const row = queryOne('SELECT deleted_at FROM items WHERE id = :id', { ':id': id })
   db.run(
-    "UPDATE items SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
-    { ':id': id }
+    `UPDATE quotes SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now')
+     WHERE item_id = :id AND is_deleted = 1 AND deleted_at IS :da`,
+    { ':id': id, ':da': (row?.deleted_at as string | null) ?? null }
   )
   db.run(
-    "UPDATE quotes SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE item_id = :id AND is_deleted = 1",
+    "UPDATE items SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
     { ':id': id }
   )
   save()

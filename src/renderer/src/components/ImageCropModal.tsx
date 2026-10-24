@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { coverSrc } from '../utils/cover'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 interface CropArea {
   x: number
@@ -17,6 +18,7 @@ interface Props {
 export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
   const imgRef = useRef<HTMLImageElement>(null)
   const downOnBackdrop = useRef(false)
+  useEscapeKey(onCancel)
   const containerRef = useRef<HTMLDivElement>(null)
   const [crop, setCrop] = useState<CropArea | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -135,7 +137,7 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
       <div className="modal" style={{ width: 580 }}>
         <div className="modal-header">
           <span className="modal-title">이미지 자르기</span>
-          <button className="btn-icon" onClick={onCancel}>
+          <button className="btn-icon" onClick={onCancel} aria-label="닫기" title="닫기">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>

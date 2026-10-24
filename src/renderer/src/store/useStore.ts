@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { Item, ItemFormData, FilterState, QuoteSearchResult } from '../types'
 import type { SyncStatus, SyncConflict } from '../api/syncService'
+import { showToast, confirmDialog } from './dialogs'
 
 interface AppState {
   itemList: Item[]
@@ -24,6 +25,7 @@ interface AppState {
   addItem: (data: ItemFormData) => Promise<Item>
   updateItem: (id: number, data: Partial<ItemFormData>) => Promise<void>
   deleteItem: (id: number) => Promise<void>
+  restoreItems: (ids: number[]) => Promise<void>
   selectItem: (id: number | null) => void
   setFilter: (key: keyof FilterState, value: string) => void
   toggleTheme: () => void
@@ -65,6 +67,9 @@ interface AppState {
   removeSyncConflict: (localId: number) => void
   clearSyncResult: () => void
 }
+
+/** 휴지통(되돌리기)을 쓸 수 있는 환경인지 — 웹 버전 API에는 휴지통이 없어 삭제가 바로 영구 삭제됨 */
+export const hasTrash = (): boolean => !!(window.api as { trash?: { restore?: unknown } }).trash?.restore
 
 // 아이템 변경 후 3초 디바운스 자동 sync
 let _syncTimer: ReturnType<typeof setTimeout> | null = null
@@ -199,12 +204,35 @@ export const useStore = create<AppState>((set, get) => ({
     scheduleSync(get().triggerSync)
   },
 
+  // 삭제는 확인창 없이 바로 휴지통으로 옮기고 '되돌리기'를 띄운다 (15일 동안 휴지통에서도 복원 가능)
   deleteItem: async (id) => {
+    const title = get().itemList.find((m) => m.id === id)?.title ?? ''
+    // 휴지통이 없는 환경(웹 버전)은 바로 지워지므로 되돌리기 대신 먼저 확인
+    const canUndo = hasTrash()
+    if (!canUndo) {
+      const ok = await confirmDialog({
+        title: '삭제할까요?', message: '삭제하면 되돌릴 수 없어요.', confirmText: '삭제', danger: true,
+      })
+      if (!ok) return
+    }
     await window.api.items.delete(id)
     set((s) => ({
       itemList: s.itemList.filter((m) => m.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId
     }))
+    scheduleSync(get().triggerSync)
+    if (!canUndo) return
+    const name = title.length > 24 ? title.slice(0, 24) + '…' : title
+    showToast(name ? `"${name}"을(를) 휴지통으로 옮겼어요` : '휴지통으로 옮겼어요', {
+      text: '되돌리기', onClick: () => { void get().restoreItems([id]) }
+    })
+  },
+
+  restoreItems: async (ids) => {
+    for (const id of ids) {
+      try { await window.api.trash.restore(id) } catch { /* 이미 영구삭제된 항목 등은 건너뜀 */ }
+    }
+    await get().fetchAll()
     scheduleSync(get().triggerSync)
   },
 
@@ -299,10 +327,18 @@ export const useStore = create<AppState>((set, get) => ({
     }
     await get().fetchAll()
     set({ checkedItems: failed, selectionMode: failed.length > 0, selectedId: null })
-    if (checkedItems.length > failed.length) scheduleSync(get().triggerSync) // 삭제를 클라우드에도 반영
-    if (failed.length > 0) {
-      alert(`${failed.length}개 항목 삭제에 실패했습니다. 다시 시도해주세요.`)
+    const moved = checkedItems.filter((id) => !failed.includes(id))
+    if (moved.length > 0) {
+      scheduleSync(get().triggerSync) // 삭제를 클라우드에도 반영
+      if (hasTrash()) {
+        showToast(`${moved.length}개를 휴지통으로 옮겼어요`, {
+          text: '되돌리기', onClick: () => { void get().restoreItems(moved) }
+        })
+      } else {
+        showToast(`${moved.length}개를 삭제했어요`)
+      }
     }
+    if (failed.length > 0) showToast(`${failed.length}개는 옮기지 못했어요. 다시 시도해 주세요.`)
   }
 }))
 

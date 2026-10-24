@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStorePick } from '../store/useStore'
 import { Quote } from '../types'
+import { confirmDialog } from '../store/dialogs'
+import { quoteWord } from '../constants/itemMeta'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 export default function QuotesModal() {
   const { isQuotesModalOpen, closeQuotesModal, bumpQuotesVersion, selectedId, itemList, requestSync } =
     useStorePick('isQuotesModalOpen', 'closeQuotesModal', 'bumpQuotesVersion', 'selectedId', 'itemList', 'requestSync')
   // 배경에서 누르고 배경에서 뗐을 때만 닫음 (입력칸에서 드래그하다 창 밖에서 놓아도 닫히지 않게)
   const downOnBackdrop = useRef(false)
+  useEscapeKey(closeQuotesModal, isQuotesModalOpen)
   const item = itemList.find((i) => i.id === selectedId)
 
   const [quotes, setQuotes] = useState<Quote[]>([])
@@ -64,7 +68,7 @@ export default function QuotesModal() {
       await reload()
       requestSync() // 명대사 추가를 클라우드에도 반영
     } catch {
-      setMutError('추가에 실패했습니다. 다시 시도해주세요.')
+      setMutError('추가하지 못했어요. 다시 시도해 주세요.')
     } finally {
       setIsSaving(false)
     }
@@ -93,14 +97,21 @@ export default function QuotesModal() {
       await reload()
       requestSync()
     } catch {
-      setMutError('저장에 실패했습니다. 다시 시도해주세요.')
+      setMutError('저장하지 못했어요. 다시 시도해 주세요.')
     } finally {
       setIsSaving(false)
     }
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('이 명문장을 삭제할까요?')) return
+    const word = quoteWord(itemType)
+    const ok = await confirmDialog({
+      title: `이 ${word}${itemType === 'book' ? '을' : '를'} 삭제할까요?`,
+      message: '삭제하면 되돌릴 수 없어요.',
+      confirmText: '삭제',
+      danger: true,
+    })
+    if (!ok) return
     setIsSaving(true)
     setMutError(null)
     try {
@@ -108,7 +119,7 @@ export default function QuotesModal() {
       await reload()
       requestSync()
     } catch {
-      setMutError('삭제에 실패했습니다. 다시 시도해주세요.')
+      setMutError('삭제하지 못했어요. 다시 시도해 주세요.')
     } finally {
       setIsSaving(false)
     }
@@ -186,7 +197,7 @@ export default function QuotesModal() {
                   className="form-input"
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="이 대사에 대한 생각..."
+                  placeholder={itemType === 'book' ? '이 문장에 대한 생각...' : '이 대사에 대한 생각...'}
                 />
               </div>
             </div>
@@ -205,7 +216,7 @@ export default function QuotesModal() {
           {/* 기존 명문장 목록 */}
           {quotes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              {itemType === 'book' ? '아직 기록된 명문장이 없습니다' : '아직 기록된 명대사가 없습니다'}
+              {itemType === 'book' ? '아직 기록한 명문장이 없어요' : '아직 기록한 명대사가 없어요'}
             </div>
           ) : (
             <div className="quotes-list">
@@ -261,13 +272,13 @@ export default function QuotesModal() {
                           )}
                         </div>
                         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                          <button className="btn-text" onClick={() => startEdit(q)}>
+                          <button className="btn-text" onClick={() => startEdit(q)} aria-label="고치기" title="고치기">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
                           </button>
-                          <button className="btn-text danger" onClick={() => handleDelete(q.id)}>
+                          <button className="btn-text danger" onClick={() => handleDelete(q.id)} aria-label="삭제" title="삭제">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <polyline points="3 6 5 6 21 6" />
                               <path d="M19 6l-1 14H6L5 6" />

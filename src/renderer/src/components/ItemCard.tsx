@@ -5,13 +5,7 @@ import { CardContextMenu } from './CardContextMenu'
 import { coverSrc } from '../utils/cover'
 
 
-const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
-const STATUS_LABEL: Record<ItemStatus, string> = {
-  want: '예정',
-  reading: '진행',
-  done: '완료',
-  dropped: '중단'
-}
+import { TYPE_LABEL, STATUS_SHORT } from '../constants/itemMeta'
 
 function getProgress(item: Item): number | null {
   if (item.item_type !== 'book') return null
@@ -90,6 +84,13 @@ function ItemCard({ item }: { item: Item }) {
   return (
     <div
       className={`media-card${isSelected && !selectionMode ? ' selected' : ''}${selectionMode && isChecked ? ' checked' : ''}`}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        // 상세창이 열려 있는 동안엔 뒤에 남은 카드 포커스가 키를 받지 않게 (스페이스로 상세창이 닫히던 문제)
+        if (!selectionMode && useStore.getState().selectedId != null) return
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick() }
+      }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
@@ -130,7 +131,7 @@ function ItemCard({ item }: { item: Item }) {
       )}
 
       <span className={`media-card-status status-${item.status}`}>
-        {STATUS_LABEL[item.status as ItemStatus]}
+        {STATUS_SHORT[item.status as ItemStatus]}
       </span>
 
       <span className={`media-card-type type-${item.item_type}`}>

@@ -30,7 +30,7 @@ export default function AuthScreen({ onContinueAnonymous, isElectron }: Props) {
         try {
           await bridge?.openExternal(data.url)
         } catch {
-          setError('브라우저 열기에 실패했습니다. 직접 로그인 링크를 열어주세요.')
+          setError('브라우저를 열지 못했어요. 잠시 뒤 다시 시도해 주세요.')
         }
       }
       // 로그인 완료는 main process → auth:callback IPC로 처리됨
@@ -94,7 +94,7 @@ export default function AuthScreen({ onContinueAnonymous, isElectron }: Props) {
         )}
 
         <p className="auth-notice">
-          로그인하면 어떤 기기에서도 데이터가 동기화됩니다
+          로그인하면 여러 기기에서 기록을 함께 볼 수 있어요
         </p>
 
         {onContinueAnonymous && (

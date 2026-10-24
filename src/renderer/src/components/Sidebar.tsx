@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react'
 import { useStorePick } from '../store/useStore'
 import { Item, ItemType } from '../types'
+import { TYPE_COLOR } from '../constants/itemMeta'
 
 const TYPES: { value: ItemType; label: string; color: string }[] = [
-  { value: 'book',  label: '도서',   color: '#3b82f6' },
-  { value: 'movie', label: '영화',  color: '#8b5cf6' },
-  { value: 'drama', label: '드라마', color: '#ec4899' },
-  { value: 'documentary', label: '다큐', color: '#f59e0b' }
+  { value: 'book',  label: '도서',   color: TYPE_COLOR.book },
+  { value: 'movie', label: '영화',  color: TYPE_COLOR.movie },
+  { value: 'drama', label: '드라마', color: TYPE_COLOR.drama },
+  { value: 'documentary', label: '다큐', color: TYPE_COLOR.documentary }
 ]
 
 type GenreNode = {
@@ -146,22 +147,22 @@ export default function Sidebar() {
       {/* Stats row */}
       <div className="sidebar-stats">
         <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: '#3b82f6' }} />
+          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.book }} />
           <span className="sidebar-stat-number">{bookCount}</span>
           <span className="sidebar-stat-label">도서</span>
         </div>
         <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: '#8b5cf6' }} />
+          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.movie }} />
           <span className="sidebar-stat-number">{movieCount}</span>
           <span className="sidebar-stat-label">영화</span>
         </div>
         <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: '#ec4899' }} />
+          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.drama }} />
           <span className="sidebar-stat-number">{dramaCount}</span>
           <span className="sidebar-stat-label">드라마</span>
         </div>
         <div className="sidebar-stat">
-          <span className="sidebar-stat-dot" style={{ background: '#f59e0b' }} />
+          <span className="sidebar-stat-dot" style={{ background: TYPE_COLOR.documentary }} />
           <span className="sidebar-stat-number">{docCount}</span>
           <span className="sidebar-stat-label">다큐</span>
         </div>

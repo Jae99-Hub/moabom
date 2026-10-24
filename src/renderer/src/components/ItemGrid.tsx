@@ -5,8 +5,7 @@ import { CardContextMenu } from './CardContextMenu'
 import { Item, ItemType, ItemStatus, QuoteSearchResult } from '../types'
 import { coverSrc } from '../utils/cover'
 
-const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
-const STATUS_LABEL: Record<ItemStatus, string> = { want: '예정', reading: '진행', done: '완료', dropped: '중단' }
+import { TYPE_LABEL, STATUS_SHORT } from '../constants/itemMeta'
 
 function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query: string }) {
   const { itemList, selectItem } = useStorePick('itemList', 'selectItem')
@@ -17,8 +16,8 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
-        <p>명문장 검색 결과가 없습니다</p>
-        <span>다른 키워드로 검색해보세요</span>
+        <p>명문장·명대사 검색 결과가 없어요</p>
+        <span>다른 낱말로 검색해 보세요</span>
       </div>
     )
   }
@@ -30,7 +29,14 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
         const item = itemList.find((i) => i.id === r.item_id)
         const resultCover = coverSrc(r.cover_path, 'small')
         return (
-          <div key={r.id} className="quote-result-card" onClick={() => item && selectItem(item.id)}>
+          <div
+            key={r.id}
+            className="quote-result-card"
+            role="button"
+            tabIndex={0}
+            onClick={() => item && selectItem(item.id)}
+            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && item) { e.preventDefault(); selectItem(item.id) } }}
+          >
             {resultCover ? (
               <img className="quote-result-cover" src={resultCover} alt="" loading="lazy" decoding="async" />
             ) : (
@@ -85,6 +91,12 @@ const ItemRow = React.memo(function ItemRow({ item }: { item: Item }) {
   return (
     <div
       className={`list-row${isSelected && !selectionMode ? ' selected' : ''}${selectionMode && isChecked ? ' checked' : ''}`}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (!selectionMode && useStore.getState().selectedId != null) return // 상세창이 열려 있으면 무시
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick() }
+      }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
@@ -138,7 +150,7 @@ const ItemRow = React.memo(function ItemRow({ item }: { item: Item }) {
           <span className="list-row-rating">★ {item.rating.toFixed(1)}</span>
         )}
         <span className={`list-row-status status-${item.status}`}>
-          {STATUS_LABEL[item.status as ItemStatus]}
+          {STATUS_SHORT[item.status as ItemStatus]}
         </span>
         <span className={`list-row-type type-${item.item_type}`}>
           {TYPE_LABEL[item.item_type as ItemType]}
@@ -171,8 +183,8 @@ export default function ItemGrid() {
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
           </svg>
-          <p>{isFiltered ? '검색 결과가 없습니다' : '아직 기록이 없습니다'}</p>
-          <span>{isFiltered ? '다른 키워드나 필터로 검색해보세요' : '오른쪽 위 + 추가 버튼으로 시작하세요'}</span>
+          <p>{isFiltered ? '조건에 맞는 작품이 없어요' : '아직 기록한 작품이 없어요'}</p>
+          <span>{isFiltered ? '다른 낱말이나 필터로 찾아보세요' : '오른쪽 위 + 추가 버튼으로 첫 작품을 등록해 보세요'}</span>
         </div>
       </div>
     )

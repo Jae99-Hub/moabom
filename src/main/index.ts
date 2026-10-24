@@ -101,7 +101,7 @@ function startLocalAuthServer() {
 <html><head><meta charset="utf-8">
 <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f0f13;color:#e8e8e8;}</style>
 </head><body>
-<p>로그인 처리 중... 앱으로 돌아갑니다.</p>
+<p>로그인 처리 중이에요. 곧 앱으로 돌아가요.</p>
 <script>
 var s = window.location.search;
 var h = window.location.hash;
@@ -114,7 +114,7 @@ if (s && s.includes('code=')) {
   window.location.href = 'moabom://auth-callback?' + h.slice(1);
   setTimeout(function(){ window.close(); }, 2000);
 } else {
-  document.querySelector('p').textContent = '인증 정보를 찾을 수 없습니다. 다시 시도해주세요.';
+  document.querySelector('p').textContent = '로그인 정보를 찾지 못했어요. 앱에서 다시 시도해 주세요.';
 }
 </script>
 </body></html>`
@@ -182,7 +182,7 @@ function createWindow(): void {
     width: 1400,
     height: 860,
     minWidth: 1000,
-    minHeight: 640,
+    minHeight: 560, // 125% 배율 노트북(1366×768)에서도 창이 작업 표시줄 밖으로 넘치지 않게
     show: false,
     autoHideMenuBar: true,
     icon: iconPath,

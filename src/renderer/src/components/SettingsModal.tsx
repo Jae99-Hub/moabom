@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useStorePick } from '../store/useStore'
+import { confirmDialog, alertDialog, showToast } from '../store/dialogs'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { OtherScopeInfo, AutoBackupInfo } from '../types'
 
 const isWebEnv =
@@ -36,6 +38,7 @@ export default function SettingsModal() {
   const [electronEmail, setElectronEmail] = useState('')
   const [electronName, setElectronName]   = useState('')
   const [signingIn, setSigningIn]         = useState(false)
+  useEscapeKey(closeSettings, isSettingsOpen)
 
   // 업데이트
   const [updateState, setUpdateState]     = useState<UpdateCheckState>('idle')
@@ -123,18 +126,24 @@ export default function SettingsModal() {
   const handleBackup = async () => {
     try {
       const result = await window.api.db.backup() as { success: boolean; path?: string }
-      if (result.success) alert(result.path ? `백업 완료:\n${result.path}` : '백업 파일이 다운로드됐습니다.')
-    } catch { alert('백업에 실패했습니다.') }
+      if (result.success) void alertDialog(result.path ?? '백업 파일을 내려받았어요.', '백업했어요')
+    } catch { void alertDialog('다시 시도해 주세요.', '백업하지 못했어요') }
   }
 
   const handleRestore = async () => {
-    if (!window.confirm('복원하면 현재 데이터가 교체됩니다. 계속할까요?')) return
+    const ok = await confirmDialog({
+      title: '백업 파일로 되돌릴까요?',
+      message: '지금 기록이 고른 파일의 내용으로 바뀌어요.',
+      confirmText: '되돌리기',
+      danger: true,
+    })
+    if (!ok) return
     const result = await window.api.db.restore()
     if (result.success) {
-      alert('복원 완료. 앱을 재시작해 주세요.')
+      await alertDialog('화면을 새로 불러올게요.', '되돌렸어요')
       window.location.reload()
     } else if (result.error && result.error !== 'read-source') {
-      alert('복원에 실패했습니다. 파일이 손상되었거나 형식이 올바르지 않아요.\n(현재 데이터는 그대로 유지됩니다.)')
+      void alertDialog('파일이 손상됐거나 모아봄 백업 파일이 아니에요. 지금 기록은 그대로예요.', '되돌리지 못했어요')
     }
   }
 
@@ -144,8 +153,13 @@ export default function SettingsModal() {
     const count  = scope.loggedIn ? (source === 'anon' ? scope.anon : scope.otherAccount) : scope.otherAccount
     const target = scope.loggedIn ? '현재 계정' : '이 컴퓨터(로컬)'
     const warn = source === 'otherAccount'
-      ? '\n※ 다른 계정 데이터를 현재 계정으로 복제해요. 원래 계정 데이터는 그대로 유지됩니다.' : ''
-    if (!window.confirm(`${count}개 항목을 ${target}(으)로 불러옵니다.${warn}\n작업 전 자동 백업을 만들어요. 계속할까요?`)) return
+      ? '\n다른 계정의 기록을 현재 계정으로 복사해요. 원래 계정의 기록은 그대로 남아요.' : ''
+    const ok = await confirmDialog({
+      title: `${count}개를 ${target}(으)로 불러올까요?`,
+      message: `불러오기 전에 자동 백업을 만들어요.${warn}`,
+      confirmText: '불러오기',
+    })
+    if (!ok) return
     setBusy(true)
     try {
       try { await window.api.backup?.run(true) } catch { /* 사전 스냅샷 best-effort */ }
@@ -153,7 +167,7 @@ export default function SettingsModal() {
       await fetchAll()
       if (scope.loggedIn) await triggerSync()
       loadDataTab()
-      alert(`${imported}개 불러왔어요.${skipped ? ` (${skipped}개는 이미 있어 건너뜀)` : ''}`)
+      showToast(`${imported}개 불러왔어요.${skipped ? ` (${skipped}개는 이미 있어서 건너뛰었어요)` : ''}`)
     } finally {
       setBusy(false)
     }
@@ -163,7 +177,7 @@ export default function SettingsModal() {
     setBusy(true)
     try {
       const r = await window.api.backup.run(true)
-      alert(r.success ? '백업했어요.' : '백업에 실패했어요.')
+      showToast(r.success ? '백업했어요.' : '백업하지 못했어요. 다시 시도해 주세요.')
       loadDataTab()
     } finally {
       setBusy(false)
@@ -176,27 +190,41 @@ export default function SettingsModal() {
     setBusy(true)
     try {
       const r = await window.api.backup.chooseDir()
-      if (r.success) { loadDataTab(); alert('백업 폴더를 변경했어요. 기존 백업도 새 폴더로 옮겼습니다.') }
-      else if (!r.canceled) alert('폴더 변경에 실패했어요. (쓰기 권한이 없는 폴더일 수 있어요.)')
+      if (r.success) { loadDataTab(); showToast('백업 폴더를 바꿨어요. 기존 백업도 새 폴더로 옮겼어요.') }
+      else if (!r.canceled) void alertDialog('저장할 수 없는 폴더일 수 있어요. 다른 폴더를 골라 주세요.', '폴더를 바꾸지 못했어요')
     } finally { setBusy(false) }
   }
 
   const handleRestoreFrom = async (b: AutoBackupInfo) => {
     const extra = scope.loggedIn
-      ? '\n※ 로그인 상태에서 복원하면, 다음 동기화 때 다른 기기의 최신 변경이 이 시점으로 되돌아갈 수 있어요.' : ''
-    if (!window.confirm(`'${fmtBackupLabel(b)}' 시점으로 되돌립니다. 현재 데이터가 교체돼요.${extra}\n계속할까요?`)) return
+      ? '\n로그인 상태라서, 다음 동기화 때 다른 기기의 최근 변경도 이 시점으로 돌아갈 수 있어요.' : ''
+    const ok = await confirmDialog({
+      title: `'${fmtBackupLabel(b)}' 시점으로 되돌릴까요?`,
+      message: `지금 기록이 그 시점의 내용으로 바뀌어요.${extra}`,
+      confirmText: '되돌리기',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       const r = await window.api.backup.restoreFrom(b.path)
-      if (r.success) { alert('복원 완료. 앱을 재시작해 주세요.'); window.location.reload() }
-      else alert('복원에 실패했어요. (파일이 손상되었거나 접근할 수 없어요. 현재 데이터는 그대로예요.)')
+      if (r.success) { await alertDialog('화면을 새로 불러올게요.', '되돌렸어요'); window.location.reload() }
+      else void alertDialog('백업 파일이 손상됐거나 열 수 없어요. 지금 기록은 그대로예요.', '되돌리지 못했어요')
     } finally {
       setBusy(false)
     }
   }
 
+  const confirmSignOut = () => confirmDialog({
+    title: '로그아웃할까요?',
+    message: isElectron
+      ? '이 컴퓨터의 기록은 그대로 남아요. 다시 로그인하면 이어서 동기화돼요.'
+      : '다시 로그인하면 기록을 이어서 볼 수 있어요.',
+    confirmText: '로그아웃',
+  })
+
   const handleSignOut = async () => {
-    if (!window.confirm('로그아웃할까요?')) return
+    if (!(await confirmSignOut())) return
     const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
     if (!isSupabaseConfigured || !supabase) return
     await supabase.auth.signOut()
@@ -220,7 +248,7 @@ export default function SettingsModal() {
   }
 
   const handleElectronSignOut = async () => {
-    if (!window.confirm('로그아웃할까요?')) return
+    if (!(await confirmSignOut())) return
     const { electronSignOut } = await import('../api/syncService')
     await electronSignOut()
     // setCurrentUser(null), renderAuth()는 onAuthStateChange SIGNED_OUT이 처리
@@ -247,7 +275,7 @@ export default function SettingsModal() {
       case 'syncing': return '동기화 중...'
       case 'success': return '동기화 완료 ✓'
       case 'error':   return '동기화 오류 ⚠️'
-      default:        return '클라우드와 데이터를 동기화합니다'
+      default:        return '다른 기기와 기록을 맞춰요'
     }
   }
 
@@ -268,7 +296,7 @@ export default function SettingsModal() {
         {/* ── 헤더 ── */}
         <div className="modal-header">
           <span className="modal-title">설정</span>
-          <button className="btn-icon" onClick={closeSettings}>
+          <button className="btn-icon" onClick={closeSettings} aria-label="닫기" title="닫기">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -338,7 +366,7 @@ export default function SettingsModal() {
                         </div>
                       </div>
                       <button
-                        className="btn-secondary settings-signout-btn"
+                        className="btn-primary settings-signin-btn"
                         onClick={handleElectronSignIn}
                         disabled={signingIn}
                       >
@@ -369,9 +397,9 @@ export default function SettingsModal() {
                     <div className="settings-anon-row">
                       <div className="settings-anon-info">
                         <div className="settings-group-label">비로그인 상태</div>
-                        <div className="settings-group-desc">데이터가 이 브라우저에만 저장됩니다</div>
+                        <div className="settings-group-desc">기록이 이 브라우저에만 저장돼요</div>
                       </div>
-                      <button className="btn-secondary settings-signout-btn" onClick={handleWebSignIn}>
+                      <button className="btn-primary settings-signin-btn" onClick={handleWebSignIn}>
                         Google 로그인
                       </button>
                     </div>
@@ -383,7 +411,7 @@ export default function SettingsModal() {
               {!isElectron && !isWebEnv && (
                 <div className="settings-group">
                   <div className="settings-group-desc" style={{ textAlign: 'center', padding: '24px 0' }}>
-                    로그인 기능을 사용할 수 없는 환경입니다
+                    이 환경에서는 로그인을 쓸 수 없어요
                   </div>
                 </div>
               )}
@@ -407,7 +435,7 @@ export default function SettingsModal() {
                           )}
                         </div>
                         <div className="settings-group-desc">
-                          {updateState === 'idle'          && '최신 버전을 확인합니다'}
+                          {updateState === 'idle'          && '새 버전이 나왔는지 확인해요'}
                           {updateState === 'checking'      && '서버에서 확인 중...'}
                           {updateState === 'available'     && `🎉 새 버전 v${updateVersion} 이 있어요!`}
                           {updateState === 'downloading'   && `다운로드 중... ${updateProgress}%`}
@@ -424,7 +452,7 @@ export default function SettingsModal() {
                           style={{ flexShrink: 0 }}
                           onClick={handleCheckUpdate}
                         >
-                          확인
+                          업데이트 확인
                         </button>
                       )}
                       {updateState === 'checking' && (
@@ -453,7 +481,7 @@ export default function SettingsModal() {
                       {updateState === 'downloaded' && (
                         <button
                           className="btn-primary"
-                          style={{ flexShrink: 0, background: 'linear-gradient(135deg,#10b981,#059669)' }}
+                          style={{ flexShrink: 0 }}
                           onClick={() => window.updaterBridge?.install()}
                         >
                           지금 재시작

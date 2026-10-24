@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 
 const api = {
   items: {
@@ -108,9 +107,9 @@ const authBridge = {
   setCurrentUser: (userId: string | null) => ipcRenderer.invoke('auth:setCurrentUser', userId),
 }
 
+// 화면에는 앱이 쓰는 기능만 연다 (예전엔 쓰지 않는 ipcRenderer 전체(window.electron)까지 열려 있었음)
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
     contextBridge.exposeInMainWorld('authBridge', authBridge)
     contextBridge.exposeInMainWorld('updaterBridge', updaterBridge)
@@ -118,8 +117,6 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore
-  window.electron = electronAPI
   // @ts-ignore
   window.api = api
   // @ts-ignore

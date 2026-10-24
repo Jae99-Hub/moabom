@@ -15,6 +15,7 @@ import SyncConflictModal from './components/SyncConflictModal'
 import StatsModal from './components/StatsModal'
 import TrashModal from './components/TrashModal'
 import OnboardingTour from './components/OnboardingTour'
+import DialogHost from './components/DialogHost'
 
 export default function App() {
   const { fetchAll, theme, openTour } = useStorePick('fetchAll', 'theme', 'openTour')
@@ -61,6 +62,7 @@ export default function App() {
         <StatsModal />
         <TrashModal />
         <OnboardingTour />
+        <DialogHost />
       </div>
     </ErrorBoundary>
   )

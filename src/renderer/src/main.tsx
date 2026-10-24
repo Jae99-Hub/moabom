@@ -4,8 +4,32 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import App from './App'
 import './styles/index.css'
 import { isSupabaseConfigured, supabase } from './api/supabaseClient'
+import * as Sentry from '@sentry/react'
 import { useStore } from './store/useStore'
+import { alertDialog } from './store/dialogs'
 import AuthScreen from './components/AuthScreen'
+import DialogHost from './components/DialogHost'
+
+// 지인 PC에서 화면 오류가 나면 알 수 있게 오류만 보고 (성능 추적·화면 녹화 없음, 개발 중엔 보내지 않음)
+// 파일 경로에 든 Windows 사용자 이름(C:\Users\이름\...)은 지우고 보낸다.
+const scrubUserPath = (s?: string): string | undefined => s?.replace(/[A-Za-z]:[\\/]+Users[\\/]+[^\\/]+/gi, '~')
+Sentry.init({
+  dsn: 'https://c1a6f0fc7eaa862efb711e724e94e3d6@o4511405192052736.ingest.us.sentry.io/4511405197295616',
+  environment: 'desktop',
+  enabled: import.meta.env.PROD,
+  tracesSampleRate: 0,
+  sendDefaultPii: false,
+  beforeSend(event) {
+    if (event.request?.url) event.request.url = scrubUserPath(event.request.url)
+    for (const ex of event.exception?.values ?? []) {
+      for (const frame of ex.stacktrace?.frames ?? []) {
+        frame.filename = scrubUserPath(frame.filename)
+        frame.abs_path = scrubUserPath(frame.abs_path)
+      }
+    }
+    return event
+  },
+})
 
 // 초기 테마 적용 (저장값 없으면 라이트) — React 렌더 전에 적용해 다크 플래시 방지
 try {
@@ -19,7 +43,7 @@ window.addEventListener('drop', (e) => e.preventDefault())
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
 const renderAuth = () =>
-  root.render(<AuthScreen onContinueAnonymous={() => { void enterApp(null) }} isElectron={true} />)
+  root.render(<><AuthScreen onContinueAnonymous={() => { void enterApp(null) }} isElectron={true} /><DialogHost /></>)
 
 function renderError(msg: string) {
   root.render(
@@ -149,7 +173,7 @@ async function handleAuthEvent(event: AuthChangeEvent, session: Session | null):
 // 로그아웃 후 재로그인에도 동작하도록 함수로 분리해 재등록 가능하게 함
 function authFailed(message: string) {
   window.dispatchEvent(new Event('moabom:auth-failed')) // 설정창의 '대기 중...' 표시 해제
-  alert(message)
+  void alertDialog(message, '로그인하지 못했어요')
 }
 
 function registerAuthCallback() {
@@ -162,7 +186,7 @@ function registerAuthCallback() {
       const refresh_token = urlObj.searchParams.get('refresh_token')
       if (access_token && refresh_token) {
         const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-        if (error) authFailed(`로그인 실패: ${error.message}`)
+        if (error) authFailed(`잠시 뒤 다시 시도해 주세요.\n(${error.message})`)
         // 앱 진입은 onAuthStateChange SIGNED_IN이 처리
         return
       }
@@ -170,7 +194,7 @@ function registerAuthCallback() {
       const code = urlObj.searchParams.get('code')
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) authFailed(`로그인 실패: ${error.message}`)
+        if (error) authFailed(`잠시 뒤 다시 시도해 주세요.\n(${error.message})`)
         return
       }
 
@@ -178,7 +202,7 @@ function registerAuthCallback() {
       window.dispatchEvent(new Event('moabom:auth-failed'))
     } catch (e) {
       console.error('Auth callback 처리 실패:', e)
-      authFailed(`로그인 오류: ${e instanceof Error ? e.message : String(e)}`)
+      authFailed(`잠시 뒤 다시 시도해 주세요.\n(${e instanceof Error ? e.message : String(e)})`)
     }
   })
 }

@@ -5,6 +5,8 @@ import StarRating from './StarRating'
 import ImageCropModal from './ImageCropModal'
 import GenreTagInput from './GenreTagInput'
 import { coverSrc } from '../utils/cover'
+import { confirmDialog, alertDialog } from '../store/dialogs'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 /** Electron이 붙이는 "Error invoking remote method '…': Error: " 접두어를 떼고 사용자용 문구만 남김 */
 function friendlyError(e: unknown): string {
@@ -122,11 +124,20 @@ export default function AddItemModal() {
     setTimeout(() => searchInputRef.current?.focus(), 80)
   }, [isAddModalOpen, editingItem])
 
-  const requestClose = () => {
-    if (formSnapshot(form) !== initialSnapshotRef.current &&
-        !window.confirm('작성 중인 내용이 저장되지 않았어요. 닫을까요?')) return
+  const requestClose = async () => {
+    if (formSnapshot(form) !== initialSnapshotRef.current) {
+      const ok = await confirmDialog({
+        title: '작성 중인 내용이 있어요',
+        message: '저장하지 않고 닫으면 지금 쓴 내용이 사라져요.',
+        confirmText: '닫기',
+        cancelText: '계속 쓰기',
+        danger: true,
+      })
+      if (!ok) return
+    }
     closeAddModal()
   }
+  useEscapeKey(() => { void requestClose() }, isAddModalOpen)
 
   const switchType = (newType: ItemType) => {
     searchSeqRef.current++ // 진행 중이던 검색 결과는 버림
@@ -251,7 +262,7 @@ export default function AddItemModal() {
       }
       closeAddModal()
     } catch (e) {
-      alert(`저장하지 못했어요. 다시 시도해 주세요.\n(${friendlyError(e)})`)
+      void alertDialog(`다시 시도해 주세요.\n(${friendlyError(e)})`, '저장하지 못했어요')
     } finally {
       setIsSaving(false)
     }
@@ -289,7 +300,7 @@ export default function AddItemModal() {
         className="modal-overlay"
         onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
         onClick={(e) => {
-          if (e.target === e.currentTarget) { if (downOnBackdrop.current) requestClose() }
+          if (e.target === e.currentTarget) { if (downOnBackdrop.current) void requestClose() }
           else if (hasResults) closeResults()
         }}
       >
@@ -356,7 +367,7 @@ export default function AddItemModal() {
           <div className="add-modal-right">
             <div className="add-modal-header">
               <span className="modal-title">{editingItem ? '편집' : '새 항목 추가'}</span>
-              <button className="btn-icon" onClick={requestClose} aria-label="닫기" title="닫기">
+              <button className="btn-icon" onClick={() => { void requestClose() }} aria-label="닫기" title="닫기">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -504,7 +515,7 @@ export default function AddItemModal() {
                       <label className="form-label">
                         장르
                         <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
-                          Tab으로 하위장르 · Enter로 저장
+                          Tab으로 하위 장르 · Enter로 장르 추가
                         </span>
                       </label>
                       <GenreTagInput

@@ -1,6 +1,7 @@
 import React from 'react'
 import { useStorePick } from '../store/useStore'
 import { ItemStatus } from '../types'
+import { statusLabels, STATUS_SHORT } from '../constants/itemMeta'
 
 const STATUS_OPTIONS: { value: ItemStatus | 'all'; label: string }[] = [
   { value: 'all', label: '전체' },
@@ -11,32 +12,14 @@ const STATUS_OPTIONS: { value: ItemStatus | 'all'; label: string }[] = [
 ]
 
 // 모바일에서 짧게 표시할 라벨
-const SHORT_LABELS: Record<string, string> = {
-  all: '전체',
-  want: '예정',
-  reading: '진행',
-  done: '완료',
-  dropped: '중단'
-}
+const SHORT_LABELS: Record<string, string> = { all: '전체', ...STATUS_SHORT }
 
 export default function FilterBar() {
   const { filters, setFilter, viewMode, toggleViewMode, selectionMode, enterSelectionMode, exitSelectionMode } =
     useStorePick('filters', 'setFilter', 'viewMode', 'toggleViewMode', 'selectionMode', 'enterSelectionMode', 'exitSelectionMode')
 
-  const currentType = filters.type
-  const isBook = currentType === 'book'
-  const isMixed = currentType === 'all'
-
-  const readingLabel = isBook ? '읽는 중' : isMixed ? '읽는/보는 중' : '보는 중'
-  const doneLabel = isBook ? '완독' : isMixed ? '완료' : '시청 완료'
-
-  const statusLabels: Record<string, string> = {
-    all: '전체',
-    want: isBook ? '읽고 싶다' : '볼 예정',
-    reading: readingLabel,
-    done: doneLabel,
-    dropped: '중단'
-  }
+  // 책만 보면 '읽다', 영상만 보면 '보다', 섞여 있으면 공통 표현 (예전엔 '볼 예정'과 '읽는/보는 중'이 섞여 나왔음)
+  const labels: Record<string, string> = { all: '전체', ...statusLabels(filters.type) }
 
   return (
     <div className="filter-bar" data-tour="filter">
@@ -46,7 +29,7 @@ export default function FilterBar() {
           className={`filter-chip${filters.status === s.value ? ' active' : ''}`}
           onClick={() => setFilter('status', s.value)}
         >
-          <span className="chip-label-full">{statusLabels[s.value] ?? s.label}</span>
+          <span className="chip-label-full">{labels[s.value] ?? s.label}</span>
           <span className="chip-label-short">{SHORT_LABELS[s.value] ?? s.label}</span>
         </button>
       ))}

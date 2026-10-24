@@ -41,7 +41,7 @@ export default function UpdaterToast() {
         {/* 아이콘 */}
         <div style={styles.iconWrap}>
           {phase === 'downloading' ? (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1.2s linear infinite' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'updaterSpin 1.2s linear infinite' }}>
               <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
             </svg>
           ) : phase === 'downloaded' ? (
@@ -115,9 +115,10 @@ export default function UpdaterToast() {
         </div>
       </div>
 
+      {/* 앱 전체의 spin·slideUp 애니메이션을 덮어쓰지 않도록 이 알림 전용 이름을 씀 */}
       <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes slideUp {
+        @keyframes updaterSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes updaterSlideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
         }
@@ -131,8 +132,8 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'fixed',
     bottom: 24,
     right: 24,
-    zIndex: 9999,
-    animation: 'slideUp 0.3s ease',
+    zIndex: 250, // 창(모달)보다 아래 — 열린 창의 '추가하기'·삭제 버튼을 가리지 않게
+    animation: 'updaterSlideUp 0.3s ease',
   },
   toast: {
     display: 'flex',

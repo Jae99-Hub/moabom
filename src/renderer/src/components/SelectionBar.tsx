@@ -1,5 +1,6 @@
 import React from 'react'
-import { useStore, useStorePick, selectFilteredItems } from '../store/useStore'
+import { useStore, useStorePick, selectFilteredItems, hasTrash } from '../store/useStore'
+import { confirmDialog } from '../store/dialogs'
 
 export default function SelectionBar() {
   const { selectionMode, checkedItems, exitSelectionMode, selectAllChecked, deleteCheckedItems } =
@@ -20,11 +21,13 @@ export default function SelectionBar() {
     }
   }
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (count === 0) return
-    if (window.confirm(`선택한 ${count}개 항목을 휴지통으로 옮길까요?\n15일 안에 휴지통에서 되돌릴 수 있어요.`)) {
-      deleteCheckedItems()
-    }
+    const trashAvailable = hasTrash() // 웹 버전은 휴지통 없이 바로 삭제
+    const ok = (count === 1 && trashAvailable) || await confirmDialog(trashAvailable
+      ? { title: `${count}개를 휴지통으로 옮길까요?`, message: '15일 안에는 휴지통에서 되돌릴 수 있어요.', confirmText: '휴지통으로' }
+      : { title: `${count}개를 삭제할까요?`, message: '삭제하면 되돌릴 수 없어요.', confirmText: '삭제', danger: true })
+    if (ok) void deleteCheckedItems()
   }
 
   return (

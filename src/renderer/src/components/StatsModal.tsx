@@ -1,67 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, useStorePick } from '../store/useStore'
-import { Item } from '../types'
-
-// ── 데이터 계산 헬퍼 ────────────────────────────────────────────────
-
-function getDateYear(item: Item): number | null {
-  const d = item.read_date || (item.status === 'done' ? item.updated_at : null)
-  if (!d) return null
-  const y = new Date(d.includes('T') ? d : d.replace(' ', 'T') + 'Z').getFullYear()
-  return isNaN(y) ? null : y
-}
-
-function getDateMonth(item: Item, year: number): number | null {
-  const d = item.read_date || (item.status === 'done' ? item.updated_at : null)
-  if (!d) return null
-  const dt = new Date(d.includes('T') ? d : d.replace(' ', 'T') + 'Z')
-  return dt.getFullYear() === year ? dt.getMonth() : null
-}
-
-interface MonthSlot { month: number; book: number; movie: number; drama: number; documentary: number }
-
-function buildMonthly(items: Item[], year: number): MonthSlot[] {
-  const slots: MonthSlot[] = Array.from({ length: 12 }, (_, i) => ({
-    month: i + 1, book: 0, movie: 0, drama: 0, documentary: 0,
-  }))
-  items
-    .filter((m) => m.status === 'done')
-    .forEach((m) => {
-      const mo = getDateMonth(m, year)
-      if (mo == null) return
-      const t = m.item_type as 'book' | 'movie' | 'drama' | 'documentary'
-      if (t in slots[mo]) slots[mo][t]++
-    })
-  return slots
-}
-
-interface RatingStat { dist: Record<number, number>; avg: number; count: number }
-
-function buildRating(items: Item[]): RatingStat {
-  const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
-  let sum = 0, count = 0
-  items.forEach((m) => {
-    if (m.rating != null) {
-      const r = Math.min(5, Math.max(1, Math.round(m.rating)))
-      dist[r] = (dist[r] || 0) + 1
-      sum += m.rating
-      count++
-    }
-  })
-  return { dist, avg: count > 0 ? sum / count : 0, count }
-}
-
-function buildGenre(items: Item[]): [string, number][] {
-  const map = new Map<string, number>()
-  items.forEach((m) => {
-    if (!m.genre) return
-    m.genre.split(',').forEach((g) => {
-      const name = g.split('>')[0].trim()
-      if (name) map.set(name, (map.get(name) || 0) + 1)
-    })
-  })
-  return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10)
-}
+import { TYPE_COLOR, TYPE_TEXT_COLOR, typeEmojiLabel } from '../constants/itemMeta'
+import { useEscapeKey } from '../hooks/useEscapeKey'
+import { getDateYear, buildMonthly, buildRating, buildGenre, MonthSlot, RatingStat } from '../utils/stats'
 
 // ── SVG 레이더 차트 (오각형) ────────────────────────────────────────
 
@@ -181,24 +122,24 @@ function MonthlyBarChart({ data }: { data: MonthSlot[] }) {
                 {isHov && total > 0 && (
                   <div className="stat-bar-tooltip">
                     {total}개
-                    {d.book > 0 && <span style={{ color: '#60a5fa' }}> 📚{d.book}</span>}
-                    {d.movie > 0 && <span style={{ color: '#a78bfa' }}> 🎬{d.movie}</span>}
-                    {d.drama > 0 && <span style={{ color: '#f472b6' }}> 📺{d.drama}</span>}
-                    {d.documentary > 0 && <span style={{ color: '#fbbf24' }}> 🎞️{d.documentary}</span>}
+                    {d.book > 0 && <span style={{ color: TYPE_TEXT_COLOR.book }}> 📚{d.book}</span>}
+                    {d.movie > 0 && <span style={{ color: TYPE_TEXT_COLOR.movie }}> 🎬{d.movie}</span>}
+                    {d.drama > 0 && <span style={{ color: TYPE_TEXT_COLOR.drama }}> 📺{d.drama}</span>}
+                    {d.documentary > 0 && <span style={{ color: TYPE_TEXT_COLOR.documentary }}> 🎞️{d.documentary}</span>}
                   </div>
                 )}
                 <div className="stat-bar-stack">
                   {d.documentary > 0 && (
-                    <div className="stat-bar-seg" style={{ height: `${docH}%`, background: '#f59e0b' }} />
+                    <div className="stat-bar-seg" style={{ height: `${docH}%`, background: TYPE_COLOR.documentary }} />
                   )}
                   {d.drama > 0 && (
-                    <div className="stat-bar-seg" style={{ height: `${dramaH}%`, background: '#ec4899' }} />
+                    <div className="stat-bar-seg" style={{ height: `${dramaH}%`, background: TYPE_COLOR.drama }} />
                   )}
                   {d.movie > 0 && (
-                    <div className="stat-bar-seg" style={{ height: `${movieH}%`, background: '#8b5cf6' }} />
+                    <div className="stat-bar-seg" style={{ height: `${movieH}%`, background: TYPE_COLOR.movie }} />
                   )}
                   {d.book > 0 && (
-                    <div className="stat-bar-seg" style={{ height: `${bookH}%`, background: '#3b82f6' }} />
+                    <div className="stat-bar-seg" style={{ height: `${bookH}%`, background: TYPE_COLOR.book }} />
                   )}
                 </div>
               </div>
@@ -251,6 +192,7 @@ export default function StatsModal() {
 function StatsContent() {
   const { closeStats, itemList } = useStorePick('closeStats', 'itemList')
   const [tab, setTab] = useState<StatsTab>('monthly')
+  useEscapeKey(closeStats)
 
   // 연도 목록 계산
   const availableYears = useMemo(() => {
@@ -296,7 +238,7 @@ function StatsContent() {
         {/* 헤더 */}
         <div className="modal-header">
           <span className="modal-title">📊 나의 기록 통계</span>
-          <button className="btn-icon" onClick={closeStats}>
+          <button className="btn-icon" onClick={closeStats} aria-label="닫기" title="닫기">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -331,24 +273,24 @@ function StatsContent() {
           {/* 타입별 */}
           <div className="stats-type-row">
             <div className="stats-type-item">
-              <div className="stats-type-dot" style={{ background: '#3b82f6' }} />
+              <div className="stats-type-dot" style={{ background: TYPE_COLOR.book }} />
               <span className="stats-type-label">📚 도서</span>
-              <span className="stats-type-num" style={{ color: '#60a5fa' }}>{byType.book}권</span>
+              <span className="stats-type-num" style={{ color: TYPE_TEXT_COLOR.book }}>{byType.book}권</span>
             </div>
             <div className="stats-type-item">
-              <div className="stats-type-dot" style={{ background: '#8b5cf6' }} />
+              <div className="stats-type-dot" style={{ background: TYPE_COLOR.movie }} />
               <span className="stats-type-label">🎬 영화</span>
-              <span className="stats-type-num" style={{ color: '#a78bfa' }}>{byType.movie}편</span>
+              <span className="stats-type-num" style={{ color: TYPE_TEXT_COLOR.movie }}>{byType.movie}편</span>
             </div>
             <div className="stats-type-item">
-              <div className="stats-type-dot" style={{ background: '#ec4899' }} />
+              <div className="stats-type-dot" style={{ background: TYPE_COLOR.drama }} />
               <span className="stats-type-label">📺 드라마</span>
-              <span className="stats-type-num" style={{ color: '#f472b6' }}>{byType.drama}편</span>
+              <span className="stats-type-num" style={{ color: TYPE_TEXT_COLOR.drama }}>{byType.drama}편</span>
             </div>
             <div className="stats-type-item">
-              <div className="stats-type-dot" style={{ background: '#f59e0b' }} />
+              <div className="stats-type-dot" style={{ background: TYPE_COLOR.documentary }} />
               <span className="stats-type-label">🎞️ 다큐</span>
-              <span className="stats-type-num" style={{ color: '#fbbf24' }}>{byType.documentary}편</span>
+              <span className="stats-type-num" style={{ color: TYPE_TEXT_COLOR.documentary }}>{byType.documentary}편</span>
             </div>
           </div>
 
@@ -392,10 +334,10 @@ function StatsContent() {
                   <>
                     <MonthlyBarChart data={monthlyData} />
                     <div className="stats-legend">
-                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#3b82f6' }} />도서</div>
-                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#8b5cf6' }} />영화</div>
-                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#ec4899' }} />드라마</div>
-                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: '#f59e0b' }} />다큐</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: TYPE_COLOR.book }} />도서</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: TYPE_COLOR.movie }} />영화</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: TYPE_COLOR.drama }} />드라마</div>
+                      <div className="stats-legend-item"><span className="stats-legend-dot" style={{ background: TYPE_COLOR.documentary }} />다큐</div>
                     </div>
                   </>
                 )}
@@ -421,7 +363,7 @@ function StatsContent() {
                   <div className="stats-avg-stars">
                     {Array.from({ length: 5 }, (_, i) => (
                       <span key={i} style={{
-                        color: i < Math.round(ratingAll.avg) ? '#f59e0b' : 'var(--border)',
+                        color: i < Math.round(ratingAll.avg) ? 'var(--star)' : 'var(--border)',
                         fontSize: 20
                       }}>★</span>
                     ))}
@@ -436,8 +378,8 @@ function StatsContent() {
               <div className="stats-type-rating">
                 {(['book', 'movie', 'drama', 'documentary'] as const).map((type) => {
                   const typed = buildRating(itemList.filter((m) => m.item_type === type))
-                  const COLOR = type === 'book' ? '#3b82f6' : type === 'movie' ? '#8b5cf6' : type === 'drama' ? '#ec4899' : '#f59e0b'
-                  const LABEL = type === 'book' ? '📚 도서' : type === 'movie' ? '🎬 영화' : type === 'drama' ? '📺 드라마' : '🎞️ 다큐'
+                  const COLOR = TYPE_COLOR[type]
+                  const LABEL = typeEmojiLabel(type)
                   return (
                     <div key={type} className="stats-type-rating-item">
                       <div className="stats-type-rating-label">{LABEL}</div>
@@ -445,7 +387,7 @@ function StatsContent() {
                         <div className="stats-type-rating-bar"
                           style={{ width: `${(typed.avg / 5) * 100}%`, background: COLOR }} />
                       </div>
-                      <div className="stats-type-rating-val" style={{ color: COLOR }}>
+                      <div className="stats-type-rating-val" style={{ color: TYPE_TEXT_COLOR[type] }}>
                         {typed.count > 0 ? typed.avg.toFixed(1) : '-'}
                       </div>
                     </div>

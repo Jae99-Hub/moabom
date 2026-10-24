@@ -474,7 +474,8 @@ export async function resolveConflict(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return
+  // 실패는 던져서 화면이 '정리하지 못했어요'를 띄우게 (조용히 성공한 척하면 목록에서만 사라짐)
+  if (!user) throw new Error('not-signed-in')
 
   const { localId, cloudId, local, cloud } = conflict
 
@@ -495,7 +496,8 @@ export async function resolveConflict(
         .update(buildItemPayload(local, user.id))
         .eq('id', cloudId)
         .eq('user_id', user.id)
-      if (!error) await window.api.sync.markItemSynced(localId, cloudId)
+      if (error) throw error
+      await window.api.sync.markItemSynced(localId, cloudId)
       break
     }
     case 'merge': {
@@ -506,7 +508,8 @@ export async function resolveConflict(
         .update({ ...merged, ...ALIVE, updated_at: new Date().toISOString() }) // 다음 pull에서 이 기기에도 반영
         .eq('id', cloudId)
         .eq('user_id', user.id)
-      if (!error) await window.api.sync.markItemSynced(localId, cloudId)
+      if (error) throw error
+      await window.api.sync.markItemSynced(localId, cloudId)
       break
     }
     case 'keep-both': {
@@ -516,9 +519,8 @@ export async function resolveConflict(
         .insert(buildItemPayload(local, user.id))
         .select('id')
         .single()
-      if (!error && data) {
-        await window.api.sync.markItemSynced(localId, (data as { id: number }).id)
-      }
+      if (error || !data) throw error ?? new Error('insert-failed')
+      await window.api.sync.markItemSynced(localId, (data as { id: number }).id)
       break
     }
   }

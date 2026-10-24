@@ -56,7 +56,7 @@ export default function Header() {
           <input
             ref={mobileInputRef}
             type="text"
-            placeholder={isQuoteMode ? '명문장 검색...' : '제목, 저자, ISBN 검색...'}
+            placeholder={isQuoteMode ? '명문장·명대사 검색...' : '제목, 저자, ISBN 검색...'}
             value={filters.search}
             onChange={(e) => handleSearchChange(e.target.value)}
             onKeyDown={(e) => {
@@ -104,7 +104,8 @@ export default function Header() {
         </svg>
         <input
           type="text"
-          placeholder={isQuoteMode ? '명문장 검색...' : '제목, 저자, ISBN 검색...'}
+          placeholder={isQuoteMode ? '명문장·명대사 검색...' : '제목, 저자, ISBN 검색...'}
+          aria-label="검색"
           value={filters.search}
           onChange={(e) => handleSearchChange(e.target.value)}
           onKeyDown={(e) => {
@@ -137,7 +138,7 @@ export default function Header() {
           )}
         </button>
 
-        <button className="btn-icon" onClick={toggleTheme} title={theme === 'dark' ? '라이트 모드' : '다크 모드'}>
+        <button className="btn-icon" onClick={toggleTheme} title={theme === 'dark' ? '라이트 모드' : '다크 모드'} aria-label={theme === 'dark' ? '라이트 모드로 바꾸기' : '다크 모드로 바꾸기'}>
           {theme === 'dark' ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="5" />
@@ -153,7 +154,7 @@ export default function Header() {
           )}
         </button>
 
-        <button className="btn-icon" onClick={openStats} title="통계">
+        <button className="btn-icon" onClick={openStats} title="통계" aria-label="통계">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="20" x2="18" y2="10" />
             <line x1="12" y1="20" x2="12" y2="4" />
@@ -161,7 +162,7 @@ export default function Header() {
           </svg>
         </button>
 
-        <button className="btn-icon header-settings-btn" onClick={openSettings} title="설정" data-tour="settings">
+        <button className="btn-icon header-settings-btn" onClick={openSettings} title="설정" aria-label="설정" data-tour="settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />

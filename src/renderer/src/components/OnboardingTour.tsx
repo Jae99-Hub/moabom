@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useStorePick } from '../store/useStore'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 interface TourStep {
   selector?: string   // 하이라이트할 실제 요소 (없으면 가운데 카드)
@@ -30,7 +31,7 @@ const STEPS: TourStep[] = [
     selector: '[data-tour="filter"]',
     emoji: '🧭',
     title: '필터 · 정렬 · 보기',
-    body: '상태(읽고 싶다 / 읽는 중 / 완료)로 거르고, 정렬 방식과 그리드 / 리스트 보기를 바꿀 수 있어요.',
+    body: '상태(예정 / 진행 중 / 완료 / 중단)로 거르고, 정렬 방식과 그리드 / 리스트 보기를 바꿀 수 있어요.',
   },
   {
     selector: '[data-tour="sidebar"]',
@@ -62,6 +63,7 @@ const PAD = 8
 
 export default function OnboardingTour() {
   const { isTourOpen, closeTour } = useStorePick('isTourOpen', 'closeTour')
+  useEscapeKey(closeTour, isTourOpen, 1) // 안내는 다른 창보다 위에 떠 있으므로 Esc도 먼저
   const [idx, setIdx] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
 

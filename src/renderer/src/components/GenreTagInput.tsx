@@ -54,15 +54,14 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Tab') {
-      e.preventDefault()
       const text = inputText.trim()
       if (text) {
         // 현재 입력값을 상위 경로로 쌓고 새 레벨 시작
+        e.preventDefault()
         setSegments(prev => [...prev, text])
         setInputText('')
-      } else if (segments.length === 0) {
-        // 아무것도 없을 때 Tab → 무시
       }
+      // 입력이 비어 있으면 Tab은 원래대로 다음 칸으로 이동 (예전엔 여기서 갇혔음)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       commitTag()
@@ -94,6 +93,8 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
             className="genre-tag-remove"
             onClick={e => { e.stopPropagation(); removeTag(i) }}
             tabIndex={-1}
+            aria-label={`${tag} 장르 빼기`}
+            title="장르 빼기"
           >×</button>
         </span>
       ))}

@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { useStorePick } from '../store/useStore'
 import { coverSrc } from '../utils/cover'
+import { confirmDialog, alertDialog } from '../store/dialogs'
+import { typeEmojiLabel, statusLabel } from '../constants/itemMeta'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { resolveConflict, SyncConflict, mergeItemFields } from '../api/syncService'
-
-const TYPE_LABEL: Record<string, string> = { book: '📚 책', movie: '🎬 영화', drama: '📺 드라마', documentary: '🎞️ 다큐' }
-const STATUS_LABEL: Record<string, string> = { want: '볼 예정', reading: '읽는 중 / 보는 중', done: '완료', dropped: '중단' }
 
 function excerpt(text: unknown, max = 60): string {
   const s = String(text ?? '')
@@ -34,7 +34,7 @@ function ItemSide({
       )}
       <div className="conflict-side-title">{String(item.title ?? '')}</div>
       <div className="conflict-side-meta">
-        <span>{TYPE_LABEL[String(item.item_type)] ?? item.item_type as string}</span>
+        <span>{typeEmojiLabel(String(item.item_type ?? ''))}</span>
         {!!item.year && <span>· {String(item.year)}</span>}
         {!!(item.author || item.director) && (
           <span>· {String(item.author ?? item.director ?? '')}</span>
@@ -43,7 +43,7 @@ function ItemSide({
       <div className="conflict-side-rows">
         <div className="conflict-row">
           <span className="conflict-row-key">상태</span>
-          <span className="conflict-row-val">{STATUS_LABEL[String(item.status ?? '')] ?? String(item.status ?? '-')}</span>
+          <span className="conflict-row-val">{item.status ? statusLabel(String(item.status), String(item.item_type ?? '')) : '-'}</span>
         </div>
         {rating && (
           <div className="conflict-row">
@@ -108,9 +108,9 @@ function ConflictCard({
       </div>
 
       <div className="conflict-sides">
-        <ItemSide label="로컬 (이 기기)" item={conflict.local} />
+        <ItemSide label="💻 이 컴퓨터" item={conflict.local} highlight="local" />
         <div className="conflict-vs">vs</div>
-        <ItemSide label="클라우드" item={conflict.cloud} />
+        <ItemSide label="☁️ 다른 기기에서 올린 것" item={conflict.cloud} highlight="cloud" />
         {showMergePreview && <MergePreview local={conflict.local} cloud={conflict.cloud} />}
       </div>
 
@@ -119,23 +119,25 @@ function ConflictCard({
           className="btn-conflict btn-conflict--cloud"
           onClick={() => onResolve(conflict, 'keep-cloud')}
           disabled={resolving}
-          title="클라우드 버전 유지, 로컬 삭제"
+          title="다른 기기에서 올린 것을 남기고, 이 컴퓨터의 것은 휴지통으로"
         >
-          ☁️ 클라우드 유지
+          ☁️ 다른 기기 것으로
         </button>
         <button
           className="btn-conflict btn-conflict--local"
           onClick={() => onResolve(conflict, 'keep-local')}
           disabled={resolving}
-          title="로컬 버전으로 클라우드 덮어쓰기"
+          title="이 컴퓨터의 내용으로 덮어쓰기"
         >
-          💾 로컬 유지
+          💻 이 컴퓨터 것으로
         </button>
         <button
           className="btn-conflict btn-conflict--merge"
           onClick={() => onResolve(conflict, 'merge')}
           onMouseEnter={() => setShowMergePreview(true)}
           onMouseLeave={() => setShowMergePreview(false)}
+          onFocus={() => setShowMergePreview(true)}
+          onBlur={() => setShowMergePreview(false)}
           disabled={resolving}
           title="두 항목의 좋은 내용을 합쳐요"
         >
@@ -145,9 +147,9 @@ function ConflictCard({
           className="btn-conflict btn-conflict--both"
           onClick={() => onResolve(conflict, 'keep-both')}
           disabled={resolving}
-          title="두 항목을 별도로 모두 유지"
+          title="두 항목을 따로따로 모두 남기기"
         >
-          📋 둘 다 유지
+          📋 둘 다 남기기
         </button>
       </div>
     </div>
@@ -161,6 +163,7 @@ export default function SyncConflictModal() {
   const [bulkResolving, setBulkResolving] = useState(false)
 
   const visible = syncConflicts.length > 0 || syncAutoMerged > 0
+  useEscapeKey(() => { void handleClose() }, visible)
   if (!visible) return null
 
   const handleResolve = async (
@@ -175,17 +178,25 @@ export default function SyncConflictModal() {
       requestSync() // 합치기 결과 등을 곧바로 이 기기에도 반영
     } catch (err) {
       console.error('[Conflict] 해결 오류:', err)
+      void alertDialog('인터넷 연결을 확인하고 다시 시도해 주세요.', '정리하지 못했어요')
     } finally {
       setResolvingId(null)
     }
   }
 
   const handleBulkResolve = async (resolution: 'keep-cloud' | 'keep-local' | 'merge') => {
-    if (!window.confirm(
-      resolution === 'keep-cloud' ? `${syncConflicts.length}개 항목 모두 클라우드 버전으로 유지할까요?`
-        : resolution === 'keep-local' ? `${syncConflicts.length}개 항목 모두 로컬 버전으로 유지할까요?`
-        : `${syncConflicts.length}개 항목 모두 합칠까요?`
-    )) return
+    const n = syncConflicts.length
+    const ok = await confirmDialog({
+      title: resolution === 'keep-cloud' ? `${n}개 모두 다른 기기 것으로 할까요?`
+        : resolution === 'keep-local' ? `${n}개 모두 이 컴퓨터 것으로 할까요?`
+        : `${n}개 모두 합칠까요?`,
+      message: resolution === 'merge'
+        ? '별점·감상·진행 상황은 더 많이 채워진 쪽을 남겨요.'
+        : resolution === 'keep-cloud'
+          ? '이 컴퓨터의 같은 작품은 휴지통으로 옮겨요.'
+          : '다른 기기에서 올린 내용을 이 컴퓨터 것으로 덮어써요.',
+    })
+    if (!ok) return
 
     setBulkResolving(true)
     try {
@@ -197,25 +208,32 @@ export default function SyncConflictModal() {
       requestSync()
     } catch (err) {
       console.error('[Conflict] 일괄 해결 오류:', err)
+      void alertDialog('인터넷 연결을 확인하고 다시 시도해 주세요.', '정리하지 못했어요')
     } finally {
       setBulkResolving(false)
     }
   }
 
-  const handleClose = () => {
+  async function handleClose() {
     if (syncConflicts.length > 0) {
-      if (!window.confirm('아직 해결하지 않은 항목이 있어요. 나중에 다시 동기화하면 다시 나타나요. 닫을까요?')) return
+      const ok = await confirmDialog({
+        title: '나중에 정리할까요?',
+        message: '정리하지 않은 항목은 다음 동기화 때 다시 보여 드려요.',
+        confirmText: '나중에',
+        cancelText: '계속 정리',
+      })
+      if (!ok) return
     }
     clearSyncResult()
   }
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && handleClose()}>
+    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) void handleClose() }}>
       <div className="conflict-modal">
         {/* 헤더 */}
         <div className="modal-header">
-          <span className="modal-title">🔄 동기화 중복 확인</span>
-          <button className="btn-icon" onClick={handleClose}>
+          <span className="modal-title">🔄 비슷한 작품 정리</span>
+          <button className="btn-icon" onClick={() => { void handleClose() }} aria-label="닫기" title="닫기">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -234,8 +252,8 @@ export default function SyncConflictModal() {
           <>
             <div className="conflict-list-header">
               <span>
-                <strong>{syncConflicts.length}개 항목</strong>에서 비슷한 클라우드 항목이 발견됐어요.
-                어떻게 할지 선택해 주세요.
+                <strong>{syncConflicts.length}개</strong>가 다른 기기에서 올린 작품과 비슷해요.
+                어떻게 할지 골라 주세요.
               </span>
             </div>
 
@@ -255,7 +273,7 @@ export default function SyncConflictModal() {
             {/* 일괄 처리 버튼 */}
             {syncConflicts.length > 1 && (
               <div className="conflict-bulk">
-                <span className="conflict-bulk-label">전체 일괄 처리:</span>
+                <span className="conflict-bulk-label">한꺼번에:</span>
                 <button
                   className="btn-conflict-bulk btn-conflict-bulk--merge"
                   onClick={() => handleBulkResolve('merge')}
@@ -268,14 +286,14 @@ export default function SyncConflictModal() {
                   onClick={() => handleBulkResolve('keep-cloud')}
                   disabled={bulkResolving}
                 >
-                  ☁️ 모두 클라우드 유지
+                  ☁️ 모두 다른 기기 것으로
                 </button>
                 <button
                   className="btn-conflict-bulk btn-conflict-bulk--local"
                   onClick={() => handleBulkResolve('keep-local')}
                   disabled={bulkResolving}
                 >
-                  💾 모두 로컬 유지
+                  💻 모두 이 컴퓨터 것으로
                 </button>
               </div>
             )}
@@ -291,14 +309,6 @@ export default function SyncConflictModal() {
           </div>
         )}
 
-        {/* 완료 버튼 (충돌 해결 후 남은 안내만 있을 때) */}
-        {syncConflicts.length === 0 && syncAutoMerged > 0 && (
-          <div className="modal-footer">
-            <button className="btn-primary" style={{ minWidth: 80 }} onClick={clearSyncResult}>
-              확인
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )

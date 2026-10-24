@@ -2,12 +2,14 @@ import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { Item } from '../types'
 import { useStorePick } from '../store/useStore'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number; y: number; onClose: () => void }) {
   const { deleteItem, openAddModal, selectItem } = useStorePick('deleteItem', 'openAddModal', 'selectItem')
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x, y })
   const [visible, setVisible] = useState(false)
+  useEscapeKey(onClose)
 
   // 화면 가장자리 벗어남 방지 + 위치 확정 후 보이기 (깜빡임 방지)
   useEffect(() => {
@@ -37,10 +39,8 @@ export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
     onClose()
-    if (window.confirm(`"${item.title}"을(를) 휴지통으로 옮길까요?\n15일 안에 휴지통에서 되돌릴 수 있어요.`)) {
-      deleteItem(item.id)
-      selectItem(null)
-    }
+    void deleteItem(item.id) // 바로 휴지통으로 — 아래에 '되돌리기' 알림이 뜸
+    selectItem(null)
   }
 
   return ReactDOM.createPortal(
@@ -64,7 +64,7 @@ export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number
           <path d="M10 11v6M14 11v6" />
           <path d="M9 6V4h6v2" />
         </svg>
-        삭제
+        휴지통으로
       </button>
     </div>,
     document.body
