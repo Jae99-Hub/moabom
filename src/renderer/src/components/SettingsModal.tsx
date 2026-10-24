@@ -5,13 +5,13 @@ import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { startGoogleSignIn, signOutHere } from '../api/auth'
 import { OtherScopeInfo, AutoBackupInfo } from '../types'
+import { josa } from '../utils/korean'
 
 const isWebEnv =
   typeof import.meta.env.VITE_SUPABASE_URL === 'string' &&
   !!import.meta.env.VITE_SUPABASE_URL
 
 type UpdateCheckState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
-type Tab = 'account' | 'general' | 'data'
 
 /** 되돌리기에 실패했을 때 보여 줄 문구 */
 function restoreFailMessage(error?: string): string {
@@ -37,20 +37,30 @@ function fmtWhen(iso: string): string {
   return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+const BACKUPS_SHOWN = 3 // 되돌리기 시점은 최근 몇 개만 보이고 나머지는 '더 보기'
+
+/** 한 줄 설정 — 왼쪽에 이름·설명, 오른쪽에 버튼 */
+function Row({ label, desc, children, tone }: {
+  label: React.ReactNode; desc?: React.ReactNode; children?: React.ReactNode; tone?: 'warn'
+}) {
+  return (
+    <div className="st-row">
+      <div className="st-row-text">
+        <div className="st-row-label">{label}</div>
+        {desc && <div className={`st-row-desc${tone === 'warn' ? ' warn' : ''}`}>{desc}</div>}
+      </div>
+      {children && <div className="st-row-actions">{children}</div>}
+    </div>
+  )
+}
+
 export default function SettingsModal() {
-  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll } =
-    useStorePick('isSettingsOpen', 'closeSettings', 'syncStatus', 'setSyncStatus', 'triggerSync', 'openTour', 'fetchAll')
+  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll, theme, toggleTheme } =
+    useStorePick('isSettingsOpen', 'closeSettings', 'syncStatus', 'setSyncStatus', 'triggerSync', 'openTour', 'fetchAll', 'theme', 'toggleTheme')
 
-  const [activeTab, setActiveTab] = useState<Tab>('account')
-
-  // 웹 전용 유저
-  const [userEmail, setUserEmail] = useState('')
-  const [userName, setUserName]   = useState('')
-
-  // Electron 전용 유저
-  const [electronEmail, setElectronEmail] = useState('')
-  const [electronName, setElectronName]   = useState('')
-  const [signingIn, setSigningIn]         = useState(false)
+  // 로그인한 계정 (데스크톱은 동기화 서비스, 웹은 Supabase에서 읽음)
+  const [account, setAccount] = useState<{ email: string; name: string }>({ email: '', name: '' })
+  const [signingIn, setSigningIn] = useState(false)
   useEscapeKey(closeSettings, isSettingsOpen)
   const modalRef = useRef<HTMLDivElement>(null)
   useFocusTrap(modalRef, isSettingsOpen)
@@ -61,57 +71,46 @@ export default function SettingsModal() {
   const [updateProgress, setUpdateProgress] = useState(0)
   const [currentVersion, setCurrentVersion] = useState('')
 
-  // 데이터 탭: 백업 / orphan 복구
+  // 백업 / 다른 범위의 기록
   const [scope, setScope] = useState<OtherScopeInfo>({ loggedIn: false, anon: 0, otherAccount: 0 })
   const [autoBackups, setAutoBackups] = useState<AutoBackupInfo[]>([])
+  const [showAllBackups, setShowAllBackups] = useState(false)
   const [backupStatus, setBackupStatus] = useState<{ lastAt: string; dir: string }>({ lastAt: '', dir: '' })
   const [busy, setBusy] = useState(false)
 
   const isElectron = !!window.updaterBridge
 
-  // 데이터 탭 정보 로드 (스코프 카운트 + 자동 백업 목록/상태). 웹 빌드는 일부 API 미지원 → try/catch.
-  const loadDataTab = (): void => {
-    try { window.api.items.scopeInfo?.().then(setScope).catch(() => {}) } catch { /* 미지원 */ }
+  // 기록 범위 개수 + 자동 백업 목록·상태
+  const loadData = (): void => {
+    window.api.items.scopeInfo().then(setScope).catch(() => {})
     if (isElectron) {
-      try { window.api.backup.list().then(setAutoBackups).catch(() => {}) } catch { /* 미지원 */ }
-      try { window.api.backup.status().then(setBackupStatus).catch(() => {}) } catch { /* 미지원 */ }
+      window.api.backup.list().then(setAutoBackups).catch(() => {})
+      window.api.backup.status().then(setBackupStatus).catch(() => {})
     }
   }
-  useEffect(() => {
-    if (isSettingsOpen && activeTab === 'data') loadDataTab()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSettingsOpen, activeTab])
 
-  // ── 모달 열릴 때마다 ────────────────────────────────────────────────
+  // ── 열릴 때마다 ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!isSettingsOpen) return
-    setActiveTab('account')
     setUpdateState('idle')
     setUpdateVersion('')
-
+    setShowAllBackups(false)
+    loadData()
     window.updaterBridge?.getVersion().then(setCurrentVersion).catch(() => {})
 
-    // 웹 전용: 유저 정보 (Electron에서는 표시 안 함)
-    if (isWebEnv && !isElectron) {
-      import('../api/supabaseClient').then(({ supabase }) => {
-        supabase.auth.getUser().then(({ data: { user } }) => {
-          if (user) {
-            setUserEmail(user.email ?? '')
-            setUserName((user.user_metadata as Record<string, string>)?.full_name ?? '')
-          }
-        })
-      }).catch(() => {})
-    }
-
-    // Electron 전용: 로그인 세션 확인
     if (isElectron) {
-      import('../api/syncService').then(({ getElectronUser }) => {
-        getElectronUser().then((user) => {
-          setElectronEmail(user?.email ?? '')
-          setElectronName(user?.name ?? '')
-        }).catch(() => {})
-      })
+      import('../api/syncService').then(({ getElectronUser }) => getElectronUser())
+        .then((user) => setAccount({ email: user?.email ?? '', name: user?.name ?? '' }))
+        .catch(() => {})
+    } else if (isWebEnv) {
+      import('../api/supabaseClient').then(({ supabase }) => supabase.auth.getSession())
+        .then(({ data: { session } }) => {
+          const user = session?.user
+          setAccount({ email: user?.email ?? '', name: (user?.user_metadata as Record<string, string> | undefined)?.full_name ?? '' })
+        })
+        .catch(() => {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSettingsOpen])
 
   // ── 업데이트 이벤트 구독 (설정창이 열려 있는 동안만, 닫히면 해제) ──
@@ -128,9 +127,8 @@ export default function SettingsModal() {
     return () => offs.forEach((off) => off())
   }, [isSettingsOpen])
 
-  // ── 로그인 실패 시 '대기 중...' 해제 ──────────────────────────────
-  // 콜백 처리(토큰 교환)는 main.tsx 한 곳에서만 한다. 예전엔 여기서도 콜백을 등록해
-  // main.tsx 것을 덮어쓰는 바람에 로그인 실패 안내가 뜨지 않았음.
+  // ── 로그인 실패 시 '기다리는 중' 해제 ──────────────────────────────
+  // 콜백 처리(코드 교환)는 main.tsx 한 곳에서만 한다
   useEffect(() => {
     const onFailed = () => setSigningIn(false)
     window.addEventListener('moabom:auth-failed', onFailed)
@@ -165,15 +163,15 @@ export default function SettingsModal() {
     }
   }
 
-  // orphan 복구: 다른 스코프 항목을 현재 화면으로 불러오기 (사전 백업 후 실행)
+  // 다른 범위의 기록을 지금 화면으로 불러오기 (데스크톱은 먼저 자동 백업)
   const handleImport = async (source: 'anon' | 'otherAccount') => {
     // 비로그인은 DB가 source 무시하고 계정 항목 전체를 불러오므로 표시 개수도 otherAccount 기준
     const count  = scope.loggedIn ? (source === 'anon' ? scope.anon : scope.otherAccount) : scope.otherAccount
-    const target = scope.loggedIn ? '현재 계정' : '이 컴퓨터(로컬)'
+    const target = scope.loggedIn ? '지금 계정' : '이 컴퓨터'
     const warn = source === 'otherAccount'
-      ? '\n다른 계정의 기록을 현재 계정으로 복사해요. 원래 계정의 기록은 그대로 남아요.' : ''
+      ? '\n다른 계정의 기록을 지금 계정으로 복사해요. 원래 계정의 기록은 그대로 남아요.' : ''
     const ok = await confirmDialog({
-      title: `${count}개를 ${target}(으)로 불러올까요?`,
+      title: `${count}개를 ${target}${josa(target, '으로/로')} 불러올까요?`,
       message: isElectron
         ? `불러오기 전에 자동 백업을 만들어요.${warn}`
         : '옮긴 기록은 계정에 저장되고, 이 브라우저에서는 지워져요.',
@@ -186,7 +184,7 @@ export default function SettingsModal() {
       const { imported, skipped, failed } = await window.api.items.importOtherScope(source)
       await fetchAll()
       if (scope.loggedIn) await triggerSync()
-      loadDataTab()
+      loadData()
       showToast(`${imported}개 불러왔어요.${skipped ? ` (${skipped}개는 이미 있어서 건너뛰었어요)` : ''}${
         failed ? ` ${failed}개는 옮기지 못해 그대로 남겨 뒀어요.` : ''}`)
     } finally {
@@ -199,7 +197,7 @@ export default function SettingsModal() {
     try {
       const r = await window.api.backup.run(true)
       showToast(r.success ? '백업했어요.' : '백업하지 못했어요. 다시 시도해 주세요.')
-      loadDataTab()
+      loadData()
     } finally {
       setBusy(false)
     }
@@ -211,7 +209,7 @@ export default function SettingsModal() {
     setBusy(true)
     try {
       const r = await window.api.backup.chooseDir()
-      if (r.success) { loadDataTab(); showToast('백업 폴더를 바꿨어요. 기존 백업도 새 폴더로 옮겼어요.') }
+      if (r.success) { loadData(); showToast('백업 폴더를 바꿨어요. 기존 백업도 새 폴더로 옮겼어요.') }
       else if (!r.canceled) void alertDialog('저장할 수 없는 폴더일 수 있어요. 다른 폴더를 골라 주세요.', '폴더를 바꾸지 못했어요')
     } finally { setBusy(false) }
   }
@@ -236,36 +234,26 @@ export default function SettingsModal() {
     }
   }
 
-  const confirmSignOut = () => confirmDialog({
-    title: '로그아웃할까요?',
-    message: isElectron
-      ? '이 컴퓨터의 기록은 그대로 남아요. 다시 로그인하면 이어서 동기화돼요.'
-      : '다시 로그인하면 기록을 이어서 볼 수 있어요.',
-    confirmText: '로그아웃',
-  })
-
-  const handleSignOut = async () => {
-    if (!(await confirmSignOut())) return
-    await signOutHere()
-    window.location.reload()
-  }
-
-  const handleElectronSignIn = async () => {
+  const handleSignIn = async () => {
     setSigningIn(true)
-    const message = await startGoogleSignIn() // 브라우저에서 로그인이 끝나면 앱이 알아서 넘어감
+    // 데스크톱: 브라우저에서 로그인이 끝나면 앱이 알아서 넘어감 / 웹: 이 창이 Google 로그인으로 이동
+    const message = await startGoogleSignIn()
     if (message) { setSigningIn(false); void alertDialog(message, '로그인하지 못했어요') }
   }
 
-  const handleElectronSignOut = async () => {
-    if (!(await confirmSignOut())) return
+  const handleSignOut = async () => {
+    const ok = await confirmDialog({
+      title: '로그아웃할까요?',
+      message: isElectron
+        ? '이 컴퓨터의 기록은 그대로 남아요. 다시 로그인하면 이어서 동기화돼요.'
+        : '다시 로그인하면 기록을 이어서 볼 수 있어요.',
+      confirmText: '로그아웃',
+    })
+    if (!ok) return
     await signOutHere()
-    // setCurrentUser(null), renderAuth()는 onAuthStateChange SIGNED_OUT이 처리
-    setElectronEmail(''); setElectronName(''); setSyncStatus('idle')
-  }
-
-  const handleWebSignIn = async () => {
-    const message = await startGoogleSignIn()
-    if (message) void alertDialog(message, '로그인하지 못했어요')
+    if (!isElectron) { window.location.reload(); return }
+    // 데스크톱: 로그인 화면 전환은 onAuthStateChange SIGNED_OUT이 처리
+    setAccount({ email: '', name: '' }); setSyncStatus('idle')
   }
 
   const handleCheckUpdate = async () => {
@@ -274,31 +262,34 @@ export default function SettingsModal() {
     setTimeout(() => setUpdateState((s) => s === 'checking' ? 'error' : s), 10000)
   }
 
-  const syncStatusText = () => {
-    switch (syncStatus) {
-      case 'syncing': return '동기화 중...'
-      case 'success': return '동기화 완료 ✓'
-      case 'error':   return '아직 맞추지 못한 기록이 있어요 ⚠️ 잠시 뒤 다시 시도해요'
-      default:        return '다른 기기와 기록을 맞춰요'
-    }
-  }
-
   if (!isSettingsOpen) return null
 
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'account', label: '계정' },
-    { key: 'general', label: '일반' },
-    { key: 'data',    label: '데이터' },
-  ]
-
+  const loggedIn = !!account.email
   const backupStale = isElectron && (!backupStatus.lastAt || Date.now() - Date.parse(backupStatus.lastAt) > 8 * 864e5)
+  const backupsShown = showAllBackups ? autoBackups : autoBackups.slice(0, BACKUPS_SHOWN)
+  const hasOtherScope = scope.anon > 0 || scope.otherAccount > 0
+
+  const syncText = {
+    syncing: '맞추는 중…',
+    success: '모든 기록이 맞춰져 있어요',
+    error: '아직 맞추지 못한 기록이 있어요. 잠시 뒤 다시 시도해요',
+    idle: '다른 기기와 기록을 맞춰요',
+  }[syncStatus]
+
+  const updateText = {
+    idle: '새 버전이 나왔는지 확인해요',
+    checking: '확인하는 중…',
+    available: `새 버전 ${updateVersion}이 있어요`,
+    downloading: `내려받는 중… ${updateProgress}%`,
+    downloaded: '내려받았어요. 다시 시작하면 바뀌어요',
+    'not-available': '최신 버전이에요',
+    error: '확인하지 못했어요. 잠시 뒤 다시 시도해 주세요',
+  }[updateState]
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeSettings()}>
-      <div className="settings-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="설정">
-
-        {/* ── 헤더 ── */}
-        <div className="modal-header">
+      <div className="st-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="설정">
+        <div className="st-header">
           <span className="modal-title">설정</span>
           <button className="btn-icon" onClick={closeSettings} aria-label="닫기" title="닫기">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -307,350 +298,178 @@ export default function SettingsModal() {
           </button>
         </div>
 
-        {/* ── 탭 바 ── */}
-        <div className="settings-tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              className={`settings-tab${activeTab === t.key ? ' active' : ''}`}
-              onClick={() => setActiveTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ── 탭 콘텐츠 ── */}
-        <div className="settings-modal-body">
-
-          {/* ────────── 계정 탭 ────────── */}
-          {activeTab === 'account' && (
-            <>
-              {/* Electron 환경 */}
-              {isElectron && (
-                <>
-                  {electronEmail ? (
-                    <>
-                      <div className="settings-user-row">
-                        <div className="settings-user-avatar">
-                          {(electronName || electronEmail).slice(0, 1).toUpperCase()}
-                        </div>
-                        <div className="settings-user-info">
-                          {electronName && <div className="settings-user-name">{electronName}</div>}
-                          <div className="settings-user-email">{electronEmail}</div>
-                        </div>
-                        <button className="btn-secondary settings-signout-btn" onClick={handleElectronSignOut}>
-                          로그아웃
-                        </button>
+        <div className="st-body">
+          {/* ── 계정 ── */}
+          {(isElectron || isWebEnv) && (
+            <section className="st-section">
+              <h3 className="st-section-title">계정</h3>
+              <div className="st-card">
+                {loggedIn ? (
+                  <>
+                    <div className="st-row">
+                      <div className="st-avatar" aria-hidden="true">{(account.name || account.email).slice(0, 1).toUpperCase()}</div>
+                      <div className="st-row-text">
+                        <div className="st-row-label">{account.name || account.email}</div>
+                        {account.name && <div className="st-row-desc">{account.email}</div>}
                       </div>
-                      <div className="settings-divider" />
-                      <div className="settings-actions-row">
-                        <div>
-                          <div className="settings-group-label">클라우드 동기화</div>
-                          <div className="settings-group-desc">{syncStatusText()}</div>
-                        </div>
-                        <button
-                          className="btn-secondary"
-                          style={{ flexShrink: 0 }}
-                          onClick={triggerSync}
-                          disabled={syncStatus === 'syncing'}
-                        >
-                          {syncStatus === 'syncing' ? '동기화 중...' : '지금 동기화'}
-                        </button>
+                      <div className="st-row-actions">
+                        <button className="st-btn subtle" onClick={handleSignOut}>로그아웃</button>
                       </div>
-                    </>
-                  ) : (
-                    <div className="settings-anon-row">
-                      <div className="settings-anon-info">
-                        <div className="settings-group-label">비로그인 상태</div>
-                        <div className="settings-group-desc">
-                          {signingIn
-                            ? '브라우저에서 로그인 중...'
-                            : '로그인하면 여러 기기에서 데이터를 동기화할 수 있어요'}
-                        </div>
-                      </div>
-                      <button
-                        className="btn-primary settings-signin-btn"
-                        onClick={handleElectronSignIn}
-                        disabled={signingIn}
+                    </div>
+                    {isElectron && (
+                      <Row
+                        label={<><span className={`st-dot ${syncStatus}`} aria-hidden="true" />클라우드 동기화</>}
+                        desc={syncText}
+                        tone={syncStatus === 'error' ? 'warn' : undefined}
                       >
-                        {signingIn ? '대기 중...' : 'Google 로그인'}
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* 웹 환경 (Electron 아닐 때만) */}
-              {!isElectron && isWebEnv && (
-                <>
-                  {userEmail || userName ? (
-                    <div className="settings-user-row">
-                      <div className="settings-user-avatar">
-                        {(userName || userEmail).slice(0, 1).toUpperCase()}
-                      </div>
-                      <div className="settings-user-info">
-                        {userName && <div className="settings-user-name">{userName}</div>}
-                        <div className="settings-user-email">{userEmail}</div>
-                      </div>
-                      <button className="btn-secondary settings-signout-btn" onClick={handleSignOut}>
-                        로그아웃
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="settings-anon-row">
-                      <div className="settings-anon-info">
-                        <div className="settings-group-label">비로그인 상태</div>
-                        <div className="settings-group-desc">기록이 이 브라우저에만 저장돼요</div>
-                      </div>
-                      <button className="btn-primary settings-signin-btn" onClick={handleWebSignIn}>
-                        Google 로그인
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Electron도 아니고 웹도 아닌 경우 */}
-              {!isElectron && !isWebEnv && (
-                <div className="settings-group">
-                  <div className="settings-group-desc" style={{ textAlign: 'center', padding: '24px 0' }}>
-                    이 환경에서는 로그인을 쓸 수 없어요
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ────────── 일반 탭 ────────── */}
-          {activeTab === 'general' && (
-            <>
-              {isElectron && (
-                <>
-                  <div className="settings-update-block">
-                    <div className="settings-update-top">
-                      <div>
-                        <div className="settings-group-label">
-                          업데이트 확인
-                          {currentVersion && (
-                            <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
-                              현재 v{currentVersion}
-                            </span>
-                          )}
-                        </div>
-                        <div className="settings-group-desc">
-                          {updateState === 'idle'          && '새 버전이 나왔는지 확인해요'}
-                          {updateState === 'checking'      && '서버에서 확인 중...'}
-                          {updateState === 'available'     && `🎉 새 버전 v${updateVersion} 이 있어요!`}
-                          {updateState === 'downloading'   && `다운로드 중... ${updateProgress}%`}
-                          {updateState === 'downloaded'    && '✅ 다운로드 완료! 재시작하면 적용돼요'}
-                          {updateState === 'not-available' && `✅ 최신 버전이에요 (v${currentVersion})`}
-                          {updateState === 'error'         && '⚠️ 확인 중 오류가 발생했어요'}
-                        </div>
-                      </div>
-
-                      {/* 상태별 버튼 */}
-                      {(updateState === 'idle' || updateState === 'not-available' || updateState === 'error') && (
-                        <button
-                          className="btn-secondary"
-                          style={{ flexShrink: 0 }}
-                          onClick={handleCheckUpdate}
-                        >
-                          업데이트 확인
+                        <button className="st-btn" onClick={() => { void triggerSync() }} disabled={syncStatus === 'syncing'}>
+                          {syncStatus === 'syncing' ? '맞추는 중…' : '지금 동기화'}
                         </button>
-                      )}
-                      {updateState === 'checking' && (
-                        <button className="btn-secondary" style={{ flexShrink: 0 }} disabled>
-                          확인 중...
-                        </button>
-                      )}
-                      {updateState === 'available' && (
-                        <button
-                          className="btn-primary"
-                          style={{ flexShrink: 0 }}
-                          onClick={async () => {
-                            setUpdateState('downloading')
-                            setUpdateProgress(0)
-                            await window.updaterBridge?.startDownload()
-                          }}
-                        >
-                          다운로드
-                        </button>
-                      )}
-                      {updateState === 'downloading' && (
-                        <button className="btn-secondary" style={{ flexShrink: 0 }} disabled>
-                          다운로드 중
-                        </button>
-                      )}
-                      {updateState === 'downloaded' && (
-                        <button
-                          className="btn-primary"
-                          style={{ flexShrink: 0 }}
-                          onClick={() => window.updaterBridge?.install()}
-                        >
-                          지금 재시작
-                        </button>
-                      )}
-                    </div>
-
-                    {/* 다운로드 진행바 */}
-                    {updateState === 'downloading' && (
-                      <div className="settings-update-progress">
-                        <div
-                          className="settings-update-progress-fill"
-                          style={{ width: `${updateProgress}%` }}
-                        />
-                      </div>
+                      </Row>
                     )}
-                  </div>
-                  <div className="settings-divider" />
-                </>
-              )}
-              <div className="settings-actions-row">
-                <div>
-                  <div className="settings-group-label">사용법 다시 보기</div>
-                  <div className="settings-group-desc">주요 기능 안내 투어를 다시 봐요</div>
-                </div>
-                <button
-                  className="btn-secondary"
-                  style={{ flexShrink: 0 }}
-                  onClick={() => { closeSettings(); setTimeout(() => openTour(), 200) }}
-                >
-                  안내 보기
-                </button>
+                  </>
+                ) : (
+                  <Row
+                    label="로그인하지 않았어요"
+                    desc={signingIn
+                      ? '브라우저에서 로그인을 마쳐 주세요'
+                      : isElectron
+                        ? '로그인하면 여러 기기에서 기록을 함께 볼 수 있어요'
+                        : '지금 기록은 이 브라우저에만 저장돼요'}
+                  >
+                    <button className="st-btn primary" onClick={handleSignIn} disabled={signingIn}>
+                      {signingIn ? '기다리는 중…' : 'Google로 로그인'}
+                    </button>
+                  </Row>
+                )}
               </div>
-            </>
+            </section>
           )}
 
-          {/* ────────── 데이터 탭 ────────── */}
-          {activeTab === 'data' && (
-            <>
-              {/* orphan 복구: 다른 스코프 항목 불러오기 */}
-              {scope.anon > 0 && (
-                <div className="settings-actions-row">
-                  <div>
-                    <div className="settings-group-label">로그인 없이 추가한 항목 {scope.anon}개</div>
-                    <div className="settings-group-desc">
-                      이 기기에만 저장돼 있어요. {scope.loggedIn ? '현재 계정으로' : '이 컴퓨터로'} 불러올 수 있어요
-                    </div>
-                  </div>
-                  <button className="btn-secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => handleImport('anon')}>
-                    불러오기
-                  </button>
-                </div>
-              )}
-              {scope.loggedIn && scope.otherAccount > 0 && (
-                <div className="settings-actions-row">
-                  <div>
-                    <div className="settings-group-label">다른 계정 데이터 {scope.otherAccount}개</div>
-                    <div className="settings-group-desc">이 컴퓨터에 남은 다른 계정 항목을 현재 계정으로 복제해요 (원본 유지)</div>
-                  </div>
-                  <button className="btn-secondary" style={{ flexShrink: 0, color: 'var(--accent)' }} disabled={busy} onClick={() => handleImport('otherAccount')}>
-                    불러오기
-                  </button>
-                </div>
-              )}
-              {!scope.loggedIn && scope.otherAccount > 0 && (
-                <div className="settings-actions-row">
-                  <div>
-                    <div className="settings-group-label">계정에 저장된 항목 {scope.otherAccount}개</div>
-                    <div className="settings-group-desc">로그인 계정으로 저장돼 지금 안 보이는 항목을 이 컴퓨터에서 열람할 수 있게 해요</div>
-                  </div>
-                  <button className="btn-secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => handleImport('anon')}>
-                    불러오기
-                  </button>
-                </div>
-              )}
-              {(scope.anon > 0 || scope.otherAccount > 0) && <div className="settings-divider" />}
+          {/* ── 불러올 기록 (다른 범위에 남은 기록이 있을 때만) ── */}
+          {hasOtherScope && (
+            <section className="st-section">
+              <h3 className="st-section-title">불러올 기록</h3>
+              <div className="st-card">
+                {scope.anon > 0 && (
+                  <Row
+                    label={`로그인 없이 쓴 기록 ${scope.anon}개`}
+                    desc={`이 ${isElectron ? '컴퓨터' : '브라우저'}에만 있어요. ${scope.loggedIn ? '지금 계정으로' : '이 컴퓨터로'} 불러올 수 있어요`}
+                  >
+                    <button className="st-btn" disabled={busy} onClick={() => handleImport('anon')}>불러오기</button>
+                  </Row>
+                )}
+                {scope.loggedIn && scope.otherAccount > 0 && (
+                  <Row label={`다른 계정의 기록 ${scope.otherAccount}개`} desc="이 컴퓨터에 남은 다른 계정의 기록을 지금 계정으로 복사해요 (원본은 그대로)">
+                    <button className="st-btn" disabled={busy} onClick={() => handleImport('otherAccount')}>불러오기</button>
+                  </Row>
+                )}
+                {!scope.loggedIn && scope.otherAccount > 0 && (
+                  <Row label={`계정에 저장된 기록 ${scope.otherAccount}개`} desc="로그인하지 않은 지금도 이 컴퓨터에서 볼 수 있게 해요">
+                    <button className="st-btn" disabled={busy} onClick={() => handleImport('anon')}>불러오기</button>
+                  </Row>
+                )}
+              </div>
+            </section>
+          )}
 
-              {/* 자동 백업 (Electron 전용) */}
+          {/* ── 백업 ── */}
+          <section className="st-section">
+            <h3 className="st-section-title">백업</h3>
+            <div className="st-card">
               {isElectron && (
                 <>
-                  <div className="settings-group">
-                    <div className="settings-group-label">
-                      자동 백업
-                      {backupStale && <span style={{ color: 'var(--danger)', marginLeft: 8, fontSize: 12 }}>⚠️ 최근 백업 없음</span>}
-                    </div>
-                    <div className="settings-group-desc" style={{ marginTop: 2 }}>
-                      최근 14일 보관 · 30분마다 자동 저장
-                      {backupStatus.lastAt && <> · 마지막 {fmtWhen(backupStatus.lastAt)}</>}
-                    </div>
-                    {backupStatus.dir && (
-                      <div
-                        title={backupStatus.dir}
-                        style={{
-                          fontSize: 12, color: 'var(--text-muted)', marginTop: 8,
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          background: 'var(--surface-2, rgba(127,127,127,0.08))',
-                          padding: '6px 9px', borderRadius: 7
-                        }}
-                      >
-                        <span style={{ flexShrink: 0 }}>📁</span>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{backupStatus.dir}</span>
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                      <button className="btn-secondary" disabled={busy} onClick={handleAutoBackupNow}>지금 백업</button>
-                      <button className="btn-secondary" onClick={handleOpenBackupFolder}>폴더 열기</button>
-                      <button className="btn-secondary" disabled={busy} onClick={handleChooseDir}>폴더 변경</button>
-                    </div>
-                  </div>
-
+                  <Row
+                    label="자동 백업"
+                    desc={backupStale
+                      ? '최근 백업이 없어요. 지금 한 번 백업해 두세요'
+                      : `30분마다 · 14일 보관${backupStatus.lastAt ? ` · 마지막 ${fmtWhen(backupStatus.lastAt)}` : ''}`}
+                    tone={backupStale ? 'warn' : undefined}
+                  >
+                    <button className="st-btn" disabled={busy} onClick={handleAutoBackupNow}>지금 백업</button>
+                  </Row>
+                  <Row label="백업 폴더" desc={<span className="st-path" title={backupStatus.dir}>{backupStatus.dir || '…'}</span>}>
+                    <button className="st-btn" onClick={handleOpenBackupFolder}>열기</button>
+                    <button className="st-btn" disabled={busy} onClick={handleChooseDir}>바꾸기</button>
+                  </Row>
                   {autoBackups.length > 0 && (
-                    <div className="settings-group" style={{ marginTop: 14 }}>
-                      <div className="settings-group-desc" style={{ marginBottom: 6 }}>백업 시점에서 되돌리기</div>
-                      <div style={{ maxHeight: 176, overflowY: 'auto' }}>
-                        {autoBackups.map((b) => (
-                          <div
-                            key={b.name}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 2px', borderBottom: '1px solid var(--border)' }}
-                          >
-                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                              {fmtBackupLabel(b)}
-                              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>{fmtSize(b.size)}</span>
-                            </span>
-                            <button className="btn-secondary btn-compact" style={{ padding: '4px 12px' }} disabled={busy} onClick={() => handleRestoreFrom(b)}>
-                              복원
-                            </button>
-                          </div>
-                        ))}
+                    <div className="st-row st-row-block">
+                      <div className="st-row-text">
+                        <div className="st-row-label">백업 시점으로 되돌리기</div>
+                        <div className="st-row-desc">고른 시점의 기록으로 바뀌어요. 그 전에 지금 기록을 자동으로 백업해요</div>
                       </div>
+                      <ul className="st-list">
+                        {backupsShown.map((b) => (
+                          <li key={b.name} className="st-list-item">
+                            <span className="st-list-main">{fmtBackupLabel(b)}</span>
+                            <span className="st-list-sub">{fmtSize(b.size)}</span>
+                            <button className="st-btn small" disabled={busy} onClick={() => handleRestoreFrom(b)}>되돌리기</button>
+                          </li>
+                        ))}
+                      </ul>
+                      {autoBackups.length > BACKUPS_SHOWN && (
+                        <button className="st-more" onClick={() => setShowAllBackups((v) => !v)} aria-expanded={showAllBackups}>
+                          {showAllBackups ? '접기' : `${autoBackups.length - BACKUPS_SHOWN}개 더 보기`}
+                        </button>
+                      )}
                     </div>
                   )}
-                  <div className="settings-divider" />
                 </>
               )}
+              <Row label="파일로 내보내기" desc={`모든 기록을 ${isElectron ? '.db' : '.json'} 파일 하나로 저장해요`}>
+                <button className="st-btn" onClick={handleBackup}>내보내기</button>
+              </Row>
+              <Row label="파일에서 되돌리기" desc={`내보낸 ${isElectron ? '.db' : '.json'} 파일의 기록으로 바꿔요`}>
+                <button className="st-btn danger" onClick={handleRestore}>파일 고르기</button>
+              </Row>
+            </div>
+          </section>
 
-              {/* 수동 파일 백업 / 복원 */}
-              <div className="settings-actions-row">
-                <div>
-                  <div className="settings-group-label">파일로 백업</div>
-                  <div className="settings-group-desc">전체 기록을 원하는 위치에 {isElectron ? '.db' : '.json'} 파일로 내보내기</div>
+          {/* ── 앱 ── */}
+          <section className="st-section">
+            <h3 className="st-section-title">앱</h3>
+            <div className="st-card">
+              <Row label="화면">
+                <div className="st-segment" role="group" aria-label="화면 밝기">
+                  <button className={theme === 'light' ? 'active' : ''} aria-pressed={theme === 'light'} onClick={() => theme !== 'light' && toggleTheme()}>밝게</button>
+                  <button className={theme === 'dark' ? 'active' : ''} aria-pressed={theme === 'dark'} onClick={() => theme !== 'dark' && toggleTheme()}>어둡게</button>
                 </div>
-                <button className="btn-secondary" style={{ flexShrink: 0 }} onClick={handleBackup}>
-                  백업
-                </button>
-              </div>
-              <div className="settings-actions-row">
-                <div>
-                  <div className="settings-group-label">파일에서 복원</div>
-                  <div className="settings-group-desc">백업 {isElectron ? '.db' : '.json'} 파일로 기록을 되돌리기 (지금 기록을 바꿈)</div>
+              </Row>
+              {isElectron && (
+                <div className="st-row st-row-block">
+                  <div className="st-row-inline">
+                    <div className="st-row-text">
+                      <div className="st-row-label">버전 {currentVersion}</div>
+                      <div className={`st-row-desc${updateState === 'error' ? ' warn' : ''}`}>{updateText}</div>
+                    </div>
+                    <div className="st-row-actions">
+                      {updateState === 'available' ? (
+                        <button className="st-btn primary" onClick={async () => {
+                          setUpdateState('downloading')
+                          setUpdateProgress(0)
+                          await window.updaterBridge?.startDownload()
+                        }}>내려받기</button>
+                      ) : updateState === 'downloaded' ? (
+                        <button className="st-btn primary" onClick={() => window.updaterBridge?.install()}>다시 시작</button>
+                      ) : (
+                        <button className="st-btn" onClick={handleCheckUpdate} disabled={updateState === 'checking' || updateState === 'downloading'}>
+                          {updateState === 'checking' ? '확인 중…' : updateState === 'downloading' ? '내려받는 중' : '업데이트 확인'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {updateState === 'downloading' && (
+                    <div className="st-progress" role="progressbar" aria-valuenow={updateProgress} aria-valuemin={0} aria-valuemax={100}>
+                      <div style={{ width: `${updateProgress}%` }} />
+                    </div>
+                  )}
                 </div>
-                <button
-                  className="btn-secondary"
-                  style={{ flexShrink: 0, color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
-                  onClick={handleRestore}
-                >
-                  복원
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* ── 푸터 ── */}
-        <div className="modal-footer">
-          <button className="btn-secondary" style={{ width: 80 }} onClick={closeSettings}>닫기</button>
+              )}
+              <Row label="사용법 다시 보기" desc="주요 기능을 차례로 안내해요">
+                <button className="st-btn" onClick={() => { closeSettings(); setTimeout(() => openTour(), 200) }}>보기</button>
+              </Row>
+            </div>
+          </section>
         </div>
       </div>
     </div>
