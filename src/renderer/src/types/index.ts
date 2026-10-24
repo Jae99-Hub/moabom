@@ -113,16 +113,16 @@ declare global {
       items: {
         getAll: () => Promise<Item[]>
         insert: (data: ItemFormData) => Promise<Item>
-        update: (id: number, data: Partial<ItemFormData>) => Promise<Item | undefined>
+        update: (id: number, data: Partial<ItemFormData>) => Promise<unknown>
         delete: (id: number) => Promise<void>
         scopeInfo: () => Promise<OtherScopeInfo>
-        importOtherScope: (source: 'anon' | 'otherAccount') => Promise<{ imported: number; skipped: number }>
+        importOtherScope: (source: 'anon' | 'otherAccount') => Promise<{ imported: number; skipped: number; failed?: number }>
       }
       quotes: {
         getByItemId: (itemId: number) => Promise<Quote[]>
         search: (query: string) => Promise<QuoteSearchResult[]>
         insert: (data: Omit<Quote, 'id' | 'created_at'>) => Promise<Quote>
-        update: (id: number, data: Partial<Pick<Quote, 'text' | 'page_number' | 'episode_number' | 'note'>>) => Promise<Quote | undefined>
+        update: (id: number, data: Partial<Pick<Quote, 'text' | 'page_number' | 'episode_number' | 'note'>>) => Promise<unknown>
         delete: (id: number) => Promise<void>
       }
       books: {

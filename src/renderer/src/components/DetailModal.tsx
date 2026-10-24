@@ -7,6 +7,8 @@ import { TYPE_LABEL, statusLabels, quoteWord } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { statusPatch } from '../utils/itemRules'
+import { reportProblem } from '../utils/report'
+import { josa } from '../utils/korean'
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
   if (!total || total <= 0) return null
@@ -26,11 +28,15 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
 
 function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) {
   const [quotes, setQuotes] = useState<Quote[]>([])
+  const [failed, setFailed] = useState(false)
   const { openQuotesModal, quotesVersion } = useStorePick('openQuotesModal', 'quotesVersion')
   const label = quoteWord(itemType)
 
   useEffect(() => {
-    window.api.quotes.getByItemId(itemId).then(setQuotes).catch(() => {})
+    window.api.quotes.getByItemId(itemId)
+      .then((q) => { setQuotes(q); setFailed(false) })
+      // 실패를 '없어요'로 보이지 않게 (기록이 사라진 것처럼 보였음)
+      .catch((e) => { reportProblem('quotes.load', e); setFailed(true) })
   }, [itemId, quotesVersion])
 
   return (
@@ -39,7 +45,9 @@ function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) 
         <span>{label} {quotes.length > 0 ? `(${quotes.length})` : ''}</span>
         <button className="btn-text" onClick={openQuotesModal}>관리</button>
       </div>
-      {quotes.length === 0 ? (
+      {failed ? (
+        <div style={{ fontSize: 12, color: 'var(--danger)' }}>{label}{josa(label, '을/를')} 불러오지 못했어요. 창을 닫았다 다시 열어 주세요.</div>
+      ) : quotes.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>기록한 {label}{itemType === 'book' ? '이' : '가'} 없어요</div>
       ) : (
         quotes.slice(0, 3).map((q) => (

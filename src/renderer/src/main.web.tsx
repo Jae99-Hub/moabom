@@ -112,9 +112,11 @@ async function offerAnonImport(): Promise<void> {
       cancelText: '나중에',
     })
     if (!ok) return
-    const { imported, skipped } = await window.api.items.importOtherScope('anon')
+    const { imported, failed } = await window.api.items.importOtherScope('anon')
     await useStore.getState().fetchAll()
-    showToast(`${imported}개를 옮겼어요.${skipped ? ` (${skipped}개는 이미 있어서 건너뛰었어요)` : ''}`)
+    showToast(failed
+      ? `${imported}개를 옮겼어요. ${failed}개는 옮기지 못해 이 브라우저에 남겨 뒀어요 (설정 > 데이터에서 다시 시도).`
+      : `${imported}개를 옮겼어요.`)
   } catch {
     showToast('기록을 옮기지 못했어요. 설정 > 데이터에서 다시 시도해 주세요.')
   }

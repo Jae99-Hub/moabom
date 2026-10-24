@@ -75,6 +75,7 @@ export const hasTrash = (): boolean => !!(window.api as { trash?: { restore?: un
 
 // 아이템 변경 후 3초 디바운스 자동 sync
 let _syncTimer: ReturnType<typeof setTimeout> | null = null
+let _toldUploadFailure = false // '올리지 못했어요' 알림은 앱을 켠 동안 한 번만
 function scheduleSync(triggerSync: () => Promise<void>) {
   if (_syncTimer) clearTimeout(_syncTimer)
   _syncTimer = setTimeout(() => { triggerSync() }, 3000)
@@ -318,6 +319,10 @@ export const useStore = create<AppState>((set, get) => ({
       await fetchAll()
       if (result.conflicts.length > 0 || result.autoMerged > 0) {
         setSyncResult(result.conflicts, result.autoMerged)
+      }
+      if (result.failed > 0 && !_toldUploadFailure) {
+        _toldUploadFailure = true
+        showToast(`기록 ${result.failed}개를 클라우드에 올리지 못했어요. 이 컴퓨터에는 그대로 있고, 다음 동기화 때 다시 올려요.`)
       }
     } catch {
       // runSync already called setSyncStatus('error')

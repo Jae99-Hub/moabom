@@ -5,6 +5,7 @@ import { confirmDialog } from '../store/dialogs'
 import { quoteWord } from '../constants/itemMeta'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useFocusTrap } from '../hooks/useFocusTrap'
+import { reportProblem, codeSuffix } from '../utils/report'
 
 /** 쪽·회차 번호 — 1 이상의 정수만 (0쪽은 저장돼도 보이지 않고 맨 앞에 정렬되던 문제) */
 const posInt = (s: string): number | null => {
@@ -38,9 +39,16 @@ export default function QuotesModal() {
   // 레이스 컨디션 방지: 마지막 reload 요청만 반영
   const reloadSeqRef = useRef(0)
 
+  // 불러오기 실패 — 예전엔 조용히 넘어가 '기록한 명대사가 없어요'로 보여서 기록이 사라진 것처럼 보였음
+  const [loadError, setLoadError] = useState('')
+
   useEffect(() => {
     if (isQuotesModalOpen && selectedId) {
-      window.api.quotes.getByItemId(selectedId).then(setQuotes).catch(() => {})
+      setLoadError('')
+      window.api.quotes.getByItemId(selectedId).then(setQuotes).catch((e) => {
+        reportProblem('quotes.load', e)
+        setLoadError(`목록을 불러오지 못했어요. 창을 닫았다 다시 열어 주세요.${codeSuffix(e)}`)
+      })
     }
   }, [isQuotesModalOpen, selectedId])
 
@@ -51,9 +59,13 @@ export default function QuotesModal() {
       const q = await window.api.quotes.getByItemId(selectedId)
       if (seq === reloadSeqRef.current) {
         setQuotes(q)
+        setLoadError('')
         bumpQuotesVersion()
       }
-    } catch { /* 조용히 무시 */ }
+    } catch (e) {
+      reportProblem('quotes.load', e)
+      if (seq === reloadSeqRef.current) setLoadError(`목록을 새로 불러오지 못했어요.${codeSuffix(e)}`)
+    }
   }
 
   const itemType = item?.item_type ?? 'book'
@@ -76,8 +88,9 @@ export default function QuotesModal() {
       setNewNote('')
       await reload()
       requestSync() // 명대사 추가를 클라우드에도 반영
-    } catch {
-      setMutError('추가하지 못했어요. 다시 시도해 주세요.')
+    } catch (e) {
+      reportProblem('quotes.insert', e)
+      setMutError(`추가하지 못했어요. 다시 시도해 주세요.${codeSuffix(e)}`)
     } finally {
       setIsSaving(false)
     }
@@ -105,8 +118,9 @@ export default function QuotesModal() {
       setEditingId(null)
       await reload()
       requestSync()
-    } catch {
-      setMutError('저장하지 못했어요. 다시 시도해 주세요.')
+    } catch (e) {
+      reportProblem('quotes.update', e)
+      setMutError(`저장하지 못했어요. 다시 시도해 주세요.${codeSuffix(e)}`)
     } finally {
       setIsSaving(false)
     }
@@ -127,8 +141,9 @@ export default function QuotesModal() {
       await window.api.quotes.delete(id)
       await reload()
       requestSync()
-    } catch {
-      setMutError('삭제하지 못했어요. 다시 시도해 주세요.')
+    } catch (e) {
+      reportProblem('quotes.delete', e)
+      setMutError(`삭제하지 못했어요. 다시 시도해 주세요.${codeSuffix(e)}`)
     } finally {
       setIsSaving(false)
     }
@@ -155,9 +170,9 @@ export default function QuotesModal() {
         </div>
 
         <div className="modal-body">
-          {mutError && (
+          {(mutError || loadError) && (
             <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontSize: 12, color: 'var(--danger)', marginBottom: 12 }}>
-              {mutError}
+              {mutError || loadError}
             </div>
           )}
           {/* 새 명문장/명대사 추가 */}
@@ -223,7 +238,7 @@ export default function QuotesModal() {
           </div>
 
           {/* 기존 명문장 목록 */}
-          {quotes.length === 0 ? (
+          {quotes.length === 0 && !loadError ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
               {itemType === 'book' ? '아직 기록한 명문장이 없어요' : '아직 기록한 명대사가 없어요'}
             </div>

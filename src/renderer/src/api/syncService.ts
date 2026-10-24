@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient'
+import { reportProblem } from '../utils/report'
 import {
   CloudRow, normalizeTitle, isExactMatch, isSimilarMatch, conflictReason, mergeItemFields, buildItemPayload, ALIVE, toIso,
 } from './syncMatch'
@@ -18,6 +19,16 @@ export interface SyncConflict {
 export interface SyncResult {
   autoMerged: number
   conflicts: SyncConflict[]
+  /** 이번에 올리지 못한 기록 수 (다음 동기화 때 다시 시도) */
+  failed: number
+}
+
+// 올리기 실패 — 예전엔 그냥 다음 기록으로 넘어가고 화면엔 '동기화 완료'가 떠서,
+// 서버가 넉 달 동안 명대사를 거절해도 아무도 몰랐음. 이제 세어서 상태를 '오류'로 하고 개발자에게 알린다.
+let pushFailures = 0
+function pushFailed(where: string, error: unknown): void {
+  pushFailures++
+  reportProblem(`sync.${where}`, error)
 }
 
 async function autoMergeExact(local: CloudRow, cloud: CloudRow, userId: string): Promise<boolean> {
@@ -28,7 +39,7 @@ async function autoMergeExact(local: CloudRow, cloud: CloudRow, userId: string):
     .update({ ...merged, ...ALIVE, updated_at: new Date().toISOString() })
     .eq('id', cloud.id)
     .eq('user_id', userId)
-  if (error) return false // 실패 시 dirty 유지 → 다음 동기화에서 재시도
+  if (error) { pushFailed('items.merge', error); return false } // dirty 유지 → 다음 동기화에서 재시도
   await window.api.sync.markItemSynced(local.id as number, cloud.id as number, local.updated_at as string)
   return true
 }
@@ -53,13 +64,12 @@ async function pushDirtyItems(
           .eq('id', item.server_id)
           .eq('user_id', userId)
           .select('id')
-        if (!error) {
-          if (data && data.length > 0) await window.api.sync.markItemSynced(item.id as number, item.server_id as number, seen)
-          else {
-            // 0행 = 클라우드에서 이미 영구삭제됨. 단, 그사이 로그아웃·계정 전환이어도 0행이므로 먼저 확인
-            await assertSameUser(userId)
-            await window.api.sync.clearItemDirty(item.id as number, seen)
-          }
+        if (error) pushFailed('items.trash', error)
+        else if (data && data.length > 0) await window.api.sync.markItemSynced(item.id as number, item.server_id as number, seen)
+        else {
+          // 0행 = 클라우드에서 이미 영구삭제됨. 단, 그사이 로그아웃·계정 전환이어도 0행이므로 먼저 확인
+          await assertSameUser(userId)
+          await window.api.sync.clearItemDirty(item.id as number, seen)
         }
       } else {
         // 클라우드에 올린 적 없는 항목 → 로컬 휴지통에만 보관, dirty 해제
@@ -76,7 +86,7 @@ async function pushDirtyItems(
         .eq('id', item.server_id)
         .eq('user_id', userId)
         .select('id')
-      if (error) continue // 다음 동기화에서 재시도
+      if (error) { pushFailed('items.update', error); continue } // 다음 동기화에서 재시도
       if (data && data.length > 0) {
         await window.api.sync.markItemSynced(item.id as number, item.server_id as number, seen)
         continue
@@ -96,7 +106,7 @@ async function pushDirtyItems(
       .ilike('title', escapedTitle)
       .not('is_deleted', 'is', true) // 휴지통의 클라우드 행과 합치지 않음 (합치면 새 항목이 휴지통으로 감)
     // 중복 검사를 못 했으면 이번엔 올리지 않음 — 확인 없이 넣으면 같은 작품이 두 번 생김
-    if (findError) continue
+    if (findError) { pushFailed('items.find', findError); continue }
 
     let handled = false
 
@@ -134,9 +144,8 @@ async function pushDirtyItems(
         .insert(buildItemPayload(item, userId))
         .select('id')
         .single()
-      if (!error && data) {
-        await window.api.sync.markItemSynced(item.id as number, (data as { id: number }).id, seen)
-      }
+      if (error || !data) pushFailed('items.insert', error ?? 'no-row')
+      else await window.api.sync.markItemSynced(item.id as number, (data as { id: number }).id, seen)
     }
   }
 
@@ -154,7 +163,7 @@ async function pushCoverOnly(userId: string): Promise<void> {
       .eq('id', r.server_id)
       .eq('user_id', userId)
       .select('id')
-    if (error) continue
+    if (error) { pushFailed('items.cover', error); continue }
     // 클라우드에 행이 없으면(0행) 올릴 곳이 없으니 해제 — 단, 계정이 바뀌어 0행이 된 것이면 멈춤
     if (!data || data.length === 0) await assertSameUser(userId)
     await window.api.sync.markCoverPushed(r.id)
@@ -176,12 +185,11 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
           .eq('id', quote.server_id)
           .eq('user_id', userId)
           .select('id')
-        if (!error) {
-          if (data && data.length > 0) await window.api.sync.markQuoteSynced(quote.id as number, quote.server_id as number, seen)
-          else {
-            await assertSameUser(userId) // 0행이 계정 전환 때문이 아닌지 확인
-            await window.api.sync.clearQuoteDirty(quote.id as number, seen) // 클라우드에선 이미 영구삭제됨
-          }
+        if (error) pushFailed('quotes.trash', error)
+        else if (data && data.length > 0) await window.api.sync.markQuoteSynced(quote.id as number, quote.server_id as number, seen)
+        else {
+          await assertSameUser(userId) // 0행이 계정 전환 때문이 아닌지 확인
+          await window.api.sync.clearQuoteDirty(quote.id as number, seen) // 클라우드에선 이미 영구삭제됨
         }
       } else {
         await window.api.sync.clearQuoteDirty(quote.id as number, seen)
@@ -213,7 +221,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
         .eq('id', quote.server_id)
         .eq('user_id', userId)
         .select('id')
-      if (error) continue
+      if (error) { pushFailed('quotes.update', error); continue }
       if (data && data.length > 0) {
         await window.api.sync.markQuoteSynced(quote.id as number, quote.server_id as number, seen)
         continue
@@ -231,7 +239,7 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
       .eq('text', String(quote.text))
       .not('is_deleted', 'is', true) // 휴지통의 명대사에 연결하면 다른 기기에 안 보임
       .limit(1)
-    if (findError) continue // 확인 못 했으면 다음에 (확인 없이 넣으면 같은 문장이 두 번 생김)
+    if (findError) { pushFailed('quotes.find', findError); continue } // 확인 없이 넣으면 같은 문장이 두 번 생김
 
     if (existing && existing.length > 0) {
       await window.api.sync.markQuoteSynced(quote.id as number, (existing[0] as { id: number }).id, seen)
@@ -241,9 +249,8 @@ async function pushDirtyQuotes(userId: string): Promise<void> {
         .insert(payload)
         .select('id')
         .single()
-      if (!error && data) {
-        await window.api.sync.markQuoteSynced(quote.id as number, (data as { id: number }).id, seen)
-      }
+      if (error || !data) pushFailed('quotes.insert', error ?? 'no-row')
+      else await window.api.sync.markQuoteSynced(quote.id as number, (data as { id: number }).id, seen)
     }
   }
 }
@@ -313,14 +320,16 @@ export function runSync(onStatus?: (status: SyncStatus) => void): Promise<SyncRe
   inFlight = (async () => {
     const conflicts = new Map<number, SyncConflict>() // 재실행에서 같은 충돌이 또 나와도 한 번만
     let autoMerged = 0
+    let failed = 0
     try {
       do {
         rerunRequested = false
         const r = await syncOnce(onStatus)
         autoMerged += r.autoMerged
+        failed = r.failed // 마지막 회차 기준 (앞 회차 실패는 다시 시도됐음)
         for (const c of r.conflicts) conflicts.set(c.localId, c)
       } while (rerunRequested)
-      return { autoMerged, conflicts: [...conflicts.values()] }
+      return { autoMerged, conflicts: [...conflicts.values()], failed }
     } finally {
       inFlight = null
       rerunRequested = false
@@ -336,13 +345,15 @@ async function assertSameUser(userId: string): Promise<void> {
 }
 
 async function syncOnce(onStatus?: (status: SyncStatus) => void): Promise<SyncResult> {
-  if (!isSupabaseConfigured || !supabase) return { autoMerged: 0, conflicts: [] }
-  if (!window.api?.sync) return { autoMerged: 0, conflicts: [] }
+  const none: SyncResult = { autoMerged: 0, conflicts: [], failed: 0 }
+  if (!isSupabaseConfigured || !supabase) return none
+  if (!window.api?.sync) return none
 
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { autoMerged: 0, conflicts: [] }
+  if (!user) return none
+  pushFailures = 0
 
   // 다음 증분 pull 기준 시각 = 이번 동기화 '시작' 시점 − 여유 5분.
   // (끝난 시각을 쓰면 동기화 도중 다른 기기가 올린 변경을 영영 놓치고, 기기 간 시계 오차도 흡수)
@@ -360,10 +371,13 @@ async function syncOnce(onStatus?: (status: SyncStatus) => void): Promise<SyncRe
     await purgeExpiredTrash(user.id)
     await assertSameUser(user.id)
     await window.api.sync.setLastSyncAt(nextSyncCursor, user.id)
-    onStatus?.('success')
-    return { autoMerged, conflicts }
+    // 받기는 끝났어도 못 올린 기록이 있으면 '완료'라고 하지 않음
+    onStatus?.(pushFailures > 0 ? 'error' : 'success')
+    return { autoMerged, conflicts, failed: pushFailures }
   } catch (err) {
     console.error('[Sync] 오류:', err)
+    // 연결 끊김은 흔하므로 보고하지 않음. 그 밖의 오류(받기 실패·로컬 저장 실패 등)는 알림
+    if (!/fetch|network|account-changed/i.test(String((err as Error)?.message ?? err))) reportProblem('sync.run', err)
     onStatus?.('error')
     throw err
   }

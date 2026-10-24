@@ -30,6 +30,10 @@ describe('상태 바꾸기', () => {
 describe('입력 확인', () => {
   const form = { ...item(), title: '데미안', year: 1919, page_count: 244 } as never
   it('정상 입력은 통과', () => expect(validateForm(form)).toBeNull())
+  it('클라우드에서 글자로 온 연도도 통과 (웹 편집 저장)', () => {
+    expect(validateForm({ ...(form as object), year: '2019' } as never)).toBeNull()
+    expect(validateForm({ ...(form as object), year: '' } as never)).toBeNull()
+  })
   it('연도·페이지 범위', () => {
     expect(validateForm({ ...(form as object), year: 99999 } as never)?.message).toContain('연도')
     expect(validateForm({ ...(form as object), page_count: -10 } as never)?.message).toContain('페이지')

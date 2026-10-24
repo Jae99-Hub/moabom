@@ -36,7 +36,9 @@ export interface FormProblem { tab: 'info' | 'record'; message: string }
 /** 저장 전에 확인할 입력값 — 고칠 곳이 있으면 첫 문제를 돌려줌 */
 export function validateForm(form: ItemFormData): FormProblem | null {
   if (!form.title.trim()) return { tab: 'info', message: '제목을 적어 주세요.' }
-  if (form.year != null && (!Number.isInteger(form.year) || form.year < 1000 || form.year > 2100)) {
+  // 연도는 클라우드에서 글자('2019')로 올 때도 있어 숫자로 바꿔서 확인
+  const year = form.year == null || (form.year as unknown) === '' ? null : Number(form.year)
+  if (year != null && (!Number.isInteger(year) || year < 1000 || year > 2100)) {
     return { tab: 'info', message: '연도는 1000~2100 사이의 숫자로 적어 주세요.' }
   }
   if (form.page_count != null && (!Number.isFinite(form.page_count) || form.page_count < 1 || form.page_count > 100000)) {

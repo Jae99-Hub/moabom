@@ -6,6 +6,8 @@
 
 import { supabase, isSupabaseConfigured, storedUserId } from './supabaseClient'
 import { isExactMatch, mergeItemFields } from './syncMatch'
+import { reportProblem } from '../utils/report'
+import type { Item, Quote, QuoteSearchResult, TrashItem, GoogleBookResult, TmdbResult } from '../types'
 
 // ── Anonymous localStorage 헬퍼 ──────────────────────────────────
 const ANON = {
@@ -60,6 +62,14 @@ function changedItemFields(src: Row): Row {
   for (const k of ITEM_FIELDS) if (k in src) out[k] = src[k] ?? null
   return out
 }
+
+/** 클라우드·브라우저에 저장된 행 → 화면이 쓰는 모양 (데스크톱과 같게).
+ *  클라우드는 연도를 글자('2019')로 저장해서 숫자로 바꿈 — 그대로 두면 편집 후 저장할 때 연도 확인에 걸렸음 */
+function toItem(r: Row): Item {
+  const year = r.year == null || r.year === '' ? null : Number(r.year)
+  return { ...r, year: Number.isFinite(year) ? year : null, current_page: Number(r.current_page ?? 0) || 0 } as unknown as Item
+}
+const toItems = (rows: Row[]): Item[] => rows.map(toItem)
 
 /** 명대사 정렬 — 데스크톱과 같게: 쪽/회차 순, 같으면 쓴 순서 */
 function sortQuotes(list: Row[]): Row[] {
@@ -289,14 +299,15 @@ function readBackupFile(text: string): { items: Row[]; quotes: Row[] } {
 
 // ── window.api 구현 ───────────────────────────────────────────────
 export async function setupWebApi(): Promise<void> {
-  const api = {
+  // 데스크톱과 같은 window.api 약속을 지키는지 타입 검사로 확인 (동기화·자동 백업은 데스크톱 전용)
+  const api: Omit<Window['api'], 'sync' | 'backup'> = {
     items: {
       getAll: async () => {
         const userId = await currentUserId()
         if (!userId) {
-          return anonLoad<Row[]>(ANON.items, [])
+          return toItems(anonLoad<Row[]>(ANON.items, [])
             .filter((i) => !i.is_deleted)
-            .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+            .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))))
         }
         // 휴지통 항목은 빼고 (데스크톱 앱이 휴지통으로 옮긴 것도 클라우드엔 '삭제 표시'로 남아 있음)
         const rows: Row[] = []
@@ -311,7 +322,7 @@ export async function setupWebApi(): Promise<void> {
             .range(from, from + PAGE - 1)
           if (error) throw error
           rows.push(...(data ?? []))
-          if (!data || data.length < PAGE) return rows
+          if (!data || data.length < PAGE) return toItems(rows)
         }
       },
 
@@ -323,7 +334,7 @@ export async function setupWebApi(): Promise<void> {
           const newItem: Row = { id: anonNextId(), ...itemFields(data), created_at: now, updated_at: now }
           items.unshift(newItem)
           anonSave(ANON.items, items)
-          return newItem
+          return toItem(newItem)
         }
         // updated_at을 꼭 넣는다 — 데스크톱 앱은 이 시각 이후 바뀐 것만 받아 가므로 비어 있으면 영영 안 내려감
         const { data: row, error } = await supabase
@@ -332,7 +343,7 @@ export async function setupWebApi(): Promise<void> {
           .select()
           .single()
         if (error) throw error
-        return row
+        return toItem(row as Row)
       },
 
       update: async (id: number, data: Row) => {
@@ -367,9 +378,10 @@ export async function setupWebApi(): Promise<void> {
         const { error } = await supabase.from('items')
           .update({ is_deleted: true, deleted_at: ts, updated_at: ts }).eq('id', id).eq('user_id', userId)
         if (error) throw error
-        await supabase.from('quotes')
+        const { error: quotesError } = await supabase.from('quotes')
           .update({ is_deleted: true, deleted_at: ts, updated_at: ts })
           .eq('item_id', id).eq('user_id', userId).not('is_deleted', 'is', true)
+        if (quotesError) reportProblem('items.delete.quotes', quotesError) // 작품은 휴지통에 갔으니 화면엔 영향 없음
       },
 
       // 로그인했는데 이 브라우저에 로그인 없이 쓴 기록이 남아 있으면 그 개수 (계정으로 옮길 수 있게)
@@ -390,6 +402,7 @@ export async function setupWebApi(): Promise<void> {
         const cloudItems = (await fetchAllRows('items', userId)).filter((r) => !r.is_deleted)
         const done = new Set<unknown>()
         let imported = 0
+        let failed = 0
         for (const it of localItems) {
           const now = nowIso()
           const quotesOf = (itemId: unknown) => localQuotes.filter((q) => q.item_id === it.id).map((q) => ({
@@ -401,22 +414,26 @@ export async function setupWebApi(): Promise<void> {
           if (same) {
             const { error } = await supabase.from('items')
               .update({ ...mergeItemFields(it, same), updated_at: now }).eq('id', same.id).eq('user_id', userId)
-            if (error) continue
+            if (error) { reportProblem('import.merge', error); failed++; continue }
             // 이미 계정에 있는 같은 문장은 빼고 넣음
             const { data: have, error: haveError } = await supabase.from('quotes').select('text')
               .eq('user_id', userId).eq('item_id', same.id).not('is_deleted', 'is', true)
-            if (haveError) continue
+            if (haveError) { reportProblem('import.quotes', haveError); failed++; continue }
             const known = new Set((have ?? []).map((q: Row) => String(q.text ?? '')))
             const add = quotesOf(same.id).filter((q) => !known.has(q.text))
-            if (add.length > 0 && (await supabase.from('quotes').insert(add)).error) continue
+            const addError = add.length > 0 ? (await supabase.from('quotes').insert(add)).error : null
+            if (addError) { reportProblem('import.quotes', addError); failed++; continue }
           } else {
             const { data, error } = await supabase.from('items')
               .insert({ ...itemFields(it), user_id: userId, created_at: it.created_at ?? now, updated_at: now })
               .select('*').single()
-            if (error || !data) continue
+            if (error || !data) { reportProblem('import.insert', error ?? 'no-row'); failed++; continue }
             const add = quotesOf((data as Row).id)
-            if (add.length > 0 && (await supabase.from('quotes').insert(add)).error) {
+            const addError = add.length > 0 ? (await supabase.from('quotes').insert(add)).error : null
+            if (addError) {
+              reportProblem('import.quotes', addError)
               await supabase.from('items').delete().eq('id', (data as Row).id).eq('user_id', userId)
+              failed++
               continue
             }
             cloudItems.push(data as Row) // 같은 브라우저 기록 안의 중복도 하나로 합쳐지게
@@ -426,7 +443,7 @@ export async function setupWebApi(): Promise<void> {
         }
         anonSave(ANON.items, anonLoad<Row[]>(ANON.items, []).filter((i) => !done.has(i.id)))
         anonSave(ANON.quotes, anonLoad<Row[]>(ANON.quotes, []).filter((q) => !done.has(q.item_id)))
-        return { imported, skipped: 0 }
+        return { imported, skipped: 0, failed }
       },
     },
 
@@ -435,16 +452,16 @@ export async function setupWebApi(): Promise<void> {
         try { await purgeExpiredTrash() } catch { /* 정리 실패는 목록 표시에 영향 없음 */ }
         const userId = await currentUserId()
         if (!userId) {
-          return anonLoad<Row[]>(ANON.items, [])
+          return toItems(anonLoad<Row[]>(ANON.items, [])
             .filter((i) => i.is_deleted)
-            .sort((a, b) => String(b.deleted_at ?? '').localeCompare(String(a.deleted_at ?? '')))
+            .sort((a, b) => String(b.deleted_at ?? '').localeCompare(String(a.deleted_at ?? '')))) as TrashItem[]
         }
         const { data, error } = await supabase
           .from('items').select('*')
           .eq('user_id', userId).eq('is_deleted', true)
           .order('deleted_at', { ascending: false })
         if (error) throw error
-        return data ?? []
+        return toItems(data ?? []) as TrashItem[]
       },
 
       restore: async (id: number) => {
@@ -466,7 +483,8 @@ export async function setupWebApi(): Promise<void> {
           .update({ is_deleted: false, deleted_at: null, updated_at: ts })
           .eq('item_id', id).eq('user_id', userId).eq('is_deleted', true)
         quotes = deletedAt ? quotes.eq('deleted_at', deletedAt) : quotes.is('deleted_at', null)
-        await quotes
+        const { error: quotesError } = await quotes
+        if (quotesError) reportProblem('trash.restore.quotes', quotesError)
         const { error } = await supabase.from('items')
           .update({ is_deleted: false, deleted_at: null, updated_at: ts }).eq('id', id).eq('user_id', userId)
         if (error) throw error
@@ -499,7 +517,7 @@ export async function setupWebApi(): Promise<void> {
       getByItemId: async (itemId: number) => {
         const userId = await currentUserId()
         if (!userId) {
-          return sortQuotes(anonLoad<Row[]>(ANON.quotes, []).filter((q) => q.item_id === itemId && !q.is_deleted))
+          return sortQuotes(anonLoad<Row[]>(ANON.quotes, []).filter((q) => q.item_id === itemId && !q.is_deleted)) as unknown as Quote[]
         }
         const { data, error } = await supabase
           .from('quotes')
@@ -508,10 +526,10 @@ export async function setupWebApi(): Promise<void> {
           .eq('user_id', userId)
           .not('is_deleted', 'is', true)
         if (error) throw error
-        return sortQuotes(data ?? [])
+        return sortQuotes(data ?? []) as unknown as Quote[]
       },
 
-      search: async (query: string) => {
+      search: async (query: string): Promise<QuoteSearchResult[]> => {
         const q = query.trim()
         if (!q) return []
         const userId = await currentUserId()
@@ -527,7 +545,7 @@ export async function setupWebApi(): Promise<void> {
             .map((qt) => {
               const item = itemMap.get(qt.item_id)
               return { ...qt, item_title: item?.title ?? '', item_type: item?.item_type ?? '', cover_path: item?.cover_path ?? null }
-            })
+            }) as unknown as QuoteSearchResult[]
         }
         // 검색어의 %·_는 글자 그대로 찾게 이스케이프. 문장·메모를 따로 찾아 합침
         // (예전엔 검색어를 필터 문법에 그대로 끼워 넣어 쉼표·괄호가 든 검색어에서 오류가 났음)
@@ -552,7 +570,7 @@ export async function setupWebApi(): Promise<void> {
           .map((r) => {
             const item = itemMap.get(r.item_id)
             return { ...r, item_title: item?.title ?? '', item_type: item?.item_type ?? '', cover_path: item?.cover_path ?? null }
-          })
+          }) as unknown as QuoteSearchResult[]
       },
 
       insert: async (data: Row) => {
@@ -572,7 +590,7 @@ export async function setupWebApi(): Promise<void> {
           const newQuote: Row = { id: anonNextId(), ...quote }
           quotes.push(newQuote)
           anonSave(ANON.quotes, quotes)
-          return newQuote
+          return newQuote as unknown as Quote
         }
         const { data: row, error } = await supabase
           .from('quotes')
@@ -580,7 +598,7 @@ export async function setupWebApi(): Promise<void> {
           .select()
           .single()
         if (error) throw error
-        return row
+        return row as unknown as Quote
       },
 
       update: async (id: number, data: Row) => {
@@ -618,11 +636,11 @@ export async function setupWebApi(): Promise<void> {
     },
 
     books: {
-      search: async (query: string) => searchViaServer('books', query)
+      search: async (query: string) => searchViaServer('books', query) as Promise<GoogleBookResult[]>
     },
 
     tmdb: {
-      search: async (query: string) => searchViaServer('tmdb', query)
+      search: async (query: string) => searchViaServer('tmdb', query) as Promise<TmdbResult[]>
     },
 
     image: {

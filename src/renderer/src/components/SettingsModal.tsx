@@ -183,11 +183,12 @@ export default function SettingsModal() {
     setBusy(true)
     try {
       try { await window.api.backup?.run(true) } catch { /* 사전 스냅샷 best-effort */ }
-      const { imported, skipped } = await window.api.items.importOtherScope(source)
+      const { imported, skipped, failed } = await window.api.items.importOtherScope(source)
       await fetchAll()
       if (scope.loggedIn) await triggerSync()
       loadDataTab()
-      showToast(`${imported}개 불러왔어요.${skipped ? ` (${skipped}개는 이미 있어서 건너뛰었어요)` : ''}`)
+      showToast(`${imported}개 불러왔어요.${skipped ? ` (${skipped}개는 이미 있어서 건너뛰었어요)` : ''}${
+        failed ? ` ${failed}개는 옮기지 못해 그대로 남겨 뒀어요.` : ''}`)
     } finally {
       setBusy(false)
     }
@@ -277,7 +278,7 @@ export default function SettingsModal() {
     switch (syncStatus) {
       case 'syncing': return '동기화 중...'
       case 'success': return '동기화 완료 ✓'
-      case 'error':   return '동기화 오류 ⚠️'
+      case 'error':   return '아직 맞추지 못한 기록이 있어요 ⚠️ 잠시 뒤 다시 시도해요'
       default:        return '다른 기기와 기록을 맞춰요'
     }
   }
