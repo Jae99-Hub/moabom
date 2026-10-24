@@ -508,7 +508,8 @@ export default function AddItemModal() {
               <div className="form-group">
                 <label className="form-label">
                   장르
-                  <span className="aim-hint">Tab으로 하위 장르 · Enter로 추가</span>
+                  <span className="aim-hint aim-hint-keys">Tab으로 하위 장르 · Enter로 추가</span>
+                  <span className="aim-hint aim-hint-touch">한국&gt;드라마처럼 쓰면 하위 장르</span>
                 </label>
                 <GenreTagInput value={form.genre ?? ''} onChange={(v) => set('genre', v)} suggestions={genreSuggestions} />
               </div>

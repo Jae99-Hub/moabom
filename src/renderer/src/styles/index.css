@@ -491,6 +491,10 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 
 .filter-divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 
+/* 상태 묶음과 도구 묶음 — 큰 화면에선 한 줄로 이어지고, 휴대폰에선 두 줄로 나뉨 (아래 휴대폰 부분) */
+.filter-chips, .filter-tools { display: contents; }
+.filter-count { display: none; }
+
 .sort-select {
   height: 30px;
   padding: 0 10px;
@@ -587,6 +591,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 .list-row-title { flex: 2; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .list-row-title-text { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-row-original { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-row-sub { display: none; }
 
 .list-row-author { flex: 1; min-width: 0; font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-row-year { width: 40px; flex-shrink: 0; font-size: 12px; color: var(--text-muted); text-align: center; }
@@ -1273,6 +1278,11 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   color: var(--text-muted);
   font-size: 12px;
 }
+@media (max-width: 768px) {
+  /* 16px보다 작으면 iPhone이 누를 때마다 화면을 확대함 */
+  .genre-tag-inner-input { font-size: 16px; }
+  .genre-tag-inner-input::placeholder { font-size: 15px; }
+}
 
 /* Crop modal */
 .crop-container {
@@ -1855,12 +1865,13 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   /* 햄버거 표시 */
   .hamburger-btn { display: flex; }
 
-  /* 헤더: 데스크탑 검색 숨기고, 모바일 검색 트리거 표시 */
+  /* 헤더: 데스크탑 검색 숨기고, 모바일 검색 트리거 표시. 빈 자리에 앱 이름.
+     밝기 버튼은 설정 > 화면에 있으니 숨김 (예전엔 아이콘이 다섯 개라 붐볐음) */
   .header { padding: 0 10px; gap: 6px; -webkit-app-region: no-drag; position: relative; }
-  .header-logo-text { display: none; }
   .desktop-search { display: none !important; }
   .header-actions { gap: 4px; margin-left: auto; }
   .mobile-search-trigger { display: flex; }
+  .header-theme-btn { display: none; }
 
   /* 모바일 검색 바 (열렸을 때) */
   .mobile-search-bar {
@@ -1908,18 +1919,26 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   }
   .media-grid-wrapper { padding: 10px; }
 
-  /* 필터바 - 가로 스크롤 + 짧은 라벨 */
-  .filter-bar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding: 8px 10px;
+  /* 필터바 - 위 줄은 상태(옆으로 밀어 보기), 아래 줄은 개수 · 정렬 · 보기 · 선택
+     (예전엔 한 줄에 다 넣어 정렬 칸이 '최근 ㅊ'처럼 잘리고 '선택'이 화면 밖으로 밀렸음) */
+  .filter-bar { flex-direction: column; align-items: stretch; flex-wrap: nowrap; padding: 8px 0 6px; gap: 6px; }
+  .filter-chips {
+    display: flex;
     gap: 6px;
+    overflow-x: auto;
+    padding: 0 12px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
-  .filter-bar::-webkit-scrollbar { display: none; }
+  .filter-chips::-webkit-scrollbar { display: none; }
+  .filter-chips .filter-chip { flex-shrink: 0; }
+  .filter-tools { display: flex; align-items: center; gap: 6px; padding: 0 12px; }
+  .filter-count { display: block; margin-right: auto; font-size: 13px; color: var(--text-muted); }
+  .grid-count { display: none; } /* 개수는 필터 아래 줄에 */
   .filter-divider { display: none; }
-  .sort-select { min-width: 70px; font-size: 11px; margin-left: 0; }
+  /* 글씨는 16px이어야 iPhone이 누를 때 확대하지 않음 — 대신 테두리 없이 가볍게 */
+  .sort-select { height: 34px; padding: 0 4px; font-size: 16px; margin-left: 0; border-color: transparent; background: transparent; }
+  .view-toggle-btn { width: 34px; height: 34px; }
   .filter-chip { white-space: nowrap; }
 
   /* 모바일: 짧은 라벨 표시 */
@@ -1977,11 +1996,23 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
     animation: slideUpMobile 0.25s ease;
   }
 
-  /* 리스트뷰 - 불필요한 컬럼 숨기기 */
+  /* 리스트뷰 - 저자·연도는 제목 아래 한 줄로 (예전엔 좁은 칸에서 '유발 노...'처럼 잘렸음) */
   .list-header { display: none; }
   .list-row-year { display: none; }
   .list-row-genre { display: none; }
-  .list-row { padding: 8px 10px; }
+  .list-row-author, .list-row-original { display: none; }
+  .list-row { gap: 10px; padding: 10px 6px; }
+  .list-row-title-text { font-size: 14px; }
+  .list-row-sub { display: block; font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-row-right { width: auto; gap: 4px; }
+  .list-row-cover, .list-row-cover img, .list-row-cover-placeholder { width: 40px; }
+  .list-row-cover img, .list-row-cover-placeholder { height: 56px; }
+
+  /* 선택 막대: 고른 개수는 삭제 버튼에 나오니 가운데 안내는 숨김 (좁아서 두 줄로 꺾였음) */
+  .selection-bar { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .selection-bar-count { display: none; }
+  .selection-bar-delete { margin-left: auto; }
+  .selection-bar-cancel, .selection-bar-all, .selection-bar-delete { min-height: 40px; }
 
   /* 사이드바 푸터: 모바일에서 표시 */
   .sidebar-footer { display: block; }
@@ -2548,9 +2579,18 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
 
 /* 반응형 */
 @media (max-width: 640px) {
-  .stats-modal { max-height: 95vh; }
+  /* 다른 창처럼 아래에서 올라오는 시트. 종류별 개수는 2×2 (예전엔 '드/라/마'처럼 글자마다 꺾였음) */
+  .stats-modal {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 92dvh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    animation: slideUpMobile 0.25s ease;
+  }
+  .stats-body { padding: 16px 14px calc(20px + env(safe-area-inset-bottom, 0px)); }
   .stats-summary { grid-template-columns: repeat(2, 1fr); }
-  .stats-type-row { flex-wrap: wrap; gap: 10px; }
+  .stats-type-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .stats-type-label { white-space: nowrap; }
   .stats-rating-header { flex-direction: column; }
   .stats-genre-wrap { flex-direction: column; }
   .stats-radar-wrap { display: none; }
@@ -2867,6 +2907,12 @@ body:has(.modal-overlay, .dm-overlay, .dialog-overlay) .toast-stack { top: 16px;
 }
 .aim-status button:hover { color: var(--text-primary); }
 .aim-status button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text-accent); }
+/* 장르 안내: 손가락으로 쓰는 기기엔 Tab 키가 없으니 '>'로 하위 장르 쓰는 법을 보여 줌 */
+.aim-hint-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .aim-hint-keys { display: none; }
+  .aim-hint-touch { display: inline; }
+}
 .aim-rating { display: flex; align-items: center; gap: 12px; }
 .aim-rating-value { font-size: 15px; font-weight: 700; color: var(--star); font-variant-numeric: tabular-nums; }
 
@@ -2890,7 +2936,7 @@ body:has(.modal-overlay, .dm-overlay, .dialog-overlay) .toast-stack { top: 16px;
   .aim-type { font-size: 13px; gap: 4px; }
   .aim-body { padding: 14px 16px 20px; gap: 20px; }
   .aim-cover { width: 72px; height: 104px; }
-  .aim-status { grid-template-columns: repeat(2, 1fr); }
+  .aim-status button { font-size: 13px; padding: 0 4px; } /* 네 개를 한 줄에 (2×2는 자리를 많이 차지했음) */
   .aim-search-box input { font-size: 16px; } /* 16px보다 작으면 iPhone이 누를 때마다 확대함 */
   .aim-fields { grid-template-columns: 1fr; }
   .aim-footer { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }

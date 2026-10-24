@@ -1,5 +1,5 @@
 import React from 'react'
-import { useStorePick } from '../store/useStore'
+import { useStorePick, useFilteredItems } from '../store/useStore'
 import { ItemStatus } from '../types'
 import { statusLabels, STATUS_SHORT } from '../constants/itemMeta'
 
@@ -20,9 +20,14 @@ export default function FilterBar() {
 
   // 책만 보면 '읽다', 영상만 보면 '보다', 섞여 있으면 공통 표현 (예전엔 '볼 예정'과 '읽는/보는 중'이 섞여 나왔음)
   const labels: Record<string, string> = { all: '전체', ...statusLabels(filters.type) }
+  const shownCount = useFilteredItems().length
+  const isQuoteSearch = filters.searchMode === 'quote' && filters.search.trim() !== ''
 
+  // 큰 화면에선 두 묶음이 한 줄로 이어지고(display: contents), 휴대폰에선 상태 줄과 도구 줄로 나뉨
+  // (예전엔 휴대폰에서 한 줄에 다 넣어 정렬 칸이 '최근 ㅊ'처럼 잘리고 '선택'이 화면 밖으로 밀렸음)
   return (
     <div className="filter-bar" data-tour="filter">
+      <div className="filter-chips">
       {STATUS_OPTIONS.map((s) => (
         <button
           key={s.value}
@@ -33,6 +38,10 @@ export default function FilterBar() {
           <span className="chip-label-short">{SHORT_LABELS[s.value] ?? s.label}</span>
         </button>
       ))}
+      </div>
+
+      <div className="filter-tools">
+      {!isQuoteSearch && <span className="filter-count">{shownCount}개</span>}
 
       <div className="filter-divider" />
 
@@ -84,6 +93,7 @@ export default function FilterBar() {
         <span className="chip-label-full">선택</span>
         <span className="chip-label-short">선택</span>
       </button>
+      </div>
     </div>
   )
 }

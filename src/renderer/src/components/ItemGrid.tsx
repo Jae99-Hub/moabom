@@ -137,6 +137,10 @@ const ItemRow = React.memo(function ItemRow({ item }: { item: Item }) {
         {item.original_title && item.original_title !== item.title && (
           <span className="list-row-original">{item.original_title}</span>
         )}
+        {/* 휴대폰: 저자·연도 칸 대신 제목 아래 한 줄로 */}
+        {(item.author || item.director || item.year) && (
+          <span className="list-row-sub">{[item.author || item.director, item.year].filter(Boolean).join(' · ')}</span>
+        )}
       </div>
 
       <div className="list-row-author">

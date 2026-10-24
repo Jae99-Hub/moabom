@@ -30,9 +30,9 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
   }
 
   // 태그 하나 확정
+  // '한국>드라마'처럼 직접 써도 하위 장르가 됨 (휴대폰엔 Tab 키가 없음)
   const commitTag = () => {
-    const text = inputText.trim()
-    const parts = [...segments, text].filter(Boolean)
+    const parts = [...segments, inputText].flatMap((s) => s.split('>')).map((s) => s.trim()).filter(Boolean)
     if (parts.length === 0) return
     const tag = parts.join('>')
     if (!tags.includes(tag)) pushTags([...tags, tag])
@@ -53,6 +53,8 @@ export default function GenreTagInput({ value, onChange, suggestions = [] }: Pro
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // 한글을 조합하는 중의 Enter는 글자 확정용 — 여기서 태그를 만들면 마지막 글자가 칸에 따로 남았음
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'Tab') {
       const text = inputText.trim()
       if (text) {

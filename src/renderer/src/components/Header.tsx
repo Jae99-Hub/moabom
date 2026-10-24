@@ -138,7 +138,7 @@ export default function Header() {
           )}
         </button>
 
-        <button className="btn-icon" onClick={toggleTheme} title={theme === 'dark' ? '라이트 모드' : '다크 모드'} aria-label={theme === 'dark' ? '라이트 모드로 바꾸기' : '다크 모드로 바꾸기'}>
+        <button className="btn-icon header-theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '라이트 모드' : '다크 모드'} aria-label={theme === 'dark' ? '라이트 모드로 바꾸기' : '다크 모드로 바꾸기'}>
           {theme === 'dark' ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="5" />
