@@ -1,9 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { useStore } from '../store/useStore'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { useStore, useStorePick } from '../store/useStore'
 import { Item, ItemFormData, ItemType, ItemStatus, GoogleBookResult, TmdbResult } from '../types'
 import StarRating from './StarRating'
 import ImageCropModal from './ImageCropModal'
 import GenreTagInput from './GenreTagInput'
+import { coverSrc } from '../utils/cover'
+
+/** Electron이 붙이는 "Error invoking remote method '…': Error: " 접두어를 떼고 사용자용 문구만 남김 */
+function friendlyError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  return msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
+/** 닫을 때 '작성 중인 내용'으로 볼 값만 비교 (유형만 바꾼 건 제외) */
+const formSnapshot = (f: ItemFormData): string => JSON.stringify({ ...f, item_type: '' })
 
 const DEFAULT_FORM: ItemFormData = {
   title: '', original_title: '', item_type: 'book',
@@ -44,22 +54,25 @@ function buildEditForm(item: Item): ItemFormData {
 
 // 최근 사용 장르 추천
 function useRecentGenres(): string[] {
-  const { itemList } = useStore()
-  const seen = new Set<string>()
-  const result: string[] = []
-  const sorted = [...itemList].sort((a, b) => b.id - a.id)
-  for (const item of sorted) {
-    if (!item.genre) continue
-    for (const g of item.genre.split(',').map((p) => p.trim()).filter(Boolean)) {
-      if (!seen.has(g)) { seen.add(g); result.push(g) }
-      if (result.length >= 6) return result
+  const itemList = useStore((s) => s.itemList)
+  return useMemo(() => {
+    const seen = new Set<string>()
+    const result: string[] = []
+    const sorted = [...itemList].sort((a, b) => b.id - a.id)
+    for (const item of sorted) {
+      if (!item.genre) continue
+      for (const g of item.genre.split(',').map((p) => p.trim()).filter(Boolean)) {
+        if (!seen.has(g)) { seen.add(g); result.push(g) }
+        if (result.length >= 6) return result
+      }
     }
-  }
-  return result
+    return result
+  }, [itemList])
 }
 
 export default function AddItemModal() {
-  const { isAddModalOpen, editingItem, closeAddModal, addItem, updateItem, selectItem, filters, itemList } = useStore()
+  const { isAddModalOpen, editingItem, closeAddModal, addItem, updateItem, selectItem, filters, itemList } =
+    useStorePick('isAddModalOpen', 'editingItem', 'closeAddModal', 'addItem', 'updateItem', 'selectItem', 'filters', 'itemList')
 
   // editingItem이 있으면 첫 렌더부터 올바른 값으로 시작 (중간 빈 렌더 방지)
   const [form, setForm] = useState<ItemFormData>(() =>
@@ -77,28 +90,47 @@ export default function AddItemModal() {
 
   const recentGenres = useRecentGenres()
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // 마지막 검색만 반영 — 빠르게 두 번 검색하거나 도중에 유형을 바꾸면 늦게 온 이전 결과가 덮어쓰던 문제
+  const searchSeqRef = useRef(0)
+  // 열렸을 때의 입력값 — 닫을 때 작성 중인 내용이 있는지 비교
+  const initialSnapshotRef = useRef('')
+  // 배경에서 누르고 배경에서 뗐을 때만 닫음 (감상문을 드래그하다 창 밖에서 놓아도 닫히지 않게)
+  const downOnBackdrop = useRef(false)
 
   useEffect(() => {
     if (!isAddModalOpen) return
+    searchSeqRef.current++
+    setIsSearching(false)
     setActiveTab('info')
     setSearchQuery('')
     setBookResults([])
     setTmdbResults([])
     setSearchError('')
     setSuggestedGenres([])
+    let initial: ItemFormData
     if (editingItem) {
-      setForm(buildEditForm(editingItem))
+      initial = buildEditForm(editingItem)
     } else {
       const defaultType: ItemType =
         filters.type !== 'all'
           ? (filters.type as ItemType)
           : ([...itemList].sort((a, b) => b.id - a.id)[0]?.item_type as ItemType | undefined) ?? 'book'
-      setForm({ ...DEFAULT_FORM, item_type: defaultType })
+      initial = { ...DEFAULT_FORM, item_type: defaultType }
     }
+    setForm(initial)
+    initialSnapshotRef.current = formSnapshot(initial)
     setTimeout(() => searchInputRef.current?.focus(), 80)
   }, [isAddModalOpen, editingItem])
 
+  const requestClose = () => {
+    if (formSnapshot(form) !== initialSnapshotRef.current &&
+        !window.confirm('작성 중인 내용이 저장되지 않았어요. 닫을까요?')) return
+    closeAddModal()
+  }
+
   const switchType = (newType: ItemType) => {
+    searchSeqRef.current++ // 진행 중이던 검색 결과는 버림
+    setIsSearching(false)
     setForm((p) => ({
       ...p, item_type: newType,
       author: '', publisher: '', isbn: '', page_count: null, current_page: 0,
@@ -113,6 +145,8 @@ export default function AddItemModal() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
+    const seq = ++searchSeqRef.current
+    const isLatest = () => seq === searchSeqRef.current
     setIsSearching(true)
     setBookResults([])
     setTmdbResults([])
@@ -120,17 +154,19 @@ export default function AddItemModal() {
     try {
       if (form.item_type === 'book') {
         const r = await window.api.books.search(searchQuery)
-        if (r.length === 0) setSearchError('검색 결과가 없습니다.')
+        if (!isLatest()) return
+        if (r.length === 0) setSearchError('검색 결과가 없어요.')
         else setBookResults(r)
       } else {
         const r = await window.api.tmdb.search(searchQuery)
-        if (r.length === 0) setSearchError('검색 결과가 없습니다.')
+        if (!isLatest()) return
+        if (r.length === 0) setSearchError('검색 결과가 없어요.')
         else setTmdbResults(r)
       }
     } catch (e) {
-      setSearchError(`검색 오류: ${e instanceof Error ? e.message : String(e)}`)
+      if (isLatest()) setSearchError(friendlyError(e))
     } finally {
-      setIsSearching(false)
+      if (isLatest()) setIsSearching(false)
     }
   }
 
@@ -178,15 +214,10 @@ export default function AddItemModal() {
     if (path) setCropImagePath(path)
   }
 
-  const handleCropDone = async (base64: string) => {
-    try {
-      const savedPath = await window.api.image.saveCropped(base64, form.title || 'cover')
-      setForm((p) => ({ ...p, cover_path: savedPath }))
-    } catch {
-      alert('표지 이미지 저장에 실패했어요. 다시 시도해 주세요.')
-    } finally {
-      setCropImagePath(null)
-    }
+  // 자른 표지는 파일 대신 이미지 데이터(data URL)로 저장 → 다른 기기·웹·백업 파일에서도 보임
+  const handleCropDone = (dataUrl: string) => {
+    setForm((p) => ({ ...p, cover_path: dataUrl }))
+    setCropImagePath(null)
   }
 
   const handleSubmit = async () => {
@@ -220,7 +251,7 @@ export default function AddItemModal() {
       }
       closeAddModal()
     } catch (e) {
-      alert(`저장 실패: ${e instanceof Error ? e.message : '알 수 없는 오류'}`)
+      alert(`저장하지 못했어요. 다시 시도해 주세요.\n(${friendlyError(e)})`)
     } finally {
       setIsSaving(false)
     }
@@ -240,11 +271,7 @@ export default function AddItemModal() {
   const hasResults = bookResults.length > 0 || tmdbResults.length > 0
   const closeResults = () => { setBookResults([]); setTmdbResults([]) }
 
-  const coverSrc = form.cover_path
-    ? (form.cover_path.startsWith('http') || form.cover_path.startsWith('data:'))
-      ? form.cover_path
-      : `file://${form.cover_path}`
-    : null
+  const coverUrl = coverSrc(form.cover_path)
 
   const genreTags = form.genre ? form.genre.split(',').map(s => s.trim()).filter(Boolean) : []
   const genreSuggestions = [
@@ -258,19 +285,22 @@ export default function AddItemModal() {
 
   return (
     <>
-      {cropImagePath && (
-        <ImageCropModal imagePath={cropImagePath} onDone={handleCropDone} onCancel={() => setCropImagePath(null)} />
-      )}
-
-      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeAddModal(); else if (hasResults) closeResults() }}>
+      <div
+        className="modal-overlay"
+        onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) { if (downOnBackdrop.current) requestClose() }
+          else if (hasResults) closeResults()
+        }}
+      >
         <div className="add-modal-shell" onClick={(e) => { if (hasResults) { closeResults(); e.stopPropagation() } }}>
 
           {/* ── 왼쪽: 표지 + 종류 ── */}
           <div className="add-modal-left">
-            <div className="add-modal-cover-wrap" onClick={!coverSrc ? handlePickImage : undefined} style={!coverSrc ? { cursor: 'pointer' } : {}}>
-              {coverSrc ? (
+            <div className="add-modal-cover-wrap" onClick={!coverUrl ? handlePickImage : undefined} style={!coverUrl ? { cursor: 'pointer' } : {}}>
+              {coverUrl ? (
                 <>
-                  <img className="add-modal-cover-img" src={coverSrc} alt="" />
+                  <img className="add-modal-cover-img" src={coverUrl} alt="" />
                   <div className="add-modal-cover-actions">
                     <button className="cover-action-btn" onClick={handlePickImage}>변경</button>
                     <button className="cover-action-btn danger" onClick={() => set('cover_path', null)}>삭제</button>
@@ -326,7 +356,7 @@ export default function AddItemModal() {
           <div className="add-modal-right">
             <div className="add-modal-header">
               <span className="modal-title">{editingItem ? '편집' : '새 항목 추가'}</span>
-              <button className="btn-icon" onClick={closeAddModal}>
+              <button className="btn-icon" onClick={requestClose} aria-label="닫기" title="닫기">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -608,6 +638,11 @@ export default function AddItemModal() {
           </div>
         </div>
       </div>
+
+      {/* 자르기 창은 추가 창보다 뒤에 그려야 위에 보임 (같은 z-index에선 나중 요소가 위 — 예전엔 가려져서 아무 반응 없는 것처럼 보였음) */}
+      {cropImagePath && (
+        <ImageCropModal imagePath={cropImagePath} onDone={handleCropDone} onCancel={() => setCropImagePath(null)} />
+      )}
     </>
   )
 }

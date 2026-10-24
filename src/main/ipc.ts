@@ -1,17 +1,17 @@
-import { IpcMain, dialog, BrowserWindow, shell } from 'electron'
+import { IpcMain, dialog, BrowserWindow, shell, nativeImage } from 'electron'
 import { copyFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
-import { join, extname, relative, isAbsolute } from 'path'
+import { join, relative, isAbsolute } from 'path'
 import { app } from 'electron'
 import {
   getAllItems, getItemById, insertItem, updateItem, deleteItem,
   getQuotesByItemId, searchQuotes, insertQuote, updateQuote, deleteQuote,
   getSetting, setSetting,
   getDirtyItems, getDirtyQuotes, markItemSynced, markQuoteSynced,
-  hardDeleteItem, hardDeleteQuote, upsertItemFromCloud, upsertQuoteFromCloud,
+  upsertItemFromCloud, upsertQuoteFromCloud,
   setCurrentUserId, getCurrentUserId,
   getTrashedItems, restoreItem, purgeItem, purgeExpiredTrash,
-  clearItemDirty, clearQuoteDirty,
-  getDbPath, restoreFromFile,
+  clearItemDirty, clearQuoteDirty, getCoverPushItems, markCoverPushed,
+  getDbPath, restoreFromFile, flushSave, inlineLocalCovers,
   runAutoBackup, listAutoBackups, getAutoBackupDir, setAutoBackupDir,
   getOtherScopeInfo, importOtherScopeItems,
   ItemRow, QuoteRow
@@ -29,6 +29,23 @@ function getCoversDir(): string {
   const dir = join(app.getPath('userData'), 'covers')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return dir
+}
+
+/** covers 폴더의 표지 파일 → 작게 줄인 JPEG data URL. 폴더 밖·없는 파일·읽기 실패는 null */
+function coverFileToDataUrl(filePath: string): string | null {
+  try {
+    const rel = relative(getCoversDir(), filePath)
+    if (!rel || rel.startsWith('..') || isAbsolute(rel) || !existsSync(filePath)) return null
+    let img = nativeImage.createFromPath(filePath)
+    if (img.isEmpty()) return null
+    if (img.getSize().width > 480) img = img.resize({ width: 480, quality: 'good' })
+    return 'data:image/jpeg;base64,' + img.toJPEG(85).toString('base64')
+  } catch { return null }
+}
+
+/** 예전 버전에서 파일로 저장한 직접 넣은 표지를 DB 안으로 옮김 (시작 시 1회, 대상 없으면 즉시 끝) */
+export function migrateCoverFiles(): void {
+  try { inlineLocalCovers(coverFileToDataUrl) } catch (e) { console.error('[표지 이전 실패]', e) }
 }
 
 export function registerIpcHandlers(ipcMain: IpcMain): void {
@@ -85,15 +102,6 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
     return filePath
   })
 
-  ipcMain.handle('image:copyLocal', async (_, srcPath: string) => {
-    const coversDir = getCoversDir()
-    const ext = extname(srcPath) || '.jpg'
-    const name = `cover_${Date.now()}${ext}`
-    const destPath = join(coversDir, name)
-    copyFileSync(srcPath, destPath)
-    return destPath
-  })
-
   ipcMain.handle('db:backup', async () => {
     const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
     if (!win) return { success: false }
@@ -103,6 +111,7 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
       filters: [{ name: 'Database', extensions: ['db'] }]
     })
     if (result.canceled || !result.filePath) return { success: false }
+    flushSave() // 아직 파일에 안 쓴 최근 변경까지 포함해서 복사
     copyFileSync(getDbPath(), result.filePath)
     return { success: true, path: result.filePath }
   })
@@ -122,22 +131,31 @@ export function registerIpcHandlers(ipcMain: IpcMain): void {
   // ── 동기화 핸들러 ──────────────────────────────────────────────────
   ipcMain.handle('sync:getDirtyItems', () => getDirtyItems())
   ipcMain.handle('sync:getDirtyQuotes', () => getDirtyQuotes())
-  ipcMain.handle('sync:markItemSynced', (_, localId: number, serverId: number) =>
-    markItemSynced(localId, serverId))
-  ipcMain.handle('sync:markQuoteSynced', (_, localId: number, serverId: number) =>
-    markQuoteSynced(localId, serverId))
-  ipcMain.handle('sync:hardDeleteItem', (_, localId: number) => hardDeleteItem(localId))
-  ipcMain.handle('sync:hardDeleteQuote', (_, localId: number) => hardDeleteQuote(localId))
+  ipcMain.handle('sync:markItemSynced', (_, localId: number, serverId: number, seenUpdatedAt?: string) =>
+    markItemSynced(localId, serverId, seenUpdatedAt))
+  ipcMain.handle('sync:markQuoteSynced', (_, localId: number, serverId: number, seenUpdatedAt?: string) =>
+    markQuoteSynced(localId, serverId, seenUpdatedAt))
+  ipcMain.handle('sync:getCoverPushItems', () => getCoverPushItems())
+  ipcMain.handle('sync:markCoverPushed', (_, localId: number) => markCoverPushed(localId))
   ipcMain.handle('sync:upsertItemFromCloud', (_, cloudItem: Parameters<typeof upsertItemFromCloud>[0]) =>
     upsertItemFromCloud(cloudItem))
   ipcMain.handle('sync:upsertQuoteFromCloud', (_, cloudQuote: Parameters<typeof upsertQuoteFromCloud>[0]) =>
     upsertQuoteFromCloud(cloudQuote))
+  // 클라우드에서 받은 여러 행을 한 번의 호출로 반영 (행마다 IPC 왕복하지 않음)
+  ipcMain.handle('sync:upsertItemsFromCloud', (_, rows: Parameters<typeof upsertItemFromCloud>[0][]) => {
+    for (const row of rows ?? []) upsertItemFromCloud(row)
+  })
+  ipcMain.handle('sync:upsertQuotesFromCloud', (_, rows: Parameters<typeof upsertQuoteFromCloud>[0][]) => {
+    for (const row of rows ?? []) upsertQuoteFromCloud(row)
+  })
   // last_sync_at은 계정별로 분리 저장 (계정 전환 시 새 계정의 클라우드 데이터를 전부 pull)
-  ipcMain.handle('sync:getLastSyncAt', () => getSetting('last_sync_at_' + (getCurrentUserId() ?? 'anon')))
-  ipcMain.handle('sync:setLastSyncAt', (_, ts: string) => setSetting('last_sync_at_' + (getCurrentUserId() ?? 'anon'), ts))
-  ipcMain.handle('sync:getItemById', (_, id: number) => getItemById(id))
-  ipcMain.handle('sync:clearItemDirty', (_, localId: number) => clearItemDirty(localId))
-  ipcMain.handle('sync:clearQuoteDirty', (_, localId: number) => clearQuoteDirty(localId))
+  // userId를 받으면 그 계정 키로 읽고 씀 (동기화 도중 계정이 바뀌어도 다른 계정의 기준 시각을 건드리지 않게)
+  ipcMain.handle('sync:getLastSyncAt', (_, userId?: string) =>
+    getSetting('last_sync_at_' + (userId ?? getCurrentUserId() ?? 'anon')))
+  ipcMain.handle('sync:setLastSyncAt', (_, ts: string, userId?: string) =>
+    setSetting('last_sync_at_' + (userId ?? getCurrentUserId() ?? 'anon'), ts))
+  ipcMain.handle('sync:clearItemDirty', (_, localId: number, seenUpdatedAt?: string) => clearItemDirty(localId, seenUpdatedAt))
+  ipcMain.handle('sync:clearQuoteDirty', (_, localId: number, seenUpdatedAt?: string) => clearQuoteDirty(localId, seenUpdatedAt))
   ipcMain.handle('auth:setCurrentUser', (_, userId: string | null) => setCurrentUserId(userId))
   ipcMain.handle('app:getVersion', () => app.getVersion())
 

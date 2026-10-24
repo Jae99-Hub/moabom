@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { useStore } from './store/useStore'
+import { useStorePick } from './store/useStore'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import FilterBar from './components/FilterBar'
@@ -17,7 +17,7 @@ import TrashModal from './components/TrashModal'
 import OnboardingTour from './components/OnboardingTour'
 
 export default function App() {
-  const { fetchAll, theme, openTour } = useStore()
+  const { fetchAll, theme, openTour } = useStorePick('fetchAll', 'theme', 'openTour')
 
   // 테마는 변경될 때마다 즉시 반영
   useEffect(() => {

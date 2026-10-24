@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
+import { coverSrc } from '../utils/cover'
 import { resolveConflict, SyncConflict, mergeItemFields } from '../api/syncService'
 
 const TYPE_LABEL: Record<string, string> = { book: '📚 책', movie: '🎬 영화', drama: '📺 드라마', documentary: '🎞️ 다큐' }
@@ -26,7 +27,7 @@ function ItemSide({
       {!!item.cover_path && (
         <img
           className="conflict-side-cover"
-          src={String(item.cover_path).startsWith('http') || String(item.cover_path).startsWith('data:') ? String(item.cover_path) : `file://${String(item.cover_path)}`}
+          src={coverSrc(String(item.cover_path)) ?? undefined}
           alt=""
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
@@ -154,7 +155,8 @@ function ConflictCard({
 }
 
 export default function SyncConflictModal() {
-  const { syncConflicts, syncAutoMerged, removeSyncConflict, clearSyncResult, fetchAll, requestSync } = useStore()
+  const { syncConflicts, syncAutoMerged, removeSyncConflict, clearSyncResult, fetchAll, requestSync } =
+    useStorePick('syncConflicts', 'syncAutoMerged', 'removeSyncConflict', 'clearSyncResult', 'fetchAll', 'requestSync')
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [bulkResolving, setBulkResolving] = useState(false)
 

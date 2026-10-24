@@ -62,7 +62,7 @@ async function fetchBooks(q: string, apiKey?: string): Promise<GoogleBookResult[
     throw new Error('검색 응답이 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')
   }
   if (res.status === 429) throw new Error('도서 검색 요청이 잠시 많아요. 1~2분 뒤 다시 시도해 주세요.')
-  if (!res.ok) throw new Error(`Google Books API 오류: ${res.status}`)
+  if (!res.ok) throw new Error(`도서 검색 서버에 문제가 있어요. 잠시 뒤 다시 시도해 주세요. (${res.status})`)
   const data = await res.json() as { items?: unknown[] }
   return ((data.items ?? []) as Parameters<typeof mapVolume>[0][]).slice(0, 8).map(mapVolume)
 }

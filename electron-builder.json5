@@ -17,8 +17,12 @@
     buildResources: "build"
   },
   files: [
-    "out/**/*"
+    "out/**/*",
+    // sql.js는 sql-wasm.js만 쓴다 (wasm은 extraResources로 따로 복사) — 나머지 빌드 변형 약 19MB 제외
+    "!node_modules/sql.js/dist/{sql-asm*,worker.*,*-debug*,sql-wasm-browser*,sql-wasm.wasm}"
   ],
+  // 한국어·영어 외 Chromium 언어팩 제외 (설치 파일 약 6MB 감소)
+  electronLanguages: ["ko", "en-US"],
   extraResources: [
     {
       from: "node_modules/sql.js/dist/sql-wasm.wasm",

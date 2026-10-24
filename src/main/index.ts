@@ -1,10 +1,21 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, session, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import * as http from 'http'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
-import { initDatabase, runAutoBackup } from './database'
-import { registerIpcHandlers } from './ipc'
+import { initDatabase, runAutoBackup, flushSave } from './database'
+import { registerIpcHandlers, migrateCoverFiles } from './ipc'
+
+// 테스트용 데이터 폴더 분리 (MOABOM_USER_DATA 지정 시에만) — 실제 데이터와 섞이지 않게
+if (process.env.MOABOM_USER_DATA) app.setPath('userData', process.env.MOABOM_USER_DATA)
+
+/** http(s) 주소만 시스템 브라우저로 연다 (file:, 다른 앱 프로토콜 등은 무시) */
+function openExternalSafe(url: string): void {
+  try {
+    const { protocol } = new URL(url)
+    if (protocol === 'https:' || protocol === 'http:') void shell.openExternal(url)
+  } catch { /* 잘못된 주소는 무시 */ }
+}
 
 // ── 자동 로컬 백업 스케줄 ─────────────────────────────────────────
 // 시작 5초 뒤 1회 + 30분마다. runAutoBackup(false)는 데이터가 바뀐 경우에만 기록.
@@ -18,10 +29,12 @@ function setupAutoBackup(): void {
   // preventDefault를 쓰지 않고(비동기 대기 없음) try/catch + 1회 가드 → 백업이 실패/지연돼도
   // 종료가 막히거나 무한 대기하지 않는다. 변경 없으면 지문 게이트로 즉시 skip.
   app.on('before-quit', () => {
+    try { flushSave() } catch { /* ignore */ } // 묶어 두던 최근 변경을 파일에 기록
     if (didQuitBackup) return
     didQuitBackup = true
     try { runAutoBackup(false) } catch { /* 백업 실패해도 정상 종료 */ }
   })
+  app.on('will-quit', () => { try { flushSave() } catch { /* ignore */ } })
 }
 
 // ── 자동 업데이트 설정 ────────────────────────────────────────────
@@ -70,6 +83,7 @@ function setupAutoUpdater(win: BrowserWindow) {
 
   // 렌더러에서 설치 요청
   ipcMain.handle('updater:install', () => {
+    try { flushSave() } catch { /* ignore */ } // 설치 프로그램이 앱을 강제 종료하므로 먼저 기록
     autoUpdater.quitAndInstall()
   })
 
@@ -123,7 +137,10 @@ if (s && s.includes('code=')) {
 }
 
 // ── Custom protocol (moabom://) for Google OAuth callback ─────────
-if (process.defaultApp) {
+// 테스트 실행(MOABOM_USER_DATA)은 설치된 앱의 로그인 연결을 가로채지 않도록 등록하지 않음
+if (process.env.MOABOM_USER_DATA) {
+  // no-op
+} else if (process.defaultApp) {
   if (process.argv.length >= 2) {
     app.setAsDefaultProtocolClient('moabom', process.execPath, [process.argv[1]])
   }
@@ -180,9 +197,17 @@ function createWindow(): void {
     mainWindow!.show()
   })
 
+  // Windows 종료·로그오프 시에는 before-quit이 오지 않을 수 있어 여기서도 기록
+  mainWindow.on('session-end', () => { try { flushSave() } catch { /* ignore */ } })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalSafe(details.url)
     return { action: 'deny' }
+  })
+
+  // 창 안에서 다른 페이지로 이동 차단 (예: 파일을 창에 끌어다 놓으면 앱 화면이 그 파일로 바뀌던 문제)
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (url !== mainWindow?.webContents.getURL()) e.preventDefault()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -210,10 +235,14 @@ app.whenReady().then(async () => {
 
   // IPC: 시스템 브라우저로 OAuth URL 열기
   ipcMain.handle('auth:openExternal', async (_event, url: string) => {
-    await shell.openExternal(url)
+    openExternalSafe(url)
   })
 
+  // 카메라·마이크·위치 등 권한 요청은 모두 거절 (앱에서 쓰지 않음)
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+
   try { await initDatabase() } catch (e) { console.error('[DB init 실패]', e) } // 최악에도 창은 띄운다
+  migrateCoverFiles()
   registerIpcHandlers(ipcMain)
   setupAutoBackup()
 

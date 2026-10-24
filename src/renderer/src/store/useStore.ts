@@ -1,6 +1,6 @@
-import React from 'react'
 import { create } from 'zustand'
-import { Item, ItemFormData, FilterState, Quote, QuoteSearchResult, ItemType, ItemStatus } from '../types'
+import { useShallow } from 'zustand/react/shallow'
+import { Item, ItemFormData, FilterState, QuoteSearchResult } from '../types'
 import type { SyncStatus, SyncConflict } from '../api/syncService'
 
 interface AppState {
@@ -73,6 +73,8 @@ function scheduleSync(triggerSync: () => Promise<void>) {
   _syncTimer = setTimeout(() => { triggerSync() }, 3000)
 }
 
+const koCollator = new Intl.Collator('ko')
+
 function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<number>): Item[] {
   let result = [...list]
 
@@ -107,10 +109,10 @@ function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<num
 
   switch (filters.sort) {
     case 'date_desc':
-      result.sort((a, b) => b.created_at.localeCompare(a.created_at))
+      result.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
       break
     case 'date_asc':
-      result.sort((a, b) => a.created_at.localeCompare(b.created_at))
+      result.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
       break
     case 'rating_desc':
       result.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1))
@@ -119,11 +121,32 @@ function applyFilters(list: Item[], filters: FilterState, quoteItemIds?: Set<num
       result.sort((a, b) => (a.rating ?? 99) - (b.rating ?? 99))
       break
     case 'title_asc':
-      result.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+      result.sort((a, b) => koCollator.compare(a.title, b.title))
       break
   }
 
   return result
+}
+
+/** 새로 받은 목록에서 내용이 그대로인 항목은 이전 객체를 재사용 → 바뀐 카드만 다시 그려짐 */
+function reuseUnchanged(prev: Item[], next: Item[]): Item[] {
+  const byId = new Map(prev.map((m) => [m.id, m]))
+  let same = prev.length === next.length
+  const merged = next.map((n, i) => {
+    const o = byId.get(n.id)
+    if (o && sameFields(o, n)) {
+      if (prev[i] !== o) same = false
+      return o
+    }
+    same = false
+    return n
+  })
+  return same ? prev : merged
+}
+
+function sameFields(a: Item, b: Item): boolean {
+  const keys = Object.keys(b) as (keyof Item)[]
+  return keys.length === Object.keys(a).length && keys.every((k) => a[k] === b[k])
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -158,7 +181,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchAll: async () => {
     const list = await window.api.items.getAll()
-    set({ itemList: list })
+    const prev = get().itemList
+    const next = reuseUnchanged(prev, list)
+    if (next !== prev) set({ itemList: next })
   },
 
   addItem: async (data) => {
@@ -210,6 +235,7 @@ export const useStore = create<AppState>((set, get) => ({
       return
     }
     const results = await window.api.quotes.search(query)
+    if (get().filters.search !== query) return // 그사이 검색어가 바뀌었으면 늦게 온 결과는 버림
     set({ quoteSearchResults: results, quoteSearchQuery: query })
   },
 
@@ -280,32 +306,31 @@ export const useStore = create<AppState>((set, get) => ({
   }
 }))
 
-export function useFilteredItems(): Item[] {
-  const { itemList, filters, quoteSearchResults } = useStore()
-  const quoteItemIds = React.useMemo(
-    () => quoteSearchResults.length > 0
-      ? new Set(quoteSearchResults.map((q) => q.item_id))
-      : undefined,
-    [quoteSearchResults]
-  )
-  return React.useMemo(
-    () => applyFilters(itemList, filters, quoteItemIds),
-    [itemList, filters, quoteItemIds]
-  )
+/** 필요한 값만 구독 — 다른 상태가 바뀔 때는 다시 그리지 않음.
+ *  예: const { theme, toggleTheme } = useStorePick('theme', 'toggleTheme')
+ *  (예전엔 useStore()로 전체를 구독해 검색어 한 글자에도 모든 카드가 다시 그려졌음) */
+export function useStorePick<K extends keyof AppState>(...keys: K[]): Pick<AppState, K> {
+  return useStore(useShallow((s: AppState) => {
+    const picked = {} as Pick<AppState, K>
+    for (const k of keys) picked[k] = s[k]
+    return picked
+  }))
 }
 
-export function useAllGenres(): string[] {
-  const { itemList } = useStore()
-  return React.useMemo(() => {
-    const genreSet = new Set<string>()
-    itemList.forEach((item) => {
-      if (item.genre) {
-        item.genre.split(',').forEach((g) => {
-          const trimmed = g.trim()
-          if (trimmed) genreSet.add(trimmed)
-        })
-      }
-    })
-    return Array.from(genreSet).sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [itemList])
+// 필터 결과는 한 곳에서만 계산해 공유 (목록·선택바·상세창이 각자 같은 정렬을 반복하던 것)
+let filteredCache: { list: Item[]; filters: FilterState; quotes: QuoteSearchResult[]; result: Item[] } | null = null
+
+export function selectFilteredItems(s: Pick<AppState, 'itemList' | 'filters' | 'quoteSearchResults'>): Item[] {
+  const c = filteredCache
+  if (c && c.list === s.itemList && c.filters === s.filters && c.quotes === s.quoteSearchResults) return c.result
+  const quoteItemIds = s.quoteSearchResults.length > 0
+    ? new Set(s.quoteSearchResults.map((q) => q.item_id))
+    : undefined
+  const result = applyFilters(s.itemList, s.filters, quoteItemIds)
+  filteredCache = { list: s.itemList, filters: s.filters, quotes: s.quoteSearchResults, result }
+  return result
+}
+
+export function useFilteredItems(): Item[] {
+  return useStore(selectFilteredItems)
 }

@@ -6,6 +6,8 @@
   --bg-active: #28305a;
   --bg-overlay: rgba(0, 0, 0, 0.7);
   --bg-input: #1c2235;
+  --bg-tertiary: #232a40;
+  --surface-2: rgba(255, 255, 255, 0.04);
 
   --text-primary: #eef0f8;
   --text-secondary: #8890b0;
@@ -49,6 +51,8 @@
   --bg-active: #dde3f5;
   --bg-overlay: rgba(0, 0, 0, 0.4);
   --bg-input: #f5f6fa;
+  --bg-tertiary: #e9ecf4;
+  --surface-2: #f5f6fa;
 
   --text-primary: #1a1d2e;
   --text-secondary: #4a4f6a;
@@ -699,9 +703,12 @@ body {
   cursor: pointer;
   background: var(--bg-card);
   border: 2px solid transparent;
-  transition: all 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
   box-shadow: var(--shadow-card);
   position: relative;
+  /* 화면 밖 카드는 그리기를 건너뜀 (작품이 많을 때 스크롤·첫 화면이 가벼워짐) */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
 }
 .media-card:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4); border-color: var(--border); }
 .media-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
@@ -807,7 +814,6 @@ body {
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 99px;
-  backdrop-filter: blur(8px);
 }
 
 .media-card-type {
@@ -818,7 +824,6 @@ body {
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 4px;
-  backdrop-filter: blur(8px);
 }
 
 .media-card-genre {
@@ -860,6 +865,7 @@ body {
 .type-book { background: rgba(59,130,246,0.85); color: #fff; }
 .type-movie { background: rgba(139,92,246,0.85); color: #fff; }
 .type-drama { background: rgba(236,72,153,0.85); color: #fff; }
+.type-documentary { background: rgba(180,83,9,0.9); color: #fff; }
 
 /* Detail Panel */
 .detail-panel {
@@ -1101,7 +1107,8 @@ body {
   justify-content: center;
   gap: 6px;
 }
-.btn-secondary:hover { background: var(--bg-card); color: var(--text-primary); border-color: var(--text-muted); }
+.btn-secondary:hover:not(:disabled) { background: var(--bg-card); color: var(--text-primary); border-color: var(--text-muted); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-danger {
   height: 36px;
@@ -2503,12 +2510,17 @@ body {
   border-radius: 2px;
 }
 
-/* 사이드바 하단 푸터 */
+/* 사이드바 하단 푸터 — 장르가 많아 목록이 길어져도 휴지통·설정 버튼이 항상 보이게 아래에 고정 */
 .sidebar-footer {
   margin-top: auto;
   padding: 8px 0;
   border-top: 1px solid var(--border);
   display: block;
+  position: sticky;
+  bottom: -12px; /* .sidebar의 아래 여백(12px)까지 덮어 목록이 비치지 않게 */
+  padding-bottom: 20px;
+  background: var(--bg-secondary);
+  z-index: 1;
 }
 .sidebar-settings-btn { color: var(--text-secondary); }
 .sidebar-settings-btn:hover { color: var(--text-primary); }

@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 
 export default function Header() {
-  const { filters, setFilter, theme, toggleTheme, openAddModal, openSettings, openStats, searchQuotes, clearQuoteSearch, toggleSidebar } = useStore()
+  const { filters, setFilter, theme, toggleTheme, openAddModal, openSettings, openStats, searchQuotes, clearQuoteSearch, toggleSidebar } =
+    useStorePick('filters', 'setFilter', 'theme', 'toggleTheme', 'openAddModal', 'openSettings', 'openStats', 'searchQuotes', 'clearQuoteSearch', 'toggleSidebar')
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const mobileInputRef = useRef<HTMLInputElement>(null)
+  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isQuoteMode = filters.searchMode === 'quote'
 
@@ -14,10 +16,14 @@ export default function Header() {
     }
   }, [mobileSearchOpen])
 
+  useEffect(() => () => { if (quoteTimer.current) clearTimeout(quoteTimer.current) }, [])
+
   const handleSearchChange = (val: string) => {
     setFilter('search', val)
-    // 제목 모드에서도 명언 검색 병행 (결과를 필터에 활용)
-    if (val.trim()) searchQuotes(val)
+    // 제목 모드에서도 명언 검색 병행 (결과를 필터에 활용).
+    // 타이핑이 잠깐 멈췄을 때 한 번만 조회 — 글자마다 DB를 조회하고 화면을 두 번씩 다시 그리던 것
+    if (quoteTimer.current) clearTimeout(quoteTimer.current)
+    if (val.trim()) quoteTimer.current = setTimeout(() => { void searchQuotes(val) }, 250)
     else clearQuoteSearch()
   }
 

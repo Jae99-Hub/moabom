@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 import { TrashItem } from '../types'
+import { coverSrc } from '../utils/cover'
 
 const TYPE_LABEL: Record<string, string> = { book: '📚 도서', movie: '🎬 영화', drama: '📺 드라마', documentary: '🎞️ 다큐' }
 const RETENTION_DAYS = 15
@@ -24,7 +25,9 @@ async function cloudPurge(item: TrashItem): Promise<void> {
   try {
     const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
     if (!isSupabaseConfigured || !supabase) return
-    const { data: { user } } = await supabase.auth.getUser()
+    // getSession은 저장된 세션을 읽어 항목마다 서버에 묻지 않음 (휴지통 비우기 시 항목 수만큼 왕복하던 것)
+    const { data: { session } } = await supabase.auth.getSession()
+    const user = session?.user
     if (!user) return
     await supabase.from('quotes').delete().eq('user_id', user.id).eq('item_id', item.server_id)
     await supabase.from('items').delete().eq('id', item.server_id).eq('user_id', user.id)
@@ -32,7 +35,7 @@ async function cloudPurge(item: TrashItem): Promise<void> {
 }
 
 export default function TrashModal() {
-  const { isTrashOpen, closeTrash, fetchAll, triggerSync } = useStore()
+  const { isTrashOpen, closeTrash, fetchAll, triggerSync } = useStorePick('isTrashOpen', 'closeTrash', 'fetchAll', 'triggerSync')
   const [items, setItems] = useState<TrashItem[]>([])
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
@@ -136,7 +139,7 @@ export default function TrashModal() {
                   >
                     {item.cover_path ? (
                       <img
-                        src={item.cover_path.startsWith('http') || item.cover_path.startsWith('data:') ? item.cover_path : `file://${item.cover_path}`}
+                        src={coverSrc(item.cover_path, 'small') ?? undefined}
                         alt=""
                         style={{ width: 36, height: 52, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

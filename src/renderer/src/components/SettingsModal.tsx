@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 import { OtherScopeInfo, AutoBackupInfo } from '../types'
 
 const isWebEnv =
@@ -23,7 +23,8 @@ function fmtWhen(iso: string): string {
 }
 
 export default function SettingsModal() {
-  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll } = useStore()
+  const { isSettingsOpen, closeSettings, syncStatus, setSyncStatus, triggerSync, openTour, fetchAll } =
+    useStorePick('isSettingsOpen', 'closeSettings', 'syncStatus', 'setSyncStatus', 'triggerSync', 'openTour', 'fetchAll')
 
   const [activeTab, setActiveTab] = useState<Tab>('account')
 
@@ -35,7 +36,6 @@ export default function SettingsModal() {
   const [electronEmail, setElectronEmail] = useState('')
   const [electronName, setElectronName]   = useState('')
   const [signingIn, setSigningIn]         = useState(false)
-  const callbackRegistered = useRef(false)
 
   // 업데이트
   const [updateState, setUpdateState]     = useState<UpdateCheckState>('idle')
@@ -110,34 +110,13 @@ export default function SettingsModal() {
     return () => offs.forEach((off) => off())
   }, [isSettingsOpen])
 
-  // ── 마운트 시 한 번: OAuth 콜백 리스너 ─────────────────────────────
-  // 코드 교환만 담당. renderApp / setCurrentUser / sync는 main.tsx onAuthStateChange가 처리.
+  // ── 로그인 실패 시 '대기 중...' 해제 ──────────────────────────────
+  // 콜백 처리(토큰 교환)는 main.tsx 한 곳에서만 한다. 예전엔 여기서도 콜백을 등록해
+  // main.tsx 것을 덮어쓰는 바람에 로그인 실패 안내가 뜨지 않았음.
   useEffect(() => {
-    if (!isElectron || !window.authBridge || callbackRegistered.current) return
-    callbackRegistered.current = true
-    window.authBridge.onCallback(async (callbackUrl: string) => {
-      try {
-        const { supabase, isSupabaseConfigured } = await import('../api/supabaseClient')
-        if (!isSupabaseConfigured || !supabase) return
-        const parsed = new URL(callbackUrl.replace('moabom://', 'https://dummy.local/'))
-        const access_token = parsed.searchParams.get('access_token')
-        const refresh_token = parsed.searchParams.get('refresh_token')
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-          if (error) { setSigningIn(false); return }
-        } else {
-          const code = parsed.searchParams.get('code')
-          if (!code) { setSigningIn(false); return }
-          const { error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) { setSigningIn(false); return }
-        }
-        // 성공: onAuthStateChange SIGNED_IN이 renderApp()을 처리하므로
-        // 이 컴포넌트는 곧 언마운트됨 — 여기서 state 업데이트 불필요
-      } catch {
-        setSigningIn(false)
-      }
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const onFailed = () => setSigningIn(false)
+    window.addEventListener('moabom:auth-failed', onFailed)
+    return () => window.removeEventListener('moabom:auth-failed', onFailed)
   }, [])
 
   // ── 핸들러 ──────────────────────────────────────────────────────────

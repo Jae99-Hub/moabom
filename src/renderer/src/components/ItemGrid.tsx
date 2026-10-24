@@ -1,14 +1,15 @@
-import React, { useState, useCallback } from 'react'
-import { useStore, useFilteredItems } from '../store/useStore'
+import React, { useState, useCallback, useEffect } from 'react'
+import { useStore, useStorePick, useFilteredItems } from '../store/useStore'
 import ItemCard from './ItemCard'
 import { CardContextMenu } from './CardContextMenu'
 import { Item, ItemType, ItemStatus, QuoteSearchResult } from '../types'
+import { coverSrc } from '../utils/cover'
 
 const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
 const STATUS_LABEL: Record<ItemStatus, string> = { want: '예정', reading: '진행', done: '완료', dropped: '중단' }
 
 function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query: string }) {
-  const { itemList, selectItem } = useStore()
+  const { itemList, selectItem } = useStorePick('itemList', 'selectItem')
 
   if (results.length === 0) {
     return (
@@ -27,10 +28,11 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
       <div className="grid-count">"{query}" 검색 결과 {results.length}건</div>
       {results.map((r) => {
         const item = itemList.find((i) => i.id === r.item_id)
+        const resultCover = coverSrc(r.cover_path, 'small')
         return (
           <div key={r.id} className="quote-result-card" onClick={() => item && selectItem(item.id)}>
-            {r.cover_path ? (
-              <img className="quote-result-cover" src={(r.cover_path.startsWith('http') || r.cover_path.startsWith('data:')) ? r.cover_path : `file://${r.cover_path}`} alt="" />
+            {resultCover ? (
+              <img className="quote-result-cover" src={resultCover} alt="" loading="lazy" decoding="async" />
             ) : (
               <div className="quote-result-cover" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -54,15 +56,16 @@ function QuoteResults({ results, query }: { results: QuoteSearchResult[]; query:
   )
 }
 
-function ItemRow({ item }: { item: Item }) {
-  const { selectedId, selectItem, selectionMode, checkedItems, toggleCheckedItem } = useStore()
-  const isSelected = selectedId === item.id
-  const isChecked = checkedItems.includes(item.id)
+const ItemRow = React.memo(function ItemRow({ item }: { item: Item }) {
+  const isSelected = useStore((s) => s.selectedId === item.id)
+  const isChecked = useStore((s) => s.checkedItems.includes(item.id))
+  const selectionMode = useStore((s) => s.selectionMode)
+  const { selectItem, toggleCheckedItem } = useStore.getState()
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
-  const coverSrc = item.cover_path
-    ? (item.cover_path.startsWith('http') || item.cover_path.startsWith('data:')) ? item.cover_path : `file://${item.cover_path}`
-    : null
+  const coverUrl = coverSrc(item.cover_path, 'small')
+  const [coverFailed, setCoverFailed] = useState(false)
+  useEffect(() => setCoverFailed(false), [item.cover_path])
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (selectionMode) return
@@ -95,8 +98,8 @@ function ItemRow({ item }: { item: Item }) {
         </span>
       )}
       <div className="list-row-cover">
-        {coverSrc
-          ? <img src={coverSrc} alt={item.title} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+        {coverUrl && !coverFailed
+          ? <img src={coverUrl} alt={item.title} loading="lazy" decoding="async" onError={() => setCoverFailed(true)} />
           : <div className="list-row-cover-placeholder">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 {item.item_type === 'book'
@@ -108,7 +111,7 @@ function ItemRow({ item }: { item: Item }) {
       </div>
 
       <div className="list-row-title">
-        <span className="list-row-title-text">{item.title}</span>
+        <span className="list-row-title-text" title={item.title}>{item.title}</span>
         {item.original_title && item.original_title !== item.title && (
           <span className="list-row-original">{item.original_title}</span>
         )}
@@ -144,10 +147,11 @@ function ItemRow({ item }: { item: Item }) {
       {menu && <CardContextMenu item={item} x={menu.x} y={menu.y} onClose={closeMenu} />}
     </div>
   )
-}
+})
 
 export default function ItemGrid() {
-  const { filters, quoteSearchResults, quoteSearchQuery, viewMode, itemList, selectionMode } = useStore()
+  const { filters, quoteSearchResults, quoteSearchQuery, viewMode, selectionMode } =
+    useStorePick('filters', 'quoteSearchResults', 'quoteSearchQuery', 'viewMode', 'selectionMode')
   const filtered = useFilteredItems()
 
   if (filters.searchMode === 'quote' && filters.search.trim()) {

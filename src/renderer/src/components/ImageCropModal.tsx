@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
+import { coverSrc } from '../utils/cover'
 
 interface CropArea {
   x: number
@@ -14,21 +15,22 @@ interface Props {
 }
 
 export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
+  const downOnBackdrop = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [crop, setCrop] = useState<CropArea | null>(null)
   const [dragging, setDragging] = useState(false)
   const [startPos, setStartPos] = useState({ x: 0, y: 0 })
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0, naturalW: 0, naturalH: 0 })
 
-  const src = (imagePath.startsWith('http') || imagePath.startsWith('data:')) ? imagePath : `file://${imagePath}`
+  const src = coverSrc(imagePath) ?? ''
 
   const onImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
     const maxW = 520
+    const maxH = 400 // .crop-image의 max-height와 같게 — 세로로 긴 표지가 찌그러지고 선택 영역이 어긋나던 문제
     const ratio = img.naturalWidth / img.naturalHeight
-    const displayW = Math.min(maxW, img.naturalWidth)
+    const displayW = Math.min(maxW, img.naturalWidth, maxH * ratio)
     const displayH = displayW / ratio
     setDisplaySize({ w: displayW, h: displayH, naturalW: img.naturalWidth, naturalH: img.naturalHeight })
     // Default crop: 2:3 centered
@@ -109,8 +111,8 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
     const scaleY = displaySize.naturalH / displaySize.h
     const rawW = crop.w * scaleX
     const rawH = crop.h * scaleY
-    // 최대 800px 제한으로 메모리 절약
-    const MAX_PX = 800
+    // 표지는 DB에 이미지 데이터로 저장되므로 너비 480px로 줄여 용량을 작게 (화면 표시에는 충분)
+    const MAX_PX = 480
     const downScale = rawW > MAX_PX ? MAX_PX / rawW : 1
     canvas.width = Math.round(rawW * downScale)
     canvas.height = Math.round(rawH * downScale)
@@ -124,7 +126,12 @@ export default function ImageCropModal({ imagePath, onDone, onCancel }: Props) {
   }
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onCancel()}>
+    <div
+      className="modal-overlay"
+      // 배경에서 누르고 배경에서 뗐을 때만 닫음 (선택 영역을 창 밖까지 끌었다 놓으면 자르기가 취소되던 문제)
+      onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
+      onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) onCancel() }}
+    >
       <div className="modal" style={{ width: 580 }}>
         <div className="modal-header">
           <span className="modal-title">이미지 자르기</span>

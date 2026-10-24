@@ -31,8 +31,7 @@ const api = {
   image: {
     pick: () => ipcRenderer.invoke('image:pick'),
     saveCropped: (base64Data: string, fileName: string) =>
-      ipcRenderer.invoke('image:saveCropped', base64Data, fileName),
-    copyLocal: (srcPath: string) => ipcRenderer.invoke('image:copyLocal', srcPath)
+      ipcRenderer.invoke('image:saveCropped', base64Data, fileName)
   },
   db: {
     backup: () => ipcRenderer.invoke('db:backup'),
@@ -41,21 +40,22 @@ const api = {
   sync: {
     getDirtyItems: () => ipcRenderer.invoke('sync:getDirtyItems'),
     getDirtyQuotes: () => ipcRenderer.invoke('sync:getDirtyQuotes'),
-    markItemSynced: (localId: number, serverId: number) =>
-      ipcRenderer.invoke('sync:markItemSynced', localId, serverId),
-    markQuoteSynced: (localId: number, serverId: number) =>
-      ipcRenderer.invoke('sync:markQuoteSynced', localId, serverId),
-    hardDeleteItem: (localId: number) => ipcRenderer.invoke('sync:hardDeleteItem', localId),
-    hardDeleteQuote: (localId: number) => ipcRenderer.invoke('sync:hardDeleteQuote', localId),
+    markItemSynced: (localId: number, serverId: number, seenUpdatedAt?: string) =>
+      ipcRenderer.invoke('sync:markItemSynced', localId, serverId, seenUpdatedAt),
+    markQuoteSynced: (localId: number, serverId: number, seenUpdatedAt?: string) =>
+      ipcRenderer.invoke('sync:markQuoteSynced', localId, serverId, seenUpdatedAt),
+    getCoverPushItems: () => ipcRenderer.invoke('sync:getCoverPushItems'),
+    markCoverPushed: (localId: number) => ipcRenderer.invoke('sync:markCoverPushed', localId),
     upsertItemFromCloud: (cloudItem: unknown) =>
       ipcRenderer.invoke('sync:upsertItemFromCloud', cloudItem),
     upsertQuoteFromCloud: (cloudQuote: unknown) =>
       ipcRenderer.invoke('sync:upsertQuoteFromCloud', cloudQuote),
-    getLastSyncAt: () => ipcRenderer.invoke('sync:getLastSyncAt'),
-    setLastSyncAt: (ts: string) => ipcRenderer.invoke('sync:setLastSyncAt', ts),
-    getItemById: (id: number) => ipcRenderer.invoke('sync:getItemById', id),
-    clearItemDirty: (localId: number) => ipcRenderer.invoke('sync:clearItemDirty', localId),
-    clearQuoteDirty: (localId: number) => ipcRenderer.invoke('sync:clearQuoteDirty', localId),
+    upsertItemsFromCloud: (rows: unknown[]) => ipcRenderer.invoke('sync:upsertItemsFromCloud', rows),
+    upsertQuotesFromCloud: (rows: unknown[]) => ipcRenderer.invoke('sync:upsertQuotesFromCloud', rows),
+    getLastSyncAt: (userId?: string) => ipcRenderer.invoke('sync:getLastSyncAt', userId),
+    setLastSyncAt: (ts: string, userId?: string) => ipcRenderer.invoke('sync:setLastSyncAt', ts, userId),
+    clearItemDirty: (localId: number, seenUpdatedAt?: string) => ipcRenderer.invoke('sync:clearItemDirty', localId, seenUpdatedAt),
+    clearQuoteDirty: (localId: number, seenUpdatedAt?: string) => ipcRenderer.invoke('sync:clearQuoteDirty', localId, seenUpdatedAt),
   },
   trash: {
     getAll: () => ipcRenderer.invoke('trash:getAll'),

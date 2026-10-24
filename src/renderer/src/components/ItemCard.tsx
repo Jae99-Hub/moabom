@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Item, ItemType, ItemStatus } from '../types'
 import { useStore } from '../store/useStore'
 import { CardContextMenu } from './CardContextMenu'
+import { coverSrc } from '../utils/cover'
 
 
 const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
@@ -19,11 +20,16 @@ function getProgress(item: Item): number | null {
 }
 
 
-export default function ItemCard({ item }: { item: Item }) {
-  const { selectedId, selectItem, selectionMode, checkedItems, toggleCheckedItem } = useStore()
-  const isSelected = selectedId === item.id
-  const isChecked = checkedItems.includes(item.id)
+function ItemCard({ item }: { item: Item }) {
+  // 카드마다 자기와 관련된 값만 구독 → 다른 카드 선택·검색어 입력 때 이 카드는 다시 그리지 않음
+  const isSelected = useStore((s) => s.selectedId === item.id)
+  const isChecked = useStore((s) => s.checkedItems.includes(item.id))
+  const selectionMode = useStore((s) => s.selectionMode)
+  const { selectItem, toggleCheckedItem } = useStore.getState()
   const progress = getProgress(item)
+  const coverUrl = coverSrc(item.cover_path, 'card')
+  const [coverFailed, setCoverFailed] = useState(false)
+  useEffect(() => setCoverFailed(false), [item.cover_path])
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -101,12 +107,14 @@ export default function ItemCard({ item }: { item: Item }) {
           </span>
         </div>
       )}
-      {item.cover_path ? (
+      {coverUrl && !coverFailed ? (
         <img
           className="media-card-poster"
-          src={item.cover_path.startsWith('http') || item.cover_path.startsWith('data:') ? item.cover_path : `file://${item.cover_path}`}
+          src={coverUrl}
           alt={item.title}
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          loading="lazy"
+          decoding="async"
+          onError={() => setCoverFailed(true)}
         />
       ) : (
         <div className="media-card-poster-placeholder">
@@ -136,7 +144,7 @@ export default function ItemCard({ item }: { item: Item }) {
       )}
 
       <div className="media-card-info">
-        <div className="media-card-title">{item.title}</div>
+        <div className="media-card-title" title={item.title}>{item.title}</div>
         <div className="media-card-meta">
           <span className="media-card-year">
             {[item.author || item.director, item.year].filter(Boolean).join(' · ')}
@@ -162,3 +170,5 @@ export default function ItemCard({ item }: { item: Item }) {
     </div>
   )
 }
+
+export default React.memo(ItemCard)

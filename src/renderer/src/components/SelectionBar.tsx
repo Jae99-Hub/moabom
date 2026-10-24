@@ -1,26 +1,28 @@
 import React from 'react'
-import { useStore, useFilteredItems } from '../store/useStore'
+import { useStore, useStorePick, selectFilteredItems } from '../store/useStore'
 
 export default function SelectionBar() {
-  const { selectionMode, checkedItems, exitSelectionMode, selectAllChecked, deleteCheckedItems } = useStore()
-  const filtered = useFilteredItems()
+  const { selectionMode, checkedItems, exitSelectionMode, selectAllChecked, deleteCheckedItems } =
+    useStorePick('selectionMode', 'checkedItems', 'exitSelectionMode', 'selectAllChecked', 'deleteCheckedItems')
+  // 선택 모드일 때만 개수를 본다 (목록 계산은 공유 캐시라 다시 정렬하지 않음)
+  const filteredCount = useStore((s) => (s.selectionMode ? selectFilteredItems(s).length : 0))
 
   if (!selectionMode) return null
 
-  const allSelected = filtered.length > 0 && checkedItems.length === filtered.length
+  const allSelected = filteredCount > 0 && checkedItems.length === filteredCount
   const count = checkedItems.length
 
   const handleToggleAll = () => {
     if (allSelected) {
       selectAllChecked([])
     } else {
-      selectAllChecked(filtered.map((i) => i.id))
+      selectAllChecked(selectFilteredItems(useStore.getState()).map((i) => i.id))
     }
   }
 
   const handleDelete = () => {
     if (count === 0) return
-    if (window.confirm(`선택한 ${count}개 항목을 삭제할까요?`)) {
+    if (window.confirm(`선택한 ${count}개 항목을 휴지통으로 옮길까요?\n15일 안에 휴지통에서 되돌릴 수 있어요.`)) {
       deleteCheckedItems()
     }
   }

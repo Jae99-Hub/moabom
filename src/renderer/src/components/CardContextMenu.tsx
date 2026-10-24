@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { Item } from '../types'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 
 export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number; y: number; onClose: () => void }) {
-  const { deleteItem, openAddModal, selectItem } = useStore()
+  const { deleteItem, openAddModal, selectItem } = useStorePick('deleteItem', 'openAddModal', 'selectItem')
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x, y })
   const [visible, setVisible] = useState(false)
@@ -37,7 +37,7 @@ export function CardContextMenu({ item, x, y, onClose }: { item: Item; x: number
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
     onClose()
-    if (window.confirm(`"${item.title}"을(를) 삭제할까요?`)) {
+    if (window.confirm(`"${item.title}"을(를) 휴지통으로 옮길까요?\n15일 안에 휴지통에서 되돌릴 수 있어요.`)) {
       deleteItem(item.id)
       selectItem(null)
     }

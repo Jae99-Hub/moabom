@@ -61,7 +61,7 @@ export async function searchTmdb(query: string, apiKey: string): Promise<TmdbRes
   } catch {
     throw new Error('검색 응답이 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요.')
   }
-  if (!res.ok) throw new Error(`TMDB API error: ${res.status} ${res.statusText}`)
+  if (!res.ok) throw new Error(`영화·드라마 검색 서버에 문제가 있어요. 잠시 뒤 다시 시도해 주세요. (${res.status})`)
 
   const data = await res.json() as {
     results?: Array<{

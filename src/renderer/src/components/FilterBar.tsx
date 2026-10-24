@@ -1,5 +1,5 @@
 import React from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 import { ItemStatus } from '../types'
 
 const STATUS_OPTIONS: { value: ItemStatus | 'all'; label: string }[] = [
@@ -20,7 +20,8 @@ const SHORT_LABELS: Record<string, string> = {
 }
 
 export default function FilterBar() {
-  const { filters, setFilter, viewMode, toggleViewMode, selectionMode, enterSelectionMode, exitSelectionMode } = useStore()
+  const { filters, setFilter, viewMode, toggleViewMode, selectionMode, enterSelectionMode, exitSelectionMode } =
+    useStorePick('filters', 'setFilter', 'viewMode', 'toggleViewMode', 'selectionMode', 'enterSelectionMode', 'exitSelectionMode')
 
   const currentType = filters.type
   const isBook = currentType === 'book'

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 
 interface TourStep {
   selector?: string   // 하이라이트할 실제 요소 (없으면 가운데 카드)
@@ -61,7 +61,7 @@ const TOOLTIP_W = 340
 const PAD = 8
 
 export default function OnboardingTour() {
-  const { isTourOpen, closeTour } = useStore()
+  const { isTourOpen, closeTour } = useStorePick('isTourOpen', 'closeTour')
   const [idx, setIdx] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
 

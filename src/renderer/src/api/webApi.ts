@@ -565,8 +565,7 @@ export async function setupWebApi(): Promise<void> {
         } catch {
           return base64Data
         }
-      },
-      copyLocal: async (srcPath: string): Promise<string> => srcPath
+      }
     },
 
     db: {

@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { useStore, useFilteredItems } from '../store/useStore'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useStore, useStorePick, selectFilteredItems } from '../store/useStore'
 import { Item, ItemType, ItemStatus, Quote } from '../types'
 import StarRating from './StarRating'
+import { coverSrc } from '../utils/cover'
 
 const TYPE_LABEL: Record<ItemType, string> = { book: '도서', movie: '영화', drama: '드라마', documentary: '다큐' }
 const STATUS_LABEL: Record<string, string> = { want: '읽고 싶다', reading: '읽는 중', done: '완독', dropped: '중단' }
@@ -25,7 +26,7 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
 
 function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) {
   const [quotes, setQuotes] = useState<Quote[]>([])
-  const { openQuotesModal, quotesVersion } = useStore()
+  const { openQuotesModal, quotesVersion } = useStorePick('openQuotesModal', 'quotesVersion')
   const label = itemType === 'book' ? '명문장' : '명대사'
 
   useEffect(() => {
@@ -65,9 +66,11 @@ function QuotesList({ itemId, itemType }: { itemId: number; itemType: string }) 
 }
 
 function DetailContent({ item }: { item: Item }) {
-  const { deleteItem, openAddModal, openQuotesModal, selectItem, updateItem } = useStore()
-  const [isbnOpen, setIsbnOpen] = useState(false)
+  const { deleteItem, openAddModal, openQuotesModal, selectItem, updateItem } =
+    useStorePick('deleteItem', 'openAddModal', 'openQuotesModal', 'selectItem', 'updateItem')
   const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const [coverFailed, setCoverFailed] = useState(false)
+  useEffect(() => setCoverFailed(false), [item.cover_path]) // 표지를 바꾸면 다시 시도
   const statusMenuRef = useRef<HTMLDivElement>(null)
   const isBook = item.item_type === 'book'
   const statusMap = isBook ? STATUS_LABEL : STATUS_LABEL_MEDIA
@@ -90,12 +93,10 @@ function DetailContent({ item }: { item: Item }) {
     await updateItem(item.id, { status: newStatus })
   }
 
-  const coverSrc = item.cover_path
-    ? (item.cover_path.startsWith('http') || item.cover_path.startsWith('data:')) ? item.cover_path : `file://${item.cover_path}`
-    : null
+  const coverUrl = coverSrc(item.cover_path)
 
   const handleDelete = () => {
-    if (window.confirm(`"${item.title}"을(를) 삭제할까요?`)) {
+    if (window.confirm(`"${item.title}"을(를) 휴지통으로 옮길까요?\n15일 안에 휴지통에서 되돌릴 수 있어요.`)) {
       deleteItem(item.id)
       selectItem(null)
     }
@@ -109,7 +110,7 @@ function DetailContent({ item }: { item: Item }) {
       )}
 
       {/* 닫기 버튼 */}
-      <button className="dm-close" onClick={() => selectItem(null)}>
+      <button className="dm-close" onClick={() => selectItem(null)} aria-label="닫기" title="닫기">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
         </svg>
@@ -118,9 +119,8 @@ function DetailContent({ item }: { item: Item }) {
       {/* 헤더: 커버 + 제목 정보 */}
       <div className="dm-header">
         <div className="dm-cover-wrap">
-          {coverSrc ? (
-            <img className="dm-cover" src={coverSrc} alt={item.title}
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          {coverUrl && !coverFailed ? (
+            <img className="dm-cover" src={coverUrl} alt={item.title} onError={() => setCoverFailed(true)} />
           ) : (
             <div className="dm-cover-placeholder">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
@@ -273,7 +273,7 @@ function DetailContent({ item }: { item: Item }) {
           </svg>
           편집
         </button>
-        <button className="btn-danger" onClick={handleDelete}>
+        <button className="btn-danger" onClick={handleDelete} aria-label="휴지통으로 옮기기" title="휴지통으로 옮기기">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6l-1 14H6L5 6" />
@@ -287,37 +287,41 @@ function DetailContent({ item }: { item: Item }) {
 }
 
 export default function DetailModal() {
-  const { selectedId, selectItem, itemList, isAddModalOpen } = useStore()
-  const filtered = useFilteredItems()
+  const { selectedId, selectItem, itemList } = useStorePick('selectedId', 'selectItem', 'itemList')
   // 필터가 바뀌어도 선택 아이템이 사라지지 않도록 전체 목록에서 조회
-  const selected = itemList.find((m) => m.id === selectedId)
+  const selected = useMemo(() => itemList.find((m) => m.id === selectedId), [itemList, selectedId])
 
   useEffect(() => {
+    if (!selectedId) return // 상세창이 닫혀 있으면 키를 가로채지 않음
     const onKey = (e: KeyboardEvent) => {
-      // 다른 모달이 열려 있으면 무시
-      if (isAddModalOpen) return
+      // 위에 다른 창이 떠 있으면 무시 — 명대사 창에서 Esc를 누르면 뒤의 상세창이 닫히고,
+      // ←/→를 누르면 뒤에서 다른 작품으로 바뀌던 문제
+      const s = useStore.getState()
+      if (s.isAddModalOpen || s.isQuotesModalOpen || s.isSettingsOpen || s.isStatsOpen ||
+          s.isTrashOpen || s.isTourOpen || s.syncConflicts.length > 0 || s.syncAutoMerged > 0) return
       // 입력창에 포커스 중이면 무시
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
 
       if (e.key === 'Escape') { selectItem(null); return }
-      if (!selectedId) return
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      const filtered = selectFilteredItems(s)
       const idx = filtered.findIndex((m) => m.id === selectedId)
       if (e.key === 'ArrowRight') {
         if (idx < filtered.length - 1) selectItem(filtered[idx + 1].id)
-      } else if (e.key === 'ArrowLeft') {
+      } else {
         if (idx > 0) selectItem(filtered[idx - 1].id)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, filtered, isAddModalOpen, selectItem])
+  }, [selectedId, selectItem])
 
   if (!selected) return null
 
   return (
     <div className="dm-overlay" onClick={() => selectItem(null)}>
-      <DetailContent item={selected} />
+      <DetailContent key={selected.id} item={selected} />
     </div>
   )
 }

@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 import { Quote } from '../types'
 
 export default function QuotesModal() {
-  const { isQuotesModalOpen, closeQuotesModal, bumpQuotesVersion, selectedId, itemList, requestSync } = useStore()
+  const { isQuotesModalOpen, closeQuotesModal, bumpQuotesVersion, selectedId, itemList, requestSync } =
+    useStorePick('isQuotesModalOpen', 'closeQuotesModal', 'bumpQuotesVersion', 'selectedId', 'itemList', 'requestSync')
+  // 배경에서 누르고 배경에서 뗐을 때만 닫음 (입력칸에서 드래그하다 창 밖에서 놓아도 닫히지 않게)
+  const downOnBackdrop = useRef(false)
   const item = itemList.find((i) => i.id === selectedId)
 
   const [quotes, setQuotes] = useState<Quote[]>([])
@@ -114,13 +117,17 @@ export default function QuotesModal() {
   if (!isQuotesModalOpen) return null
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeQuotesModal()}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
+      onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) closeQuotesModal() }}
+    >
       <div className="modal modal-lg">
         <div className="modal-header">
           <span className="modal-title">
             {item ? `"${item.title}" ${itemType === 'book' ? '명문장' : '명대사'}` : '명대사'}
           </span>
-          <button className="btn-icon" onClick={closeQuotesModal}>
+          <button className="btn-icon" onClick={closeQuotesModal} aria-label="닫기" title="닫기">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -236,7 +243,7 @@ export default function QuotesModal() {
                       </div>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                         <button className="btn-text" onClick={() => setEditingId(null)}>취소</button>
-                        <button className="btn-primary" style={{ height: 30, fontSize: 12, padding: '0 12px' }} onClick={() => handleSaveEdit(q.id)} disabled={isSaving}>{isSaving ? '저장 중...' : '저장'}</button>
+                        <button className="btn-primary" style={{ height: 30, fontSize: 12, padding: '0 12px' }} onClick={() => handleSaveEdit(q.id)} disabled={isSaving || !editText.trim()}>{isSaving ? '저장 중...' : '저장'}</button>
                       </div>
                     </>
                   ) : (

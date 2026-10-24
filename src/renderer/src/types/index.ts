@@ -139,7 +139,6 @@ declare global {
       image: {
         pick: () => Promise<string | null>
         saveCropped: (base64Data: string, fileName: string) => Promise<string>
-        copyLocal: (srcPath: string) => Promise<string>
       }
       db: {
         backup: () => Promise<{ success: boolean; path?: string }>
@@ -156,17 +155,18 @@ declare global {
       sync: {
         getDirtyItems: () => Promise<Record<string, unknown>[]>
         getDirtyQuotes: () => Promise<Record<string, unknown>[]>
-        markItemSynced: (localId: number, serverId: number) => Promise<void>
-        markQuoteSynced: (localId: number, serverId: number) => Promise<void>
-        hardDeleteItem: (localId: number) => Promise<void>
-        hardDeleteQuote: (localId: number) => Promise<void>
+        markItemSynced: (localId: number, serverId: number, seenUpdatedAt?: string) => Promise<void>
+        markQuoteSynced: (localId: number, serverId: number, seenUpdatedAt?: string) => Promise<void>
+        getCoverPushItems: () => Promise<{ id: number; server_id: number; cover_path: string }[]>
+        markCoverPushed: (localId: number) => Promise<void>
         upsertItemFromCloud: (cloudItem: unknown) => Promise<void>
         upsertQuoteFromCloud: (cloudQuote: unknown) => Promise<void>
-        getLastSyncAt: () => Promise<string>
-        setLastSyncAt: (ts: string) => Promise<void>
-        getItemById: (id: number) => Promise<unknown>
-        clearItemDirty: (localId: number) => Promise<void>
-        clearQuoteDirty: (localId: number) => Promise<void>
+        upsertItemsFromCloud: (rows: unknown[]) => Promise<void>
+        upsertQuotesFromCloud: (rows: unknown[]) => Promise<void>
+        getLastSyncAt: (userId?: string) => Promise<string>
+        setLastSyncAt: (ts: string, userId?: string) => Promise<void>
+        clearItemDirty: (localId: number, seenUpdatedAt?: string) => Promise<void>
+        clearQuoteDirty: (localId: number, seenUpdatedAt?: string) => Promise<void>
       }
       trash: {
         getAll: () => Promise<TrashItem[]>

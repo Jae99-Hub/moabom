@@ -2,7 +2,8 @@ import initSqlJs, { Database } from 'sql.js'
 import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync,
-         readdirSync, statSync, unlinkSync, renameSync, copyFileSync } from 'fs'
+         readdirSync, statSync, unlinkSync, renameSync, copyFileSync,
+         openSync, fsyncSync, closeSync } from 'fs'
 import { resolve } from 'path'
 import { is } from '@electron-toolkit/utils'
 
@@ -30,13 +31,26 @@ export async function initDatabase(): Promise<void> {
   sqlInstance = await initSqlJs({ locateFile: () => getWasmPath() })
 
   if (existsSync(dbPath)) {
+    let loaded: Database | null = null
     try {
-      db = new sqlInstance.Database(readFileSync(dbPath))
-      db.exec("SELECT 1 FROM sqlite_master LIMIT 1") // 손상 감지 (로드 시 조용히 열리는 경우 대비)
-    } catch {
-      // DB 파일 손상 → 원본 보존 후 최신 백업으로 복구 (없으면 빈 DB)
-      try { renameSync(dbPath, dbPath + '.corrupt-' + Date.now()) } catch { /* ignore */ }
-      db = recoverDbOrEmpty()
+      const bytes = readFileSync(dbPath)
+      // 0바이트 파일(기록 도중 정전 등)은 '빈 DB'로 열리므로 손상으로 취급
+      if (bytes.length > 0) loaded = new sqlInstance.Database(bytes)
+    } catch { loaded = null }
+    if (loaded && quickCheckOk(loaded)) {
+      db = loaded
+    } else {
+      // 손상 → 최신 정상 자동 백업으로 복구. 백업이 없으면 열리기라도 한 원본을 그대로 쓴다(빈 DB보다 나음).
+      const recovered = recoverFromBackups()
+      if (recovered || !loaded) {
+        try { loaded?.close() } catch { /* ignore */ }
+        try { renameSync(dbPath, dbPath + '.corrupt-' + Date.now()) } catch { /* ignore */ }
+        db = recovered ?? new sqlInstance.Database()
+      } else {
+        // 원본은 따로 복사해 두고(첫 저장이 덮어쓰기 전에) 열리는 만큼이라도 쓴다
+        try { copyFileSync(dbPath, dbPath + '.corrupt-' + Date.now()) } catch { /* ignore */ }
+        db = loaded
+      }
     }
   } else {
     db = new sqlInstance.Database()
@@ -49,17 +63,65 @@ export async function initDatabase(): Promise<void> {
   // 시작 시 비로그인/미동기화 휴지통 중 15일 경과분 영구삭제 (로그인분은 동기화에서 처리)
   purgeExpiredTrash(15, true)
   save()
+  // 시작 직후엔 바로 기록 (손상 복구로 원본을 옮겨 둔 경우 300ms 사이에 꺼지면 DB 파일이 없어지는 것 방지)
+  flushSave()
 }
 
+// ── 파일 저장 ────────────────────────────────────────────────────────
+// sql.js는 메모리 DB라 저장할 때마다 DB 전체를 export해 파일을 통째로 다시 쓴다.
+// 변경마다 바로 쓰면 동기화처럼 연속으로 바뀔 때 수백 번 전체 기록 → 300ms 단위로 묶어서 한 번만 기록.
+// 종료·업데이트 설치·백업 파일 복사 직전에는 flushSave()로 즉시 기록한다.
+const SAVE_DELAY_MS = 300
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let savePending = false
+
 function save(): void {
-  // 원자적 저장: 임시파일 기록 후 rename → 쓰기 중 중단돼도 dbPath는 항상 완전한 이전본/새본
+  savePending = true
+  if (!saveTimer) saveTimer = setTimeout(() => { saveTimer = null; flushSave() }, SAVE_DELAY_MS)
+}
+
+/** 대기 중인 변경을 지금 바로 파일에 기록 */
+export function flushSave(): void {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
+  if (!savePending || !db || !dbPath) return
+  savePending = false
+  try {
+    writeDbFile()
+  } catch (e) {
+    console.error('[DB 저장 실패]', e)
+    savePending = true // 잠시 뒤 재시도
+    if (!saveTimer) saveTimer = setTimeout(() => { saveTimer = null; flushSave() }, 2000)
+  }
+}
+
+function writeDbFile(): void {
+  // 원자적 저장: 임시파일 기록 + fsync 후 rename → 쓰기 중 중단·정전에도 dbPath는 항상 완전한 이전본/새본
   const data = db.export()
   const tmp = dbPath + '.savetmp'
-  writeFileSync(tmp, Buffer.from(data))
-  renameSync(tmp, dbPath)
+  const fd = openSync(tmp, 'w')
+  try { writeFileSync(fd, data); fsyncSync(fd) } finally { closeSync(fd) }
+  renameWithRetry(tmp, dbPath)
+}
+
+function renameWithRetry(from: string, to: string): void {
+  // Windows: 백신·검색 색인이 파일을 잠깐 잡고 있으면 EPERM/EBUSY → 짧게 기다렸다 재시도
+  for (let i = 0; ; i++) {
+    try { renameSync(from, to); return } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (i >= 4 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) throw e
+      try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) } catch { /* ignore */ }
+    }
+  }
 }
 
 export function getDbPath(): string { return dbPath }
+
+function quickCheckOk(d: Database): boolean {
+  try {
+    const r = d.exec('PRAGMA quick_check')
+    return r?.[0]?.values?.[0]?.[0] === 'ok'
+  } catch { return false }
+}
 
 /** 파일을 열어 무결성 검증. 유효하면 Database, 아니면 null. */
 function tryOpenValid(path: string): Database | null {
@@ -73,15 +135,15 @@ function tryOpenValid(path: string): Database | null {
   } catch { return null }
 }
 
-/** dbPath 손상 시: 최신 자동 백업(검증 통과분)으로 복구, 없으면 빈 DB. */
-function recoverDbOrEmpty(): Database {
+/** dbPath 손상 시: 최신 자동 백업(검증 통과분)을 연다. 쓸 만한 백업이 없으면 null. */
+function recoverFromBackups(): Database | null {
   try {
     for (const b of listAutoBackups()) { // 최신순
       const d = tryOpenValid(b.path)
       if (d) return d
     }
   } catch { /* ignore */ }
-  return new sqlInstance.Database()
+  return null
 }
 
 // ── 스키마 + 마이그레이션 (초기화 및 복원 후 재적용) ─────────────────
@@ -97,6 +159,8 @@ const MIGRATIONS: string[] = [
   "ALTER TABLE quotes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE quotes ADD COLUMN episode_number INTEGER",
   "ALTER TABLE quotes ADD COLUMN deleted_at TEXT",
+  // 표지만 클라우드에 올려야 하는 항목 (예전 파일 표지를 DB 안으로 옮긴 동기화 항목)
+  "ALTER TABLE items ADD COLUMN cover_dirty INTEGER NOT NULL DEFAULT 0",
 ]
 
 function bootstrapSchema(): void {
@@ -146,6 +210,30 @@ function bootstrapSchema(): void {
   for (const sql of MIGRATIONS) {
     try { db.run(sql) } catch { /* 이미 존재하면 무시 */ }
   }
+  // 동기화(server_id 조회)·계정별 목록·명대사 조회용 인덱스 — 컬럼 추가 마이그레이션 뒤에 만든다
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_items_server_id ON items(server_id);
+    CREATE INDEX IF NOT EXISTS idx_items_user ON items(user_id, is_deleted);
+    CREATE INDEX IF NOT EXISTS idx_quotes_server_id ON quotes(server_id);
+    CREATE INDEX IF NOT EXISTS idx_quotes_item_id ON quotes(item_id);
+  `)
+  // 시간 형식 통일: 예전에 클라우드에서 받은 ISO('…T…+00:00')를 로컬 형식('YYYY-MM-DD HH:MM:SS.SSS', UTC)으로.
+  // 형식이 섞이면 문자열 정렬(최신순)과 백업 지문(MAX(updated_at))이 틀어진다. 이미 통일된 행은 건드리지 않음.
+  for (const table of ['items', 'quotes']) {
+    for (const col of ['created_at', 'updated_at', 'deleted_at']) {
+      try {
+        db.run(`UPDATE ${table} SET ${col} = strftime('%Y-%m-%d %H:%M:%f', ${col})
+                WHERE ${col} LIKE '%T%' AND strftime('%Y-%m-%d %H:%M:%f', ${col}) IS NOT NULL`)
+      } catch { /* ignore */ }
+    }
+  }
+}
+
+/** 클라우드 시각(ISO, 마이크로초·시간대 포함) → 로컬 저장 형식('YYYY-MM-DD HH:MM:SS.SSS', UTC). 해석 못 하면 원본 유지 */
+function toLocalTs<T extends string | null | undefined>(s: T): T | string {
+  if (!s || !s.includes('T')) return s
+  const ms = new Date(s).getTime()
+  return isNaN(ms) ? s : new Date(ms).toISOString().replace('T', ' ').replace('Z', '')
 }
 
 /** DB 파일 복원 — 소스를 먼저 검증한 뒤에만 라이브 DB 교체 (실패해도 현재 데이터 무손상).
@@ -402,8 +490,8 @@ export function importOtherScopeItems(source: 'anon' | 'otherAccount'): { import
       // anon·otherAccount 모두 새 항목처럼 재삽입(server_id NULL). 교차계정 server_id를 유지하면
       // pushDirtyItems의 update가 0행에 매치되며 오류 없이 markSynced 처리돼 영영 업로드가 안 되는
       // 문제가 생김. server_id를 비우면 삽입 경로를 타고, 클라우드 중복은 push의 제목/텍스트 dedup이 흡수.
-      db.run(`UPDATE quotes SET server_id = NULL, is_dirty = 1, updated_at = datetime('now') WHERE item_id IN (${inList})`)
-      db.run(`UPDATE items  SET user_id = :uid, server_id = NULL, is_dirty = 1, updated_at = datetime('now') WHERE id IN (${inList})`, { ':uid': currentUserId })
+      db.run(`UPDATE quotes SET server_id = NULL, is_dirty = 1, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE item_id IN (${inList})`)
+      db.run(`UPDATE items  SET user_id = :uid, server_id = NULL, is_dirty = 1, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id IN (${inList})`, { ':uid': currentUserId })
       save()
     }
     return { imported: ids.length, skipped: total - ids.length }
@@ -611,7 +699,7 @@ export function updateItem(id: number, data: Partial<Omit<ItemRow, 'id' | 'creat
 
   // sync 필드 변경이 아닌 경우에만 dirty 마킹 + updated_at 갱신
   const isSyncInternalUpdate = entries.every(([k]) => ['server_id', 'is_dirty', 'is_deleted'].includes(k))
-  const extraSets = isSyncInternalUpdate ? '' : `, updated_at = datetime('now'), is_dirty = 1`
+  const extraSets = isSyncInternalUpdate ? '' : `, updated_at = strftime('%Y-%m-%d %H:%M:%f','now'), is_dirty = 1`
 
   db.run(
     `UPDATE items SET ${sets}${extraSets} WHERE id = :id`,
@@ -625,11 +713,11 @@ export function deleteItem(id: number): void {
   // 항상 소프트 삭제(휴지통). deleted_at 기록 → 15일 후 자동 영구삭제.
   // 클라우드 동기화 시 tombstone(is_deleted=true)으로 올려 다른 기기에도 삭제 전파.
   db.run(
-    "UPDATE items SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = :id",
+    "UPDATE items SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
     { ':id': id }
   )
   db.run(
-    "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = datetime('now') WHERE item_id = :id AND is_deleted = 0",
+    "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE item_id = :id AND is_deleted = 0",
     { ':id': id }
   )
   save()
@@ -653,11 +741,11 @@ export function getTrashedItems(): ItemRow[] {
 /** 휴지통에서 복원 (dirty 마킹 → 다음 동기화 시 클라우드도 복원) */
 export function restoreItem(id: number): void {
   db.run(
-    "UPDATE items SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = datetime('now') WHERE id = :id",
+    "UPDATE items SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
     { ':id': id }
   )
   db.run(
-    "UPDATE quotes SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = datetime('now') WHERE item_id = :id AND is_deleted = 1",
+    "UPDATE quotes SET is_deleted = 0, is_dirty = 1, deleted_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE item_id = :id AND is_deleted = 1",
     { ':id': id }
   )
   save()
@@ -673,22 +761,29 @@ export function purgeItem(id: number): void {
 /** 만료된 휴지통 항목 로컬 영구삭제 (deleted_at이 days일 이전).
  *  onlyLocalOnly=true면 클라우드에 올라간 적 없는(server_id IS NULL) 항목만 — 시작 시 비로그인 정리용 */
 export function purgeExpiredTrash(days = 15, onlyLocalOnly = false): void {
-  const cutoff = `datetime('now', '-${days} days')`
+  // 일수는 정수로 고정해 바인딩 (렌더러가 넘긴 값을 SQL 문자열에 그대로 넣지 않음)
+  const n = Math.max(1, Math.floor(Number(days)) || 15)
+  const p = { ':mod': `-${n} days` }
+  const cutoff = `datetime('now', :mod)`
   const cond = onlyLocalOnly ? 'AND server_id IS NULL' : ''
   // datetime(deleted_at): 로컬('YYYY-MM-DD HH:MM:SS')과 클라우드 pull(ISO+TZ) 포맷을 모두 UTC로 정규화
+  let changed = 0
   db.run(
     `DELETE FROM quotes WHERE item_id IN (
        SELECT id FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}
-     )`
+     )`, p
   )
+  changed += db.getRowsModified()
   db.run(
-    `DELETE FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}`
+    `DELETE FROM items WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff} ${cond}`, p
   )
+  changed += db.getRowsModified()
   // 개별 삭제된 명문장(부모는 살아있음)도 만료 시 정리
   if (!onlyLocalOnly) {
-    db.run(`DELETE FROM quotes WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff}`)
+    db.run(`DELETE FROM quotes WHERE is_deleted = 1 AND deleted_at IS NOT NULL AND datetime(deleted_at) < ${cutoff}`, p)
+    changed += db.getRowsModified()
   }
-  save()
+  if (changed > 0) save()
 }
 
 // ── 명문장 ───────────────────────────────────────────────────────────
@@ -746,7 +841,7 @@ export function updateQuote(id: number, data: Partial<Pick<QuoteRow, 'text' | 'p
   if (data.note !== undefined) { parts.push('note = :note'); params[':note'] = data.note ?? null }
   if (!parts.length) return undefined
   db.run(
-    `UPDATE quotes SET ${parts.join(', ')}, updated_at = datetime('now'), is_dirty = 1 WHERE id = :id`,
+    `UPDATE quotes SET ${parts.join(', ')}, updated_at = strftime('%Y-%m-%d %H:%M:%f','now'), is_dirty = 1 WHERE id = :id`,
     params as Record<string, string | number | null | Uint8Array>
   )
   save()
@@ -758,7 +853,7 @@ export function deleteQuote(id: number): void {
   const row = queryOne('SELECT server_id FROM quotes WHERE id = :id', { ':id': id })
   if (row?.server_id) {
     db.run(
-      "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = :id",
+      "UPDATE quotes SET is_deleted = 1, is_dirty = 1, deleted_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = :id",
       { ':id': id }
     )
   } else {
@@ -781,54 +876,70 @@ export function getDirtyItems(): ItemRow[] {
 
 /** 클라우드에 올려야 할 dirty 명문장 목록 (삭제 포함)
  *  현재 계정 소유 아이템에 속한 명문장만 (quotes에는 user_id가 없어 items와 조인) */
-export function getDirtyQuotes(): QuoteRow[] {
+export function getDirtyQuotes(): (QuoteRow & { item_server_id: number | null; item_is_dirty: number })[] {
   if (!currentUserId) return []
+  // 부모 항목의 클라우드 id·미전송 여부를 함께 돌려줘 명대사마다 부모를 따로 조회하지 않게 함
   return queryAll(
-    `SELECT q.* FROM quotes q JOIN items i ON q.item_id = i.id
+    `SELECT q.*, i.server_id AS item_server_id, i.is_dirty AS item_is_dirty FROM quotes q JOIN items i ON q.item_id = i.id
      WHERE q.is_dirty = 1 AND i.user_id = :uid`,
     { ':uid': currentUserId }
-  ).map(rowToQuote)
+  ).map((r) => ({
+    ...rowToQuote(r),
+    item_server_id: r.item_server_id != null ? Number(r.item_server_id) : null,
+    item_is_dirty: Number(r.item_is_dirty ?? 0),
+  }))
 }
 
+// seenUpdatedAt: 올릴 때 읽었던 updated_at. 올리는 사이 사용자가 또 고쳤으면(값이 다르면) dirty를 남겨
+// 다음 동기화에서 다시 올린다 — 예전엔 무조건 dirty를 지워 동기화 도중 한 수정이 사라졌음.
+const CLEAR_DIRTY_IF_UNCHANGED = 'CASE WHEN :ua IS NULL OR updated_at = :ua THEN 0 ELSE is_dirty END'
+
 /** 동기화 완료 후 아이템 clean 마킹 */
-export function markItemSynced(localId: number, serverId: number): void {
+export function markItemSynced(localId: number, serverId: number, seenUpdatedAt?: string): void {
+  const prev = queryOne('SELECT server_id FROM items WHERE id = :id', { ':id': localId })
   db.run(
-    'UPDATE items SET server_id = :sid, is_dirty = 0 WHERE id = :id',
-    { ':sid': serverId, ':id': localId }
+    `UPDATE items SET server_id = :sid, cover_dirty = 0, is_dirty = ${CLEAR_DIRTY_IF_UNCHANGED} WHERE id = :id`,
+    { ':sid': serverId, ':id': localId, ':ua': seenUpdatedAt ?? null }
   )
+  // 클라우드 id가 바뀜(클라우드에서 지워진 항목을 새로 올림) → 명대사도 새 부모 밑으로 다시 올리도록 표시
+  if (prev?.server_id != null && Number(prev.server_id) !== serverId) {
+    db.run('UPDATE quotes SET server_id = NULL, is_dirty = 1 WHERE item_id = :id AND is_deleted = 0', { ':id': localId })
+  }
   save()
 }
 
 /** 동기화 완료 후 명문장 clean 마킹 */
-export function markQuoteSynced(localId: number, serverId: number): void {
+export function markQuoteSynced(localId: number, serverId: number, seenUpdatedAt?: string): void {
   db.run(
-    'UPDATE quotes SET server_id = :sid, is_dirty = 0 WHERE id = :id',
-    { ':sid': serverId, ':id': localId }
+    `UPDATE quotes SET server_id = :sid, is_dirty = ${CLEAR_DIRTY_IF_UNCHANGED} WHERE id = :id`,
+    { ':sid': serverId, ':id': localId, ':ua': seenUpdatedAt ?? null }
   )
   save()
 }
 
 /** server_id 없이 dirty만 해제 (클라우드에 올린 적 없는 휴지통 항목 정리용) */
-export function clearItemDirty(localId: number): void {
-  db.run('UPDATE items SET is_dirty = 0 WHERE id = :id', { ':id': localId })
+export function clearItemDirty(localId: number, seenUpdatedAt?: string): void {
+  db.run(`UPDATE items SET is_dirty = ${CLEAR_DIRTY_IF_UNCHANGED} WHERE id = :id`, { ':id': localId, ':ua': seenUpdatedAt ?? null })
   save()
 }
 
-export function clearQuoteDirty(localId: number): void {
-  db.run('UPDATE quotes SET is_dirty = 0 WHERE id = :id', { ':id': localId })
+export function clearQuoteDirty(localId: number, seenUpdatedAt?: string): void {
+  db.run(`UPDATE quotes SET is_dirty = ${CLEAR_DIRTY_IF_UNCHANGED} WHERE id = :id`, { ':id': localId, ':ua': seenUpdatedAt ?? null })
   save()
 }
 
-/** 소프트 삭제된 아이템 하드 삭제 (동기화 후) */
-export function hardDeleteItem(localId: number): void {
-  db.run('DELETE FROM quotes WHERE item_id = :id', { ':id': localId })
-  db.run('DELETE FROM items WHERE id = :id', { ':id': localId })
-  save()
+/** 표지만 클라우드에 올려야 하는 현재 계정 항목 */
+export function getCoverPushItems(): { id: number; server_id: number; cover_path: string }[] {
+  if (!currentUserId) return []
+  return queryAll(
+    `SELECT id, server_id, cover_path FROM items
+     WHERE cover_dirty = 1 AND user_id = :uid AND server_id IS NOT NULL AND is_deleted = 0`,
+    { ':uid': currentUserId }
+  ).map((r) => ({ id: r.id as number, server_id: Number(r.server_id), cover_path: String(r.cover_path ?? '') }))
 }
 
-/** 소프트 삭제된 명문장 하드 삭제 (동기화 후) */
-export function hardDeleteQuote(localId: number): void {
-  db.run('DELETE FROM quotes WHERE id = :id', { ':id': localId })
+export function markCoverPushed(localId: number): void {
+  db.run('UPDATE items SET cover_dirty = 0 WHERE id = :id', { ':id': localId })
   save()
 }
 
@@ -855,21 +966,26 @@ export function upsertItemFromCloud(cloudItem: {
   is_deleted?: boolean | null; deleted_at?: string | null
 }): void {
   const cloudDeleted = cloudItem.is_deleted ? 1 : 0
-  const cloudDeletedAt = cloudItem.deleted_at ?? null
+  const cloudDeletedAt = toLocalTs(cloudItem.deleted_at ?? null)
+  const cloudUpdatedAt = toLocalTs(cloudItem.updated_at)
   const existing = queryOne('SELECT id, updated_at, is_dirty FROM items WHERE server_id = :sid', { ':sid': cloudItem.id })
   if (existing) {
     // 소유자 백필: 구버전에서 동기화된 항목은 user_id가 NULL일 수 있어
     // 로그인 후 계정 필터(getAllItems)에 안 잡히는 문제 방지
-    db.run('UPDATE items SET user_id = :uid WHERE server_id = :sid', { ':uid': cloudItem.user_id, ':sid': cloudItem.id })
+    db.run('UPDATE items SET user_id = :uid WHERE server_id = :sid AND user_id IS NOT :uid', { ':uid': cloudItem.user_id, ':sid': cloudItem.id })
+    const backfilled = db.getRowsModified() > 0
     // 로컬이 더 최신이면 나머지 필드는 덮어쓰지 않음 (로컬 변경사항 보호)
     const localUpdated = existing.updated_at as string
     // 아직 올리지 않은 로컬 변경(is_dirty)이 있으면 덮어쓰지 않음 → 다음 push에서 로컬이 반영됨
-    if (Number(existing.is_dirty) === 1 || parseDateMs(localUpdated) >= parseDateMs(cloudItem.updated_at)) { save(); return }
+    if (Number(existing.is_dirty) === 1 || parseDateMs(localUpdated) >= parseDateMs(cloudItem.updated_at)) {
+      if (backfilled) save() // 바뀐 게 없으면 파일을 다시 쓰지 않음
+      return
+    }
 
     db.run(
       `UPDATE items SET
         title=:title, original_title=:original_title, item_type=:item_type,
-        cover_path=:cover_path, backdrop_path=:backdrop_path,
+        cover_path=CASE WHEN cover_dirty = 1 THEN cover_path ELSE :cover_path END, backdrop_path=:backdrop_path,
         author=:author, publisher=:publisher, isbn=:isbn,
         page_count=:page_count, current_page=:current_page,
         director=:director, platform=:platform, tmdb_id=:tmdb_id,
@@ -890,7 +1006,7 @@ export function upsertItemFromCloud(cloudItem: {
         ':genre': cloudItem.genre ?? null, ':year': cloudItem.year ?? null,
         ':overview': cloudItem.overview ?? null, ':rating': cloudItem.rating ?? null,
         ':status': cloudItem.status, ':review': cloudItem.review ?? null,
-        ':read_date': cloudItem.read_date ?? null, ':updated_at': cloudItem.updated_at,
+        ':read_date': cloudItem.read_date ?? null, ':updated_at': cloudUpdatedAt,
         ':sid': cloudItem.id,
         ':is_deleted': cloudDeleted, ':deleted_at': cloudDeletedAt,
       }
@@ -918,8 +1034,8 @@ export function upsertItemFromCloud(cloudItem: {
         ':genre': cloudItem.genre ?? null, ':year': cloudItem.year ?? null,
         ':overview': cloudItem.overview ?? null, ':rating': cloudItem.rating ?? null,
         ':status': cloudItem.status, ':review': cloudItem.review ?? null,
-        ':read_date': cloudItem.read_date ?? null, ':created_at': cloudItem.created_at,
-        ':updated_at': cloudItem.updated_at, ':sid': cloudItem.id,
+        ':read_date': cloudItem.read_date ?? null, ':created_at': toLocalTs(cloudItem.created_at),
+        ':updated_at': cloudUpdatedAt, ':sid': cloudItem.id,
         ':uid': cloudItem.user_id,
       }
     )
@@ -938,9 +1054,9 @@ export function upsertQuoteFromCloud(cloudQuote: {
   if (!localItem) return // 연결된 아이템이 없으면 skip
 
   const localItemId = localItem.id as number
-  const updatedAt = cloudQuote.updated_at ?? cloudQuote.created_at
+  const updatedAt = toLocalTs(cloudQuote.updated_at ?? cloudQuote.created_at)
   const cloudDeleted = cloudQuote.is_deleted ? 1 : 0
-  const cloudDeletedAt = cloudQuote.deleted_at ?? null
+  const cloudDeletedAt = toLocalTs(cloudQuote.deleted_at ?? null)
   const existing = queryOne('SELECT id, updated_at, is_dirty FROM quotes WHERE server_id = :sid', { ':sid': cloudQuote.id })
 
   if (existing) {
@@ -963,16 +1079,34 @@ export function upsertQuoteFromCloud(cloudQuote: {
        VALUES (:item_id, :text, :pn, :en, :note, :ca, :ua, :sid, 0, 0)`,
       { ':item_id': localItemId, ':text': cloudQuote.text, ':pn': cloudQuote.page_number ?? null,
         ':en': cloudQuote.episode_number ?? null,
-        ':note': cloudQuote.note ?? null, ':ca': cloudQuote.created_at, ':ua': updatedAt, ':sid': cloudQuote.id }
+        ':note': cloudQuote.note ?? null, ':ca': toLocalTs(cloudQuote.created_at), ':ua': updatedAt, ':sid': cloudQuote.id }
     )
   }
   save()
 }
 
-/** 로컬 item의 server_id로 로컬 id 조회 */
-export function getLocalItemIdByServerId(serverId: number): number | null {
-  const row = queryOne('SELECT id FROM items WHERE server_id = :sid', { ':sid': serverId })
-  return row ? (row.id as number) : null
+/** 이 기기 파일로만 있던 직접 넣은 표지를 DB 안(data URL)으로 옮긴다.
+ *  → 다른 기기·웹·백업 파일에서도 표지가 보임. toDataUrl이 null을 주면(파일 없음 등) 그대로 둔다.
+ *  이미 동기화된 항목은 '표지만' 올리도록 cover_dirty로 표시한다. 항목 전체를 dirty로 만들면
+ *  이 PC의 오래된 내용이 다른 기기의 최신 수정을 덮어쓸 수 있고, updated_at을 바꾸면 통계 날짜가 틀어짐. */
+export function inlineLocalCovers(toDataUrl: (path: string) => string | null): number {
+  const rows = queryAll(
+    `SELECT id, cover_path FROM items
+     WHERE cover_path IS NOT NULL AND cover_path != ''
+       AND cover_path NOT LIKE 'http%' AND cover_path NOT LIKE 'data:%'`
+  )
+  let n = 0
+  for (const r of rows) {
+    const url = toDataUrl(String(r.cover_path))
+    if (!url) continue
+    db.run(
+      'UPDATE items SET cover_path = :c, cover_dirty = CASE WHEN server_id IS NULL THEN 0 ELSE 1 END WHERE id = :id',
+      { ':c': url, ':id': r.id as number }
+    )
+    n++
+  }
+  if (n > 0) save()
+  return n
 }
 
 // ── 설정 ─────────────────────────────────────────────────────────────

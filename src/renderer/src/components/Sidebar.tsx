@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { useStore } from '../store/useStore'
+import { useStorePick } from '../store/useStore'
 import { Item, ItemType } from '../types'
 
 const TYPES: { value: ItemType; label: string; color: string }[] = [
@@ -96,7 +96,8 @@ function GenreNodes({
 }
 
 export default function Sidebar() {
-  const { itemList, filters, setFilter, isSidebarOpen, closeSidebar, openSettings, openStats, openTrash } = useStore()
+  const { itemList, filters, setFilter, isSidebarOpen, closeSidebar, openSettings, openStats, openTrash } =
+    useStorePick('itemList', 'filters', 'setFilter', 'isSidebarOpen', 'closeSidebar', 'openSettings', 'openStats', 'openTrash')
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['book', 'movie', 'drama', 'documentary']))
 
   const forests = useMemo(() => ({
@@ -196,7 +197,7 @@ export default function Sidebar() {
             <div className="sidebar-type-row">
               <button
                 className={`sidebar-nav-item sidebar-type-item${isTypeActive ? ' active' : ''}`}
-                onClick={() => { handleSelectType(t.value); if (forest.size > 0) toggle(t.value) }}
+                onClick={() => { handleSelectType(t.value); if (forest.size > 0 && !isOpen) toggle(t.value) }}
                 style={{ flex: 1 }}
               >
                 <span className="sidebar-type-icon" style={{ color: t.color }}>

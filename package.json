@@ -1,6 +1,6 @@
 {
   "name": "moabom",
-  "version": "1.3.25",
+  "version": "1.3.26",
   "description": "모아봄 - 책·영화·드라마 기록 앱",
   "main": "out/main/index.js",
   "scripts": {
@@ -13,15 +13,14 @@
     "build:web": "vite build --config vite.web.config.ts"
   },
   "dependencies": {
-    "@sentry/react": "^10.53.1",
-    "@supabase/supabase-js": "^2.105.4",
-    "axios": "^1.6.7",
     "electron-updater": "^6.8.3",
     "sql.js": "^1.11.0"
   },
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
+    "@sentry/react": "^10.53.1",
+    "@supabase/supabase-js": "^2.105.4",
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",

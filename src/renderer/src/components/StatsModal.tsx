@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { useStore } from '../store/useStore'
+import { useStore, useStorePick } from '../store/useStore'
 import { Item } from '../types'
 
 // ── 데이터 계산 헬퍼 ────────────────────────────────────────────────
@@ -242,8 +242,14 @@ function RatingDistChart({ stat }: { stat: RatingStat }) {
 
 type StatsTab = 'monthly' | 'rating' | 'genre'
 
+// 닫혀 있을 때는 통계 계산을 아예 하지 않도록 열렸을 때만 내용을 그림
 export default function StatsModal() {
-  const { isStatsOpen, closeStats, itemList } = useStore()
+  const isStatsOpen = useStore((s) => s.isStatsOpen)
+  return isStatsOpen ? <StatsContent /> : null
+}
+
+function StatsContent() {
+  const { closeStats, itemList } = useStorePick('closeStats', 'itemList')
   const [tab, setTab] = useState<StatsTab>('monthly')
 
   // 연도 목록 계산
@@ -283,8 +289,6 @@ export default function StatsModal() {
     drama: itemList.filter((m) => m.status === 'done' && m.item_type === 'drama').length,
     documentary: itemList.filter((m) => m.status === 'done' && m.item_type === 'documentary').length,
   }), [itemList])
-
-  if (!isStatsOpen) return null
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeStats()}>
