@@ -338,7 +338,8 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:foc
   font-weight: 600;
   box-shadow: none; /* 굵은 막대는 종류에만 */
 }
-.sidebar-nav-item.sidebar-genre-item .nav-count { background: transparent; padding: 0 2px; }
+.sidebar-nav-item.sidebar-genre-item .nav-count,
+.sidebar-nav-item.sidebar-genre-item.active .nav-count { background: transparent; padding: 0 2px; }
 .sidebar-genre-chevron {
   width: 12px;
   flex-shrink: 0;
